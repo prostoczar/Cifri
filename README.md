@@ -1,2 +1,2 @@
-# cyfri
+# cifri
 Daily math. Sharper mind.
