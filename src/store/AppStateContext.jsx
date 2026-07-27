@@ -220,6 +220,23 @@ function reducer(state, action) {
     case 'CHALLENGE_SESSION_COMPLETE': {
       const { diff, score, isPrac, correct, wrong, lang } = action;
       const today = dayKey();
+
+      // The reference only records into db when there is a difficulty AND a non-zero score
+      // (`if(cur.diff&&sc>0)`). The standalone Practice tab has no difficulty, so its runs are
+      // never stored and never touch streaks, bests or milestones — just show a result.
+      if (!diff || score <= 0) {
+        return {
+          ...state,
+          _lastSessionResult: {
+            reqId: action.reqId,
+            diff, score, correct, wrong, isPrac,
+            origin: action.origin,
+            opTimes: action.opTimes,
+            isNewBest: false, unlocked: [], isFirstToday: false,
+          },
+        };
+      }
+
       const d = state.db[diff];
       const isFirstToday = d.lastDay !== today;
       const newSessions = [...d.sessions, { date: today, score, real: !isPrac && isFirstToday }];
@@ -298,6 +315,7 @@ function reducer(state, action) {
         _lastSessionResult: {
           reqId: action.reqId,
           diff, score, correct, wrong, isPrac,
+          origin: action.origin,
           opTimes: action.opTimes,
           isNewBest, unlocked, isFirstToday,
         },

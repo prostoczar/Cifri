@@ -19,10 +19,11 @@ export default function ChallengeResultScreen({ result, db, streak, lang, milest
   const { score, correct, wrong, diff, isPrac } = result;
   const total = correct + wrong;
   const acc = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const d = db[diff];
+  // The Practice tab has no difficulty, so there is no per-difficulty record to read.
+  const d = diff ? db[diff] : null;
 
   let bestText = '--', streakText = '--', avgText = '--';
-  if (!isPrac) {
+  if (!isPrac && d) {
     bestText = d.best || score;
     streakText = streak || 1;
     const todayList = todaySessionsFor(db, diff);

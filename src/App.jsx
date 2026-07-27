@@ -18,6 +18,7 @@ import ChallengeHomeScreen from './screens/ChallengeHomeScreen.jsx';
 import CountdownScreen from './screens/CountdownScreen.jsx';
 import ChallengeGameScreen from './screens/ChallengeGameScreen.jsx';
 import ChallengeResultScreen from './screens/ChallengeResultScreen.jsx';
+import PracticeScreen from './screens/PracticeScreen.jsx';
 import BrainingHomeScreen from './screens/BrainingHomeScreen.jsx';
 import BrainingGameScreen from './screens/BrainingGameScreen.jsx';
 import BrainingResultScreen from './screens/BrainingResultScreen.jsx';
@@ -41,6 +42,18 @@ function AppShell() {
   const [brMilestoneQueue, setBrMilestoneQueue] = useState([]);
   const [tabAnimKey, setTabAnimKey] = useState(0);
   const [slide, setSlide] = useState(null); // {from, to, dir} while a swipe animation runs
+  // Practice tab settings. Held here (not in the persisted store) so they survive tab switches
+  // but reset on reload — the same lifetime the reference's DOM-held state has.
+  const [pracCfg, setPracCfg] = useState({
+    ops: ['addition', 'subtraction', 'multiplication', 'division', 'percentage'],
+    digits: [1, 2],
+    terms: [2],
+    neg: false,
+    dec: false,
+    mode: 'time',
+    timeMin: 1,
+    count: 20,
+  });
   const pendingReqId = useRef(0);
   const pendingBrReqId = useRef(0);
   const scrollRef = useRef(null);
@@ -72,6 +85,7 @@ function AppShell() {
       if (summary.correct === 0 && summary.wrong === 0) {
         // Nothing answered — discard, exactly like the reference's early-return in endGame().
         setScreen(summary.origin === 'practice' ? 'practice' : 'challenge');
+        setActiveTab(summary.origin === 'practice' ? 'practice' : 'challenge');
         return;
       }
       const reqId = ++pendingReqId.current;
@@ -81,6 +95,7 @@ function AppShell() {
         diff: summary.diff,
         score: summary.score,
         isPrac: summary.isPrac,
+        origin: summary.origin,
         correct: summary.correct,
         wrong: summary.wrong,
         opTimes: summary.opTimes,
@@ -199,6 +214,29 @@ function AppShell() {
     setScreen('countdown');
   }
 
+  // The standalone Practice tab. Note (faithful port): the reference builds this config and
+  // passes it to makeQ(), but makeQ() only ever reads cfg._diff — which this config does not
+  // set — so it falls back to the Easy engine and the operations/digits/terms/negatives/
+  // decimals choices do not affect the questions generated. Only the mode (time / exercise
+  // limit / unlimited) and its duration or count take effect. Replicated as-is; see the notes
+  // to the user if this should instead be made to honour the settings.
+  function handleStartCustomPractice() {
+    if (!pracCfg.ops.length || !pracCfg.digits.length || !pracCfg.terms.length) return;
+    const cfg = {
+      ops: pracCfg.ops,
+      digits: pracCfg.digits,
+      terms: pracCfg.terms,
+      neg: pracCfg.neg,
+      dec: pracCfg.dec,
+      mode: pracCfg.mode,
+      timeSec: pracCfg.timeMin * 60,
+      count: pracCfg.count,
+      dm: 1.0,
+    };
+    setCountdownInfo({ diff: null, isPrac: true, pcfg: cfg, origin: 'practice', label: t('practice_mode') });
+    setScreen('countdown');
+  }
+
   function handleCountdownDone() {
     const { diff, isPrac, pcfg, origin } = countdownInfo;
     game.begin(diff, isPrac, pcfg, origin);
@@ -209,17 +247,25 @@ function AppShell() {
     const { origin } = game.quit();
     setQuitOpen(false);
     setScreen(origin === 'practice' ? 'practice' : 'challenge');
+    setActiveTab(origin === 'practice' ? 'practice' : 'challenge');
   }
 
+  // againGame(): a Challenge-origin run replays as an uncounted warm-up on the same difficulty;
+  // a Practice-tab run replays the same custom setup.
   function handlePlayAgain() {
-    const diff = resultData.diff;
+    const { origin, diff } = resultData;
     setResultData(null);
-    handleStartPractice(diff);
+    if (origin === 'challenge') handleStartPractice(diff);
+    else handleStartCustomPractice();
   }
 
+  // backHome(): origin (not isPrac) decides where to return — Challenge's own practice button
+  // and the Practice tab both set isPrac, so isPrac alone can't tell them apart.
   function handleBackHome() {
+    const origin = resultData && resultData.origin;
     setResultData(null);
-    setScreen(resultData && resultData.origin === 'practice' ? 'practice' : 'challenge');
+    setScreen(origin === 'practice' ? 'practice' : 'challenge');
+    setActiveTab(origin === 'practice' ? 'practice' : 'challenge');
   }
 
   // ── Braining ──
@@ -289,7 +335,9 @@ function AppShell() {
         />
       );
     }
-    if (tab === 'practice') return <PlaceholderTab name={t('nav_practice')} />;
+    if (tab === 'practice') {
+      return <PracticeScreen cfg={pracCfg} onChange={setPracCfg} onStart={handleStartCustomPractice} />;
+    }
     if (tab === 'tricks') return <PlaceholderTab name={t('nav_tricks')} />;
     return null;
   }
