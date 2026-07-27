@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppStateProvider, useAppState, chDoneToday, brDoneToday, todayDone } from './store/AppStateContext.jsx';
 import { useI18n } from './store/useI18n.js';
 import { useChallengeGame } from './hooks/useChallengeGame.js';
@@ -40,9 +40,11 @@ function AppShell() {
   const [milestoneQueue, setMilestoneQueue] = useState([]);
   const [brMilestoneQueue, setBrMilestoneQueue] = useState([]);
   const [tabAnimKey, setTabAnimKey] = useState(0);
+  const [slide, setSlide] = useState(null); // {from, to, dir} while a swipe animation runs
   const pendingReqId = useRef(0);
   const pendingBrReqId = useRef(0);
   const scrollRef = useRef(null);
+  const slideElsRef = useRef({ from: null, to: null });
   const soundOnRef = useRef(soundOn);
   soundOnRef.current = soundOn;
 
@@ -136,13 +138,50 @@ function AppShell() {
     setTabAnimKey((k) => k + 1);
   }, []);
 
+  // Swiping runs the horizontal slide first, then commits the tab change once it finishes —
+  // the same order as the reference's slideToTab(), which calls showTab() in its timeout.
+  const handleSwipeTab = useCallback(
+    (tab, dir) => {
+      if (slide) return; // already animating (reference: swipeAnimating guard)
+      setSlide({ from: activeTab, to: tab, dir });
+    },
+    [activeTab, slide]
+  );
+
+  // Drives the slide exactly as slideToTab() does: park the incoming screen off-screen with no
+  // transition, force a reflow, then transition both to their final positions.
+  useLayoutEffect(() => {
+    if (!slide) return;
+    const fromEl = slideElsRef.current.from;
+    const toEl = slideElsRef.current.to;
+    if (!fromEl || !toEl) return;
+    const enterFrom = slide.dir === 'left' ? 100 : -100;
+    const exitTo = slide.dir === 'left' ? -100 : 100;
+    const EASE = 'transform .28s cubic-bezier(.4,0,.2,1)';
+
+    toEl.style.transition = 'none';
+    toEl.style.transform = 'translateX(' + enterFrom + '%)';
+    // eslint-disable-next-line no-unused-expressions
+    toEl.offsetWidth; // force reflow so the starting position actually takes effect
+    fromEl.style.transition = EASE;
+    toEl.style.transition = EASE;
+    fromEl.style.transform = 'translateX(' + exitTo + '%)';
+    toEl.style.transform = 'translateX(0)';
+
+    const timer = setTimeout(() => {
+      handleSelectTab(slide.to);
+      setSlide(null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [slide, handleSelectTab]);
+
   // Swipe left/right between the four home screens (reference: attachSwipeHandlers).
-  // Only enabled while one of those screens is showing — never mid-game.
+  // Only enabled while one of those screens is showing — never mid-game, never mid-slide.
   useSwipeTabs({
     containerRef: scrollRef,
     activeTab,
-    enabled: TAB_ORDER.indexOf(screen) !== -1,
-    onSwitchTab: handleSelectTab,
+    enabled: TAB_ORDER.indexOf(screen) !== -1 && !slide,
+    onSwitchTab: handleSwipeTab,
   });
 
   function handleStartChallenge() {
@@ -216,46 +255,64 @@ function AppShell() {
   }
 
   const showNav = ['countdown', 'game', 'br-countdown', 'br-game'].indexOf(screen) === -1;
+  const isTabScreen = TAB_ORDER.indexOf(screen) !== -1;
+
+  // One tab's content, so the swipe animation can render two of them side by side.
+  function renderTabContent(tab) {
+    if (tab === 'challenge') {
+      return (
+        <ChallengeHomeScreen
+          db={state.db}
+          selDiff={state.selDiff}
+          onSelDiff={(d) => dispatch({ type: 'SET_SEL_DIFF', diff: d })}
+          chRange={state.chRange}
+          onChRange={(r) => dispatch({ type: 'SET_CH_RANGE', range: r })}
+          streak={state.streak}
+          bestStreakEver={state.bestStreakEver}
+          onStartChallenge={handleStartChallenge}
+          onStartPractice={handleStartPractice}
+        />
+      );
+    }
+    if (tab === 'braining') {
+      return (
+        <BrainingHomeScreen
+          brState={state.brState}
+          streak={state.streak}
+          bestStreakEver={state.bestStreakEver}
+          chartRange={state.brChartRange}
+          chartType={state.brChartType}
+          onChartRange={(r) => dispatch({ type: 'SET_BR_CHART_RANGE', range: r })}
+          onChartType={(ty) => dispatch({ type: 'SET_BR_CHART_TYPE', chartType: ty })}
+          onStart={() => handleStartBraining(false)}
+          onPractice={() => handleStartBraining(true)}
+        />
+      );
+    }
+    if (tab === 'practice') return <PlaceholderTab name={t('nav_practice')} />;
+    if (tab === 'tricks') return <PlaceholderTab name={t('nav_tricks')} />;
+    return null;
+  }
 
   return (
     <div className="wrap">
       <Header db={state.db} brState={state.brState} streak={state.streak} streakRestoreAvailable={state.streakRestoreAvailable} />
       <div className="scroll" ref={scrollRef} style={{ paddingBottom: showNav ? 80 : 0 }}>
-        {screen === 'challenge' && (
-          <div key={tabAnimKey} className="tab-fade-in">
-            <ChallengeHomeScreen
-              db={state.db}
-              selDiff={state.selDiff}
-              onSelDiff={(d) => dispatch({ type: 'SET_SEL_DIFF', diff: d })}
-              chRange={state.chRange}
-              onChRange={(r) => dispatch({ type: 'SET_CH_RANGE', range: r })}
-              streak={state.streak}
-              bestStreakEver={state.bestStreakEver}
-              onStartChallenge={handleStartChallenge}
-              onStartPractice={handleStartPractice}
-            />
-          </div>
-        )}
-        {screen === 'braining' && (
-          <div key={tabAnimKey} className="tab-fade-in">
-            <BrainingHomeScreen
-              brState={state.brState}
-              streak={state.streak}
-              bestStreakEver={state.bestStreakEver}
-              chartRange={state.brChartRange}
-              chartType={state.brChartType}
-              onChartRange={(r) => dispatch({ type: 'SET_BR_CHART_RANGE', range: r })}
-              onChartType={(ty) => dispatch({ type: 'SET_BR_CHART_TYPE', chartType: ty })}
-              onStart={() => handleStartBraining(false)}
-              onPractice={() => handleStartBraining(true)}
-            />
-          </div>
-        )}
-        {screen === 'practice' && (
-          <div key={tabAnimKey} className="tab-fade-in"><PlaceholderTab name={t('nav_practice')} /></div>
-        )}
-        {screen === 'tricks' && (
-          <div key={tabAnimKey} className="tab-fade-in"><PlaceholderTab name={t('nav_tricks')} /></div>
+        {slide ? (
+          // Mid-swipe: both screens are on-screen and absolutely positioned (.swiping), sliding
+          // horizontally past each other. The tab change itself commits when the slide ends.
+          <>
+            <div className="scr on swiping" ref={(el) => (slideElsRef.current.from = el)}>
+              {renderTabContent(slide.from)}
+            </div>
+            <div className="scr on swiping" ref={(el) => (slideElsRef.current.to = el)}>
+              {renderTabContent(slide.to)}
+            </div>
+          </>
+        ) : (
+          isTabScreen && (
+            <div key={tabAnimKey} className="tab-fade-in">{renderTabContent(screen)}</div>
+          )
         )}
 
         {screen === 'countdown' && countdownInfo && (
