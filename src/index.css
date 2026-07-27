@@ -1,0 +1,764 @@
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  /* ── CIFRI v14.3 COLOUR SYSTEM ─────────────────────────────
+     Green family */
+  --G:#0f9d6c;     /* primary green — buttons, active states */
+  --GD:#096e4a;    /* dark green — shadow, hover */
+  --GDK:#075c3d;   /* darkest green — text on green backgrounds */
+  --GL:#c8e6d8;    /* light green — subtle fills */
+  --GL2:#ebf7f3;   /* very light green — stat boxes done, chips, keypad */
+  /* Terracotta — used ONLY for "not done today" states */
+  --TC:#d65a3a;    /* terracotta — main button not done, urgency */
+  --TCL:#f5e0d8;   /* light terracotta — selected difficulty chip not done, delete key */
+  --TCB:#8a3a25;   /* dark terracotta — shadow on terracotta */
+  /* Yellow — streak celebration only */
+  --YL:#ffd166;    /* yellow — streak box when done, top pill when one done */
+  --YLT:#7a4f00;   /* yellow text colour */
+  /* Nav active */
+  --NAV:#ffd166;   /* yellow — active nav pill */
+  --NAVT:#000000;  /* nav active text — black */
+  /* Neutrals */
+  --bg:#ffffff;           /* page background — pure white */
+  --card:#fdf8f3;         /* box/card fill — warm beige */
+  --card-grey:#fdf8f3;    /* stat boxes not-done state */
+  --border:#e8e0d5;       /* very subtle border */
+  --border2:#d8d0c6;      /* slightly stronger border — used as shadow base */
+  --txt:#000000;          /* primary text — black */
+  --txt2:#555555;         /* secondary text */
+  --txt3:#aaaaaa;         /* muted labels */
+  --r:14px;--rs:10px;
+  /* v15 item 1: text size setting. 1 = Medium (default, matches every existing size exactly).
+     Every font-size in the app now reads through this multiplier via calc(). */
+  --fs-mult:1;
+  /* v15 item 2: a second "raised surface" neutral — same as pure white in light mode (so nothing
+     changes today), but gets its own slightly-lighter-than-card shade in dark mode. Used only by
+     the couple of elements that were hardcoded to a literal white background. */
+  --card2:#ffffff;
+}
+/* v15 item 1: Small / Large text size — toggled by adding one of these classes to <body>.
+   Kept deliberately modest (±10%) so nothing overflows its box at either size. */
+body.fs-small{--fs-mult:0.9}
+body.fs-large{--fs-mult:1.1}
+/* v15 item 2: Dark mode — overrides only the neutral/page-chrome colours. All the semantic
+   accent colours (green/terracotta/yellow and their pale tints) are deliberately left untouched:
+   they're self-contained pills/badges that already carry their own background + text pairing,
+   so they stay legible and keep their meaning against a dark page exactly as they do on a light
+   one, per the "semantic colour is load-bearing" rule. */
+body.dark{
+  --bg:#161513;
+  --card:#242220;
+  --card-grey:#242220;
+  --card2:#2f2c28;
+  --border:#39362f;
+  --border2:#46423a;
+  --txt:#f2f0ec;
+  --txt2:#b7b2a8;
+  --txt3:#84806f;
+}
+/* ── FONT: Nunito replaces system-ui throughout ── */
+body{background:var(--bg);min-height:100vh;font-family:'Nunito',system-ui,-apple-system,sans-serif;overflow-x:hidden;transition:background .25s ease}
+button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-serif}
+.wrap{max-width:420px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;background:var(--bg);transition:background .25s ease}
+
+/* HEADER */
+/* HEADER — no border, clean white */
+/* v14.9 item 5: fixed to the top of the viewport (same centering trick as .bnav below) so it
+   never scrolls away, regardless of page content height. .scroll gets a matching padding-top,
+   set precisely by JS (see positionScrollForFixedHeader) since the header's exact height can
+   vary slightly by content/font-load. */
+.hdr{padding:14px 16px 10px;background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;z-index:45}
+/* v15 item 5: groups the streak pill and the new refill pill together on the header's left side */
+.hdr-left{display:flex;align-items:center;gap:8px}
+/* Profile button — circle with user icon */
+.prof-btn{width:36px;height:36px;border-radius:50%;background:var(--card);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0}
+#prof-btn-icon{width:18px;height:18px;stroke:var(--txt3)}
+.prof-btn:active{background:var(--GL2)}
+/* Streak pill — header left. v14.5: single unified badge (flame + number) */
+.streak-pill{display:flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;background:var(--card-grey);color:var(--txt);transition:background .3s,color .3s;font-family:'Nunito',system-ui,sans-serif}
+.streak-pill svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.streak-badge{font-size:calc(13px * var(--fs-mult));font-weight:800;color:currentColor;display:inline-block}
+/* One of the two modes done today — green */
+.streak-pill.one{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+/* Both modes done today — yellow */
+.streak-pill.both{background:var(--YL);color:#000;box-shadow:0 2px 0 #c49030}
+/* Light-up animation — fires once, the moment the second mode completes */
+@keyframes streakPillLightUp{0%{transform:scale(1);filter:brightness(1)}40%{transform:scale(1.2);filter:brightness(1.35) drop-shadow(0 0 8px rgba(255,209,102,.85))}100%{transform:scale(1);filter:brightness(1)}}
+.streak-pill.lightup{animation:streakPillLightUp .4s ease}
+/* v15 item 5: refill (streak restore) pill — sits next to the streak pill. Shows "1" with a
+   light-green background + shadow when a restore is still available for the current streak;
+   shows "0" with a plain beige background and no shadow once it's been used (or before any
+   streak has started). Mirrors the existing .dc.gr / .sc.gr "light green + shadow" pattern. */
+.refill-pill{display:flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;background:var(--card-grey);color:var(--txt);transition:background .3s,box-shadow .3s;font-family:'Nunito',system-ui,sans-serif}
+.refill-pill svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.refill-pill .streak-badge{font-size:calc(13px * var(--fs-mult));font-weight:800;color:currentColor}
+.refill-pill.avail{background:var(--GL2);color:var(--GDK);box-shadow:0 2px 0 #a8d8cc}
+@keyframes streakNumberRoll{0%{transform:translateY(0)}40%{transform:translateY(-55%)}41%{transform:translateY(55%)}100%{transform:translateY(0)}}
+.streak-badge.rolling{animation:streakNumberRoll .4s ease}
+
+/* SCROLL AREA */
+/* v14.9 item 5: padding-top is a fallback estimate matching the header's typical rendered height;
+   positionScrollForFixedHeader() below overwrites this with the exact measured height on load/resize */
+.scroll{flex:1;overflow-y:auto;padding-bottom:80px;padding-top:62px;position:relative;overflow-x:hidden}
+/* v14.9 item 6: swipe-to-switch-tabs — the outgoing/incoming .scr screens are briefly taken out
+   of normal flow and animated with a transform while this class is present */
+.scr.swiping{position:absolute;top:0;left:0;width:100%}
+
+/* BOTTOM NAV */
+/* BOTTOM NAV — white background, no top border, tabs use rounded square for selected state */
+/* v14.9 item 7: bottom padding increased 10px→20px for breathing room below the pills;
+   .scroll's padding-bottom (80px, up from 70px) was bumped to match in the same session */
+.bnav{display:flex;background:var(--bg);border-top:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;z-index:40;padding:6px 8px 20px;gap:4px}
+/* v14.8 item 9: shared pill that slides between tabs — sits behind the buttons (negative z-index,
+   contained within .bnav's own stacking context since .bnav is position:fixed) so the static .nb
+   buttons always paint on top of it. Position/size are set by JS (positionNavIndicator) to match
+   whichever button is currently .on. */
+.nb-indicator{position:absolute;z-index:-1;background:var(--NAV);box-shadow:0 2px 0 #c49030;border-radius:999px;transition:left .25s cubic-bezier(.4,0,.2,1)}
+/* Nav button — grey by default */.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:8px 6px 9px;color:var(--txt3);font-size:calc(10px * var(--fs-mult));font-weight:700;letter-spacing:.01em;transition:all .15s;border-radius:999px}
+.nb svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* Selected nav tab — text+icon colour only; the yellow pill background now lives on the shared sliding indicator (item 9) */.nb.on{color:var(--NAVT)}
+/* v14.7 item 4: urgency colour — Challenge/Braining tab icon+label turn terracotta while that mode
+   is not yet completed today, whether or not the tab is currently selected. Placed after .nb.on so
+   it wins the tie on specificity (both are 2-class selectors) when a tab is both selected and urgent. */
+.nb.urgent{color:var(--TC)}
+
+/* SCREENS */
+.scr{display:none}.scr.on{display:block}
+
+/* DIFFICULTY CHIPS */
+.drow{display:flex;gap:6px;padding:12px 16px 8px}
+/* Difficulty chips — no border, neutral grey by default */.dc{flex:1;padding:9px 4px;text-align:center;font-size:calc(12px * var(--fs-mult));font-weight:700;border-radius:22px;border:none;cursor:pointer;color:var(--txt3);background:var(--card);transition:all .15s;user-select:none}
+/* Selected diff chip — not done today: light terracotta + shadow */.dc.tc{background:var(--TCL);color:#000;box-shadow:0 2px 0 #d4b0a4}
+/* Selected diff chip — done today: light green + shadow */.dc.gr{background:var(--GL2);color:#000;box-shadow:0 2px 0 #a8d8cc}
+/* v14.7 item 8: slow, visible colour morph (not the usual snappy .15s) — applied only briefly
+   right after returning to the home screen following a just-completed session */
+.dc.morph-slow{transition:background .5s ease,color .5s ease,box-shadow .5s ease}
+
+/* STATS */
+.srow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 16px 10px}
+/* Stat box base — #f5f7f2, no border */.sc{background:var(--card-grey);border-radius:var(--rs);padding:12px 6px;text-align:center;cursor:pointer;transition:all .15s}
+/* Stat box done states: .gr = light green (most stats), .yl = yellow (streak only) */.sc.gr{background:var(--GL2);box-shadow:0 2px 0 #a8d8cc}.sc.yl{background:var(--YL);box-shadow:0 2px 0 #c49030}
+/* Stat number — grey by default (not done state) */.sn{font-size:calc(20px * var(--fs-mult));font-weight:900;color:var(--txt3);line-height:1}
+/* Stat number colour when done: black for all */.sn.gr{color:#000}.sn.yl{color:#000}
+.sl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px;font-weight:700}
+.sl.gr{color:#000}.sl.yl{color:#000}
+
+/* CHART */
+/* Chart card — no border */.cw{margin:0 16px 12px;border-radius:var(--r);padding:12px 14px;background:var(--card)}
+/* v14.9 item 2: Trick of the day — yellow (with shadow) before it's tapped today, light green
+   (with shadow) once tapped today. The .viewed class is toggled in updateTrickOfDayCard(). */
+.totd-card{margin:0 16px 12px;border-radius:var(--r);padding:12px 14px;cursor:pointer;background:var(--YL);box-shadow:0 2px 0 #c49030;transition:background .3s,box-shadow .3s}
+.totd-card.viewed{background:var(--GL2);box-shadow:0 2px 0 #a8d8cc}
+.totd-top{display:flex;align-items:center;gap:6px;font-size:calc(11px * var(--fs-mult));font-weight:700;color:var(--YLT)}
+.totd-card.viewed .totd-top{color:var(--GDK)}
+.totd-icon{width:16px;height:16px;flex-shrink:0;display:flex}
+.totd-icon svg{width:16px;height:16px;stroke:var(--YLT);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.totd-card.viewed .totd-icon svg{stroke:var(--GDK)}
+.totd-name{font-size:calc(14px * var(--fs-mult));font-weight:800;color:#000;margin-top:4px}
+/* v14.9 item 2: today's featured trick in the Tricks tab list — yellow with shadow, folded or expanded */
+.ti.totd{background:var(--YL);box-shadow:0 2px 0 #c49030}
+.cl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.cl button{background:none;border:none;cursor:pointer;font-size:calc(11px * var(--fs-mult));color:var(--G);display:flex;align-items:center;gap:3px;font-weight:700}
+.spk{width:100%;height:72px;display:block;overflow:visible}
+
+/* INFO POPUP */
+.ip{display:none;margin:0 16px 12px;background:var(--GL2);border-radius:var(--r);padding:12px 14px}
+.ip.on{display:block}
+
+/* START BTN */
+/* Main CTA button — no border, rounded */.sbtn{display:block;margin:0 16px;width:calc(100% - 32px);padding:15px;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;text-align:center;transition:all .15s}
+.sbtn.tc{background:var(--TC);color:#fff;box-shadow:0 3px 0 var(--TCB)}
+.sbtn.gr{background:var(--G);color:#fff;box-shadow:0 3px 0 var(--GD)}
+.sbtn:active{transform:translateY(2px);box-shadow:none}
+/* v14.5 item 3: non-tappable midnight countdown, replaces the button once today's mode is done */
+.sbtn.timer{background:var(--card-grey);color:var(--txt3);box-shadow:none;cursor:default}
+.sbtn.timer:active{transform:none;box-shadow:none}
+@keyframes btnShrinkMorph{0%{transform:scaleY(1)}50%{transform:scaleY(.15)}100%{transform:scaleY(1)}}
+.sbtn.morph{animation:btnShrinkMorph .5s ease;transform-origin:center}
+.albl{text-align:center;margin-top:4px;font-size:calc(11px * var(--fs-mult));color:var(--txt3)}
+
+/* PRACTICE */
+.pscr{padding:0 16px 12px}
+/* Practice section headings — black, uppercase */.sh{font-size:calc(10px * var(--fs-mult));font-weight:800;color:var(--txt);letter-spacing:.08em;padding:14px 0 6px;text-transform:uppercase}
+.sr{padding:4px 0 10px}
+.ssub{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-bottom:6px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+/* Chips — no border; inactive grey bg, active green bg */.chip{padding:7px 14px;border-radius:20px;font-size:calc(12px * var(--fs-mult));font-weight:700;border:none;cursor:pointer;color:var(--txt3);background:var(--card);transition:all .15s;user-select:none}
+.chip.on{background:var(--GL2);color:var(--GDK);box-shadow:0 2px 0 #a8d8cc;transform:translateY(0)}.chip.on:active{transform:translateY(1px);box-shadow:none}
+.sinl{display:flex;align-items:center;justify-content:space-between;padding:10px 0}
+.slbl{font-size:calc(13px * var(--fs-mult));font-weight:700;color:var(--txt)}
+.tog{position:relative;width:38px;height:22px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tsl{position:absolute;inset:0;background:var(--border2);border-radius:11px;transition:.2s;cursor:pointer}
+.tsl:before{content:"";position:absolute;width:18px;height:18px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.tog input:checked+.tsl{background:var(--G)}
+.tog input:checked+.tsl:before{transform:translateX(16px)}
+/* Mode selector v14.3 — styled like difficulty chips */.msel{display:flex;gap:6px;padding:0 0 8px;margin-bottom:2px}
+.mb{flex:1;padding:9px 4px;text-align:center;font-size:calc(12px * var(--fs-mult));font-weight:700;cursor:pointer;background:var(--card);color:var(--txt3);border:none;border-radius:22px;transition:all .15s;user-select:none}
+.mb.on{background:var(--GL2);color:#000;box-shadow:0 2px 0 #a8d8cc}.mb.on:active{transform:translateY(1px);box-shadow:none}.mb:active{transform:translateY(1px)}
+.msub{display:none;padding:4px 0 8px}.msub.on{display:block}
+.scrow{display:flex;align-items:center;justify-content:space-between;padding:4px 0}
+.scrow span{font-size:calc(13px * var(--fs-mult));color:var(--txt);font-weight:600}
+.scbtn{background:var(--card);border:none;border-radius:50%;width:32px;height:32px;font-size:calc(18px * var(--fs-mult));cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--txt);transition:all .15s;font-weight:700;line-height:1}
+.scbtn:active{background:var(--GL2)}
+.sprac{padding:8px 0 90px}
+.sprac button{width:100%;padding:15px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 3px 0 var(--GD)}
+
+/* COUNTDOWN */
+/* Countdown screen — numbers shown as coloured rounded squares */.cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;gap:20px}
+/* Countdown number box */.cdn{font-size:calc(52px * var(--fs-mult));font-weight:900;color:#fff;line-height:1;width:90px;height:90px;border-radius:22px;display:flex;align-items:center;justify-content:center}
+/* Go! box — primary green */.cdgo{font-size:calc(38px * var(--fs-mult));font-weight:900;color:#fff;background:var(--G);width:180px;height:90px;border-radius:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 var(--GD)}
+.cdd{font-size:calc(12px * var(--fs-mult));color:var(--txt3);font-weight:600}
+@keyframes pop{0%{transform:scale(1.4) rotate(-15deg);opacity:.3}100%{transform:scale(1) rotate(0deg);opacity:1}}
+.cdn{animation:pop .4s ease}
+
+/* GAME */
+.gpad{padding:14px 16px 4px}
+.gtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+/* Timer circle — no border, card bg */.tc2{width:62px;height:62px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:background .3s}
+.tn{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1}
+.ts{font-size:calc(9px * var(--fs-mult));color:var(--txt3);font-weight:500}
+.tc2.urg{background:var(--TCL)}.tc2.urg .tn{color:var(--TC)}
+.scd{text-align:right}
+.sc-yest{display:none;font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:700;margin-bottom:2px}
+.sc-yest.show{display:block}
+/* v14.8 item 5: "Today: X" reference — shown during practice when today's real trial is already done */
+.sc-today{display:none;font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:700;margin-bottom:2px}
+.sc-today.show{display:block}
+.sb{font-size:calc(34px * var(--fs-mult));font-weight:900;color:var(--txt);line-height:1}
+.sbs{font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:500}
+.pw{height:5px;background:var(--card);border-radius:3px;margin-bottom:14px}
+.pb{height:5px;background:var(--G);border-radius:3px;transition:width 1s linear,background .3s}
+.qc{background:var(--card);border-radius:var(--r);padding:18px 16px;text-align:center;margin-bottom:8px;transition:background .15s}
+.qc.fok{background:var(--GL)}
+.ob{font-size:calc(11px * var(--fs-mult));background:var(--GL2);color:var(--GDK);padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;font-weight:600}
+.qt{font-size:calc(27px * var(--fs-mult));font-weight:900;color:var(--txt);word-break:break-word;line-height:1.3}
+.fb{text-align:center;font-size:calc(12px * var(--fs-mult));color:var(--txt3);height:18px;margin-bottom:6px;font-weight:600}
+.fb.ok{color:var(--GDK)}.fb.bad{color:#a32d2d}
+/* Answer input — no border, card bg */.ai{width:100%;padding:11px;font-size:calc(22px * var(--fs-mult));text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:8px;outline:none;transition:all .15s;caret-color:transparent}
+.ai:focus{box-shadow:none;background:var(--GL2)}
+.ai.ok{background:var(--GL2);color:var(--GDK)}
+.ai.bad{background:#fcebeb;color:#c0654a}
+.np{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:6px}
+/* Keypad — number keys light mint */.k{padding:13px;background:var(--GL2);border:none;border-radius:var(--rs);font-size:calc(17px * var(--fs-mult));font-weight:800;color:#000;cursor:pointer;text-align:center;transition:all .1s;user-select:none;box-shadow:0 2px 0 #a8d8cc}
+.k:active{transform:translateY(1px);box-shadow:none}
+/* Special keys — +/- and decimal: muted grey */.k.spec{font-size:calc(13px * var(--fs-mult));color:var(--txt2);font-weight:600;background:var(--card);box-shadow:0 2px 0 var(--border2)}
+/* Delete key — light terracotta */.k.spec-del{background:var(--TCL);color:var(--TC);box-shadow:0 2px 0 #d4b0a4}
+.k.go{background:var(--G);color:#fff;border:none;font-size:calc(14px * var(--fs-mult));font-weight:800;box-shadow:0 3px 0 var(--GD)}
+.k.go:active{background:var(--GD);transform:translateY(2px);box-shadow:none}
+/* Quit button — terracotta */.qbtn{width:38px;height:38px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;box-shadow:0 2px 0 #d4b0a4}
+.qbtn:active{transform:scale(.9)}
+.qbtn svg{width:18px;height:18px;stroke:var(--TC);fill:none;stroke-width:2.5;stroke-linecap:round}
+
+/* RESULT */
+.rscr{padding:20px 16px}
+.rh{text-align:center;padding:16px 0 12px}
+.rsco{font-size:calc(56px * var(--fs-mult));font-weight:900;line-height:1;color:var(--txt)}
+.rl{font-size:calc(12px * var(--fs-mult));color:var(--txt3);margin-top:4px;font-weight:500}
+.rsub{font-size:calc(12px * var(--fs-mult));color:var(--txt2);margin-top:6px;font-weight:600}
+.rcds{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.rcd{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center;transition:background .3s,box-shadow .3s}
+.rcn{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt)}.rcl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px;font-weight:500}
+/* v14.9 item 3: personal-best celebration — stat boxes turn yellow with shadow instead of the
+   old full-screen header/nav wash */
+.rcd.celebrate{background:var(--YL);box-shadow:0 2px 0 #c49030}
+.abtn{width:100%;padding:14px;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:700;cursor:pointer;margin-bottom:8px;background:var(--G);color:#fff;box-shadow:0 3px 0 var(--GD)}
+/* v14.9 item 9: "Complete streak" call-to-action — yellow with shadow, shown only when the other
+   mode still needs to be done today to extend the streak */
+.complete-streak-btn{display:none;width:100%;padding:14px;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;margin-bottom:8px;background:var(--YL);color:#000;box-shadow:0 3px 0 #c49030}
+.complete-streak-btn:active{transform:translateY(2px);box-shadow:none}
+.bbtn{width:100%;padding:11px;background:var(--card);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));cursor:pointer;font-weight:700}
+
+/* TRICKS */
+.tscr{padding:0 16px 80px}
+.tg{margin-bottom:8px}
+.tgh{font-size:calc(12px * var(--fs-mult));font-weight:800;color:var(--txt);padding:12px 0 6px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.06em}
+.tg-sym{background:var(--G);color:#fff;font-size:calc(12px * var(--fs-mult));font-weight:800;padding:2px 9px;border-radius:20px;text-transform:none;letter-spacing:0;line-height:1.6;flex-shrink:0;box-shadow:0 2px 0 var(--GD)}
+.ti{background:var(--card);border-radius:var(--rs);margin-bottom:6px;overflow:hidden}
+.tn2{padding:13px 14px;font-size:calc(13px * var(--fs-mult));font-weight:600;color:var(--txt);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}
+.arr{font-size:calc(10px * var(--fs-mult));color:var(--txt3);transition:transform .2s;display:inline-block}
+.ti.on .arr{transform:rotate(90deg)}
+.tb{display:none;padding:0 14px 14px}
+.ti.on .tb{display:block}
+.tex{font-size:calc(12px * var(--fs-mult));color:var(--txt2);line-height:1.65;margin-bottom:10px}
+
+/* TRICK EXAMPLE STEPS - new centered step layout */
+.teg-wrap{background:var(--GL2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;box-shadow:0 2px 0 #a8d8cc}
+.teg-title{font-size:calc(10px * var(--fs-mult));font-weight:700;color:var(--GDK);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+.teg-steps{display:flex;flex-direction:column;gap:4px}
+.teg-step{text-align:center;font-size:calc(13px * var(--fs-mult));font-weight:600;color:var(--GDK);padding:3px 0}
+.teg-step.arrow{font-size:calc(11px * var(--fs-mult));color:var(--txt3);font-weight:400}
+.teg-step.final{color:var(--GDK);font-size:calc(14px * var(--fs-mult));font-weight:800}
+
+.tpb{padding:8px 16px;background:var(--G);color:#fff;border:none;border-radius:20px;font-size:calc(12px * var(--fs-mult));font-weight:700;cursor:pointer;box-shadow:0 2px 0 var(--GD)}.tpb:active{transform:translateY(1px);box-shadow:none}
+
+/* TRICK GAME */
+.tgpad{padding:14px 16px 4px}
+.tgtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+/* v14.9 item 12: solved counter moved out of the top row (was colliding with title/close on
+   narrow screens) — now centered directly above the equation box */
+.tg-solved-row{text-align:center;margin-bottom:12px}
+.tg-solved-n{font-size:calc(22px * var(--fs-mult));font-weight:900;color:var(--txt);line-height:1}
+.tg-solved-l{font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:500;margin-top:2px}
+.ttl{font-size:calc(13px * var(--fs-mult));font-weight:700;color:var(--GDK);background:var(--GL2);padding:5px 14px;border-radius:20px;flex:1;margin-right:8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 0 #a8d8cc}
+
+/* MODALS */
+.mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
+/* v14.9 item 8: edit-name-mdl can be opened while the profile sheet (z-index 200) is still open
+   behind it — this ID-specific override raises just this modal above the sheet so it's no longer
+   hidden underneath the sheet's dim background. Scoped to this one element only, so it doesn't
+   change stacking for reset-mdl/info-mdl/quit-mdl/streak-restore-mdl, none of which ever open
+   while the profile sheet is still showing. */
+#edit-name-mdl{z-index:250}
+.mbg.on{display:flex}
+.mdl{background:var(--bg);border-radius:var(--r);padding:20px;width:300px;max-width:90vw}
+.mdl h3{font-size:calc(16px * var(--fs-mult));font-weight:800;margin-bottom:10px;color:var(--txt)}
+.mdl p{font-size:calc(13px * var(--fs-mult));color:var(--txt2);margin-bottom:6px;line-height:1.65}
+.mclose{width:100%;margin-top:12px;padding:10px;background:var(--G);color:#fff;border:none;border-radius:var(--rs);cursor:pointer;font-size:calc(13px * var(--fs-mult));font-weight:700}
+.mbtns{display:flex;gap:8px;margin-top:12px}
+.mbtns button{flex:1;padding:11px;border:none;border-radius:var(--rs);cursor:pointer;font-size:calc(13px * var(--fs-mult));font-weight:700}
+.mcancel{background:var(--border);color:var(--txt2)}
+.mquit{background:var(--TC);color:#fff}
+
+/* v14.5 item 5: streak restore modal — yellow-tinted card, reuses .mbg for the dim centered overlay */
+.restore-card{background:#fff6df;border-radius:var(--r);padding:20px;width:300px;max-width:90vw}
+.restore-card h3{font-size:calc(16px * var(--fs-mult));font-weight:900;margin-bottom:10px;color:#000}
+.restore-card p{font-size:calc(13px * var(--fs-mult));color:var(--txt2);margin-bottom:14px;line-height:1.6}
+.restore-btns{display:flex;gap:8px}
+.restore-btn{flex:1;padding:12px;border:none;border-radius:var(--rs);cursor:pointer;font-size:calc(13px * var(--fs-mult));font-weight:800;transition:all .15s;text-align:center}
+.restore-btn.grn{background:var(--G);color:#fff;box-shadow:0 3px 0 var(--GD)}
+.restore-btn.grn:active{transform:translateY(2px);box-shadow:none}
+.restore-btn.grn.disabled{background:#d8d8d8!important;color:#999!important;box-shadow:none!important;cursor:default}
+.restore-btn.red{background:var(--TC);color:#fff;box-shadow:0 3px 0 var(--TCB)}
+.restore-btn.red:active{transform:translateY(2px);box-shadow:none}
+
+/* ── BRAINING ──────────────────────────────────────────── */
+/* v14.8 item 8: top padding approximates the gap Challenge gets "for free" from its difficulty-
+   chip row (.drow: 12px+8px padding around a ~32px chip = ~52px) sitting above its stat boxes —
+   Braining has no equivalent row, so without this its stats sat right against the header.
+   This is an estimate rather than a pixel-measured match — nudge it if it looks off on your phone. */
+.br-home{padding:12px 16px 90px}
+/* v14.8 item 2: br-home already provides 16px side padding, so the shared .totd-card's own
+   left/right margin (used to align it on the Challenge screen, which has no such parent padding)
+   would double it up here — cancel it out so the card lines up with br-chart-card/br-stats */
+.br-home .totd-card{margin-left:0;margin-right:0}
+.br-info{background:var(--card);border-radius:var(--r);padding:14px;margin-top:14px}
+.br-info-row{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.br-info-row:last-child{margin-bottom:0}
+.br-dot{width:6px;height:6px;border-radius:50%;background:var(--G);margin-top:5px;flex-shrink:0}
+.br-info-text{font-size:calc(12px * var(--fs-mult));color:var(--txt2);line-height:1.55}
+.br-info-text strong{color:var(--txt);font-weight:600}
+.br-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px}
+.br-stat{background:var(--card);border-radius:var(--rs);padding:10px 5px;text-align:center}
+.br-stat-n{font-size:calc(18px * var(--fs-mult));font-weight:800;color:var(--txt3);line-height:1}
+.br-stat-l{font-size:calc(9px * var(--fs-mult));color:var(--txt3);margin-top:3px;line-height:1.3}
+.br-chart-card{background:var(--card);border-radius:var(--r);padding:12px 14px;margin-bottom:14px}
+.br-chart-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.br-chart-lbl{font-size:calc(10px * var(--fs-mult));color:var(--txt3)}
+.br-range-row{display:flex;gap:4px}
+/* Challenge toggle wrapper — same pill shape */
+.ch-range-row{display:flex;gap:4px}
+.br-rtgl{padding:3px 10px;font-size:calc(10px * var(--fs-mult));font-weight:700;cursor:pointer;background:var(--card2);border:none;color:var(--txt3);border-radius:20px;transition:all .15s}
+/* Toggle selected — default green (done state) */
+.br-rtgl.on{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+/* Toggle selected — red state (not done today) */
+.br-rtgl.on.rd{background:var(--TCL);color:var(--TCB);box-shadow:0 2px 0 #d4b0a4}
+/* Toggle unselected — red state text */
+.br-rtgl.rd{color:var(--TC)}
+.br-rtgl.on.gn{background:var(--GL2);color:var(--GDK);box-shadow:0 2px 0 #a8d8cc}
+/* Toggle unselected — green state text */
+.br-rtgl.gn{color:var(--GD)}
+/* v14.6 item 8: Challenge's chart-card toggle needs a guaranteed visible pill vs. its beige card background */
+.ch-range-row .br-rtgl:not(.on){background:var(--card2)}
+/* v14.7 item 8: slow, visible colour morph — same treatment as .dc.morph-slow, for Braining's equivalent indicators */
+.br-rtgl.morph-slow{transition:background .5s ease,color .5s ease,box-shadow .5s ease}
+.br-ctab.morph-slow{transition:background .5s ease,color .5s ease,box-shadow .5s ease}
+/* v14.3 — braining chart tab: individual pills */.br-ctabs{display:flex;gap:4px;margin-bottom:8px}
+.br-ctab{flex:1;padding:6px 4px;text-align:center;font-size:calc(12px * var(--fs-mult));font-weight:700;cursor:pointer;background:var(--card2);border:none;color:var(--txt3);border-radius:20px;transition:all .15s}
+.br-ctab.on{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+/* Chart tab selected — red state (not done today) */
+.br-ctab.on.rd{background:var(--TCL);color:var(--TCB);box-shadow:0 2px 0 #d4b0a4}
+/* Chart tab unselected — red state text */
+.br-ctab.rd{color:var(--TC)}
+.br-ctab.on.gn{background:var(--GL2);color:var(--GDK);box-shadow:0 2px 0 #a8d8cc}
+/* Chart tab unselected — green state text. v14.8 item 3: background was "transparent" here,
+   which let the card's beige colour show through once the mode was done for the day. Removed so
+   it falls back to .br-ctab's own solid white background, matching the 7d/30d pills exactly. */
+.br-ctab.gn{color:var(--GD)}
+.br-spk{width:100%;height:68px;display:block;overflow:visible}
+.br-btn-g{width:100%;padding:14px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:700;cursor:pointer;margin-bottom:10px;transition:background .15s;box-shadow:0 3px 0 var(--GD)}
+.br-btn-g:active{background:var(--GD);transform:translateY(2px);box-shadow:none}
+.br-btn-grey{width:100%;padding:13px;background:var(--card);color:var(--txt3);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-bottom:8px;transition:background .15s}
+.br-btn-grey:active{background:var(--GL2)}
+.br-btn-out{width:100%;padding:11px;background:var(--card);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer}
+.br-lbl{text-align:center;font-size:calc(11px * var(--fs-mult));color:var(--txt3);min-height:16px;margin-top:2px}
+/* Countdown */
+.br-cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:78vh;gap:20px;padding:20px}
+/* v14.8 item 1: .br-cdn/.br-cdgo removed — Braining's countdown markup now uses the shared
+   .cdn/.cdgo classes (defined near the Challenge countdown, above) so both modes look identical */
+.br-cdsub{font-size:calc(13px * var(--fs-mult));color:var(--txt3);margin-top:8px}
+.br-cdmode{font-size:calc(12px * var(--fs-mult));background:#f0f0f0;color:#888;padding:4px 14px;border-radius:20px;font-weight:600;margin-top:6px}
+/* Game */
+.br-gpad{padding:14px 16px 4px}
+.br-gtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.br-tc{width:64px;height:64px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
+.br-lasttime{display:none;font-size:calc(8px * var(--fs-mult));color:var(--txt3);font-weight:700;margin-bottom:1px}
+.br-lasttime.show{display:block}
+/* v14.8 item 5: "Today: X" reference — shown during Braining practice when today's real trial is already done */
+.br-todaytime{display:none;font-size:calc(8px * var(--fs-mult));color:var(--txt3);font-weight:700;margin-bottom:1px}
+.br-todaytime.show{display:block}
+.br-tn{font-size:calc(17px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1;font-variant-numeric:tabular-nums}
+.br-ts{font-size:calc(9px * var(--fs-mult));color:var(--txt3);margin-top:2px}
+.br-prog{text-align:center}
+.br-pn{font-size:calc(28px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1}
+.br-pl{font-size:calc(11px * var(--fs-mult));color:var(--txt3)}
+/* v14.9 item 11: restyled to match .qbtn — light terracotta background + shadow, terracotta icon */
+.br-qbtn{width:38px;height:38px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #d4b0a4;transition:all .15s}
+.br-qbtn svg{width:16px;height:16px;stroke:var(--TC);fill:none;stroke-width:2.5;stroke-linecap:round}
+.br-qbtn:active{transform:scale(.9)}
+.br-pw{height:4px;background:var(--card);border-radius:2px;margin-bottom:14px}
+.br-pb{height:4px;background:var(--G);border-radius:2px;transition:width .25s}
+.br-pbadge{text-align:center;margin-bottom:8px}
+.br-pbadge span{font-size:calc(11px * var(--fs-mult));font-weight:600;background:#f0f0f0;color:#888;padding:3px 12px;border-radius:20px}
+.br-qc{background:var(--card);border-radius:var(--r);padding:18px 16px;text-align:center;margin-bottom:8px;transition:background .12s,border-color .12s}
+.br-qc.ok{background:var(--GL2)}
+.br-qc.bad{background:#fcebeb}
+.br-ob{font-size:calc(11px * var(--fs-mult));font-weight:600;color:var(--GDK);background:var(--GL2);padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:10px}
+.br-qt{font-size:calc(28px * var(--fs-mult));font-weight:800;color:var(--txt);word-break:break-word;line-height:1.25}
+.br-hint{font-size:calc(12px * var(--fs-mult));color:var(--txt3);margin-top:6px;min-height:18px}
+.br-hint.bad{color:#a32d2d;font-weight:600}
+.br-ai{width:100%;padding:11px;font-size:calc(24px * var(--fs-mult));text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:10px;outline:none;caret-color:transparent}
+.br-ai:focus{box-shadow:none;background:var(--GL2)}
+.br-ai.bad{background:#fcebeb;color:#c0654a}
+/* Result */
+.br-rscr{padding:20px 16px}
+.br-rh{text-align:center;padding:14px 0 10px}
+.br-age-n{font-size:calc(82px * var(--fs-mult));font-weight:900;line-height:1;letter-spacing:-2px}
+.br-age-l{font-size:calc(12px * var(--fs-mult));color:var(--txt3);margin-top:2px}
+.br-age-sub{font-size:calc(14px * var(--fs-mult));font-weight:700;color:var(--txt);margin-top:8px}
+.br-badge-row{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+.br-badge{font-size:calc(11px * var(--fs-mult));font-weight:600;padding:3px 12px;border-radius:20px}
+.br-badge.grn{background:var(--GL2);color:var(--GDK)}
+.br-badge.gry{background:#f0f0f0;color:#888}
+.br-pr{background:var(--GL2);border:none;border-radius:var(--r);padding:12px 16px;margin:10px 0;text-align:center;display:none}
+.br-pr.on{display:block}
+.br-pr-title{font-size:calc(14px * var(--fs-mult));font-weight:700;color:var(--GDK)}
+.br-pr-sub{font-size:calc(12px * var(--fs-mult));color:var(--GD);margin-top:2px}
+.br-scale{background:var(--card);border-radius:var(--rs);padding:12px 14px;margin-bottom:14px}
+.br-scale-title{font-size:calc(10px * var(--fs-mult));font-weight:700;color:var(--txt3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+.br-srow{display:flex;align-items:center;gap:8px;padding:2px 4px;border-radius:6px}
+.br-srow.cur{background:var(--GL2)}
+.br-sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.br-srange{font-size:calc(11px * var(--fs-mult));color:var(--txt2);flex:1}
+.br-sage{font-size:calc(12px * var(--fs-mult));font-weight:700}
+.br-rcds{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}
+.br-rcd{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center;transition:background .3s,box-shadow .3s}
+.br-rcn{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt)}
+.br-rcl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px}
+.br-rcd.celebrate{background:var(--YL);box-shadow:0 2px 0 #c49030}
+/* Quit modal (Braining) */
+.br-mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center}
+.br-mbg.on{display:flex}
+.br-mdl{background:var(--bg);border-radius:var(--r);padding:20px;width:300px;max-width:88vw}
+.br-mdl h3{font-size:calc(16px * var(--fs-mult));font-weight:800;margin-bottom:8px;color:var(--txt)}
+.br-mdl p{font-size:calc(13px * var(--fs-mult));color:var(--txt2);line-height:1.6;margin-bottom:4px}
+.br-warn{font-size:calc(12px * var(--fs-mult));color:var(--TC);font-weight:600;margin-top:6px;padding:8px 10px;background:var(--TCL);border-radius:8px;border:none}
+.br-mbtns{display:flex;gap:8px;margin-top:14px}
+.br-mbtns button{flex:1;padding:11px;border:none;border-radius:var(--rs);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer}
+.br-mcancel{background:var(--border);color:var(--txt2)}
+.br-mquit{background:var(--TC);color:#fff}
+@keyframes brPopIn{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+
+/* ── ONBOARDING ───────────────────────────────────────── */
+.ob-screen{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:48px 28px 32px;text-align:center;overflow-y:auto}
+.ob-screen.hidden{display:none}
+.ob-logo{font-size:calc(42px * var(--fs-mult));font-weight:900;color:var(--txt);letter-spacing:-1px;margin-bottom:6px}
+.ob-logo span{color:var(--G)}
+/* v14.9 item 1: text wordmark badge, replaces the old embedded logo image */
+.ob-wordmark{display:inline-block;background:var(--G);color:#fff;font-size:calc(34px * var(--fs-mult));font-weight:900;padding:14px 30px;border-radius:22px;margin-bottom:14px;box-shadow:0 3px 0 var(--GD);letter-spacing:.01em}
+.ob-tagline{font-size:calc(13px * var(--fs-mult));color:var(--txt3);font-weight:600;margin-bottom:40px}
+.ob-label{font-size:calc(13px * var(--fs-mult));font-weight:800;color:var(--txt);margin-bottom:8px;text-align:left;width:100%;max-width:320px;letter-spacing:.04em;text-transform:uppercase}
+.ob-input{width:100%;max-width:320px;padding:14px 16px;font-size:calc(16px * var(--fs-mult));font-weight:700;border:none;border-radius:var(--r);background:var(--card);color:var(--txt);outline:none;margin-bottom:10px;text-align:center}
+.ob-input:focus{background:var(--GL2)}
+.ob-hint{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-bottom:28px;max-width:280px}
+.ob-btn{width:100%;max-width:320px;padding:15px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer}
+.ob-login-btn{width:100%;max-width:300px;padding:13px 20px;background:var(--YL);color:var(--YLT);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 3px 0 #c49030;margin-bottom:22px}
+.ob-login-btn:active{transform:translateY(2px);box-shadow:none}
+.ob-btn:active{background:var(--GD)}
+.ob-btn:disabled{background:var(--border2);color:var(--txt3);cursor:not-allowed}
+
+/* ── v14.9 item 13: ONBOARDING TUTORIAL ───────────────────
+   A dimmed scrim over the real (already-rendered) home screen for each mode, with a bottom-sheet
+   style card explaining that mode. Skip/Next always available. Shown once, ever, right after a
+   brand-new username is created. */
+.tut-overlay{display:none;position:fixed;inset:0;z-index:480;align-items:flex-end;justify-content:center}
+.tut-overlay.on{display:flex}
+.tut-scrim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.tut-card{position:relative;width:100%;max-width:420px;background:var(--card2);border-radius:20px 20px 0 0;padding:22px 22px 26px;box-shadow:0 -4px 24px rgba(0,0,0,.18)}
+.tut-card.show{animation:tutCardIn .3s ease}
+@keyframes tutCardIn{0%{transform:translateY(30px);opacity:0}100%{transform:translateY(0);opacity:1}}
+.tut-step{font-size:calc(11px * var(--fs-mult));font-weight:800;color:var(--txt3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+.tut-title{font-size:calc(19px * var(--fs-mult));font-weight:900;color:var(--txt);margin-bottom:8px}
+.tut-desc{font-size:calc(14px * var(--fs-mult));color:var(--txt2);line-height:1.55;margin-bottom:18px}
+.tut-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tut-skip{background:none;border:none;color:var(--txt3);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;padding:10px 4px}
+.tut-next{flex:1;background:var(--G);color:#fff;border:none;border-radius:var(--r);padding:13px;font-size:calc(14px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 3px 0 var(--GD)}
+.tut-next:active{background:var(--GD);transform:translateY(2px);box-shadow:none}
+@keyframes obFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.ob-screen > *{animation:obFadeIn .4s ease both}
+.ob-screen > *:nth-child(1){animation-delay:.05s}
+.ob-screen > *:nth-child(2){animation-delay:.1s}
+.ob-screen > *:nth-child(3){animation-delay:.15s}
+.ob-screen > *:nth-child(4){animation-delay:.2s}
+.ob-screen > *:nth-child(5){animation-delay:.25s}
+.ob-screen > *:nth-child(6){animation-delay:.3s}
+
+/* ── PROFILE SHEET ────────────────────────────────────── */
+/* v15 item 4: was a bottom sheet (align-items:flex-end); now pins near the top, just below the
+   fixed header, and slides DOWN into place instead of up. openProfile() sets the sheet's exact
+   margin-top/max-height in JS (same header-height-measuring trick already used for .scroll),
+   so it always sits flush under the header regardless of text-size setting. */
+.sheet-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;align-items:flex-start;justify-content:center}
+.sheet-bg.on{display:flex}
+.sheet{background:var(--bg);border-radius:22px;width:100%;max-width:420px;overflow-y:auto;padding:0 0 32px}
+@keyframes sheetSlideDown{0%{transform:translateY(-24px);opacity:0}100%{transform:translateY(0);opacity:1}}
+.sheet-bg.on .sheet{animation:sheetSlideDown .25s ease}
+.sheet-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:12px auto 0}
+.sheet-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 10px}
+.sheet-title{font-size:calc(17px * var(--fs-mult));font-weight:900;color:var(--txt)}
+/* v14.9 item 11: close buttons restyled app-wide — light red/terracotta background with shadow,
+   terracotta "X", matching the style already used by .qbtn (Challenge/Trick game close buttons) */
+.sheet-close{width:30px;height:30px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:calc(16px * var(--fs-mult));color:var(--TC);box-shadow:0 2px 0 #d4b0a4;transition:all .15s}
+.sheet-close:active{transform:scale(.9)}
+.sheet-body{padding:0 20px}
+.prof-name-row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px}
+.prof-avatar{width:44px;height:44px;border-radius:50%;background:var(--GL2);display:flex;align-items:center;justify-content:center;font-size:calc(18px * var(--fs-mult));font-weight:900;color:var(--GDK);flex-shrink:0}
+.prof-name-info{flex:1}
+.prof-username{font-size:calc(16px * var(--fs-mult));font-weight:800;color:var(--txt)}
+.prof-sublabel{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-top:1px}
+.prof-edit-btn{background:none;border:none;cursor:pointer;font-size:calc(11px * var(--fs-mult));font-weight:700;color:var(--G)}
+.prof-section-title{font-size:calc(10px * var(--fs-mult));font-weight:800;color:var(--txt3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;margin-top:16px}
+.prof-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+
+/* v18.2: Milestones summary row in the profile sheet */
+.prof-ms-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;cursor:pointer}
+.prof-ms-pct{font-size:calc(20px * var(--fs-mult));font-weight:900;color:var(--txt)}
+.prof-ms-pct-label,.prof-ms-latest-label{font-size:calc(9.5px * var(--fs-mult));color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.prof-ms-latest-wrap{text-align:right}
+.prof-ms-latest-name{font-size:calc(13px * var(--fs-mult));font-weight:800;color:var(--txt);max-width:180px}
+
+/* v18.2: full Milestones list screen — achieved items in gold, unachieved in the normal text colour */
+.ms-list-item{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border2)}
+.ms-list-item:last-child{border-bottom:none}
+.ms-list-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--card);color:var(--txt3)}
+.ms-list-icon svg{width:16px;height:16px}
+.ms-list-item.achieved .ms-list-icon{background:var(--YL);color:var(--YLT)}
+.ms-list-name{font-size:calc(13px * var(--fs-mult));font-weight:800}
+.ms-list-item.achieved .ms-list-name{color:#c98a12}
+.ms-list-item:not(.achieved) .ms-list-name{color:var(--txt)}
+.ms-list-desc{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-top:2px;line-height:1.4}
+.prof-stat{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center}
+.prof-stat-n{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1}
+.prof-stat-l{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px}
+.prof-divider{height:1px;background:var(--border);margin:16px 0}
+.danger-btn{width:100%;padding:13px;background:#fcebeb;color:var(--TC);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:8px;box-shadow:0 3px 0 #d4b0a4}
+.danger-btn:active{transform:translateY(2px);box-shadow:none}
+.logout-btn{width:100%;padding:13px;background:var(--card-grey);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:16px;box-shadow:0 3px 0 var(--border2)}
+.logout-btn:active{transform:translateY(2px);box-shadow:none}
+.danger-btn:active{background:var(--TCL)}
+
+/* ── SETTINGS SHEET ───────────────────────────────────── */
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0}
+.set-info{}
+.set-lbl{font-size:calc(14px * var(--fs-mult));font-weight:700;color:var(--txt)}
+.set-sub{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-top:2px}
+/* v15 item 1: Small/Medium/Large segmented control — same "plain selection" green used by the
+   7d/30d chart range toggle elsewhere (.br-rtgl.on), not tied to done/urgency semantics. */
+.fs-set-row{padding:10px 0 14px}
+.fs-row{display:flex;gap:6px;margin-top:10px}
+.fs-opt{flex:1;padding:8px 4px;text-align:center;font-size:calc(12px * var(--fs-mult));font-weight:700;border-radius:12px;border:none;cursor:pointer;color:var(--txt3);background:var(--card2);transition:all .15s}
+.fs-opt.on{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+
+/* ── EDIT NAME MODAL ──────────────────────────────────── */
+.edit-mdl{background:var(--bg);border-radius:var(--r);padding:20px;width:300px;max-width:90vw}
+.edit-mdl h3{font-size:calc(15px * var(--fs-mult));font-weight:800;margin-bottom:12px;color:var(--txt)}
+.edit-mdl input{width:100%;padding:11px 14px;font-size:calc(15px * var(--fs-mult));font-weight:700;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);outline:none;margin-bottom:12px}
+.edit-mdl input:focus{background:var(--GL2)}
+.edit-mbtns{display:flex;gap:8px}
+.edit-mbtns button{flex:1;padding:11px;border:none;border-radius:var(--rs);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer}
+.edit-cancel{background:var(--card);color:var(--txt2)}
+.edit-save{background:var(--G);color:#fff}
+.br-pop{animation:brPopIn .4s ease forwards}
+@keyframes brShimmer{0%{opacity:1}50%{opacity:.65}100%{opacity:1}}
+.br-shimmer{animation:brShimmer 1.8s ease infinite}
+/* DESIGN v7: Braining stat box colour states */
+.br-stat-yl{background:var(--YL)!important;box-shadow:0 2px 0 #c49030}
+.br-stat-gl{background:var(--GL2)!important;box-shadow:0 2px 0 #a8d8cc}
+/* Braining start button — red when not done today */
+.br-btn-red{background:var(--TC)!important;box-shadow:0 3px 0 var(--TCB)!important}
+/* v14.5 item 3: non-tappable midnight countdown + shrink morph, mirrors the Challenge start button */
+.br-btn-g.timer{background:var(--card-grey)!important;color:var(--txt3)!important;box-shadow:none!important;cursor:default}
+.br-btn-g.timer:active{transform:none;box-shadow:none!important}
+.br-btn-g.morph{animation:btnShrinkMorph .5s ease;transform-origin:center}
+
+/* v14.2 — challenge practice button: light red + shadow */
+.ch-prac-btn{
+  display:block;margin:10px 16px 0;width:calc(100% - 32px);
+  padding:13px;border:none;border-radius:var(--r);
+  font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;text-align:center;
+  transition:all .15s;
+  background:var(--TCL);color:var(--TCB);
+  box-shadow:0 3px 0 rgba(138,58,37,0.35);
+}
+.ch-prac-btn:active{transform:translateY(2px);box-shadow:none;}
+/* v14.5 item 3: post-completion "Play again (not counted)" — solid green, replaces the light-red warm-up look */
+.ch-prac-btn.done{background:var(--G);color:#fff;box-shadow:0 3px 0 var(--GD)}
+/* v14.2 — braining practice button: light red + shadow (overrides br-btn-grey) */
+#br-prac-btn{
+  background:var(--TCL)!important;color:var(--TCB)!important;
+  box-shadow:0 3px 0 rgba(138,58,37,0.35)!important;
+}
+#br-prac-btn:active{transform:translateY(2px);box-shadow:none!important;}
+#br-prac-btn.done{background:var(--G)!important;color:#fff!important;box-shadow:0 3px 0 var(--GD)!important}
+@keyframes practiceMorphIn{0%{opacity:0;transform:translateY(-6px) scale(.95)}100%{opacity:1;transform:translateY(0) scale(1)}}
+.ch-prac-btn.morph-in,#br-prac-btn.morph-in{animation:practiceMorphIn .3s ease}
+
+/* ══════════════════ v14.6 SESSION 1.5b ══════════════════ */
+
+/* ── item 6: home tab switch fade ── */
+@keyframes tabFadeIn{0%{opacity:0}100%{opacity:1}}
+.tab-fade-in{animation:tabFadeIn .15s ease}
+
+/* ── item 1: milestone popup ── */
+.milestone-mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;align-items:center;justify-content:center}
+.milestone-mbg.on{display:flex}
+.milestone-card{background:#fff6df;border-radius:20px;padding:34px 26px 26px;width:290px;max-width:85vw;text-align:center;position:relative;transform:scale(0);opacity:0}
+.milestone-card.show{animation:milestonePopIn .5s cubic-bezier(.34,1.56,.64,1) forwards}
+@keyframes milestonePopIn{0%{transform:scale(0);opacity:0}60%{transform:scale(1.08);opacity:1}100%{transform:scale(1);opacity:1}}
+.milestone-glow{position:absolute;top:44px;left:50%;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,rgba(255,209,102,.9) 0%,rgba(255,209,102,0) 70%);opacity:0;transform:translate(-50%,-50%);pointer-events:none}
+.milestone-glow.pulse{animation:milestoneGlowPulse .7s ease}
+@keyframes milestoneGlowPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}40%{opacity:1;transform:translate(-50%,-50%) scale(1.3)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.6)}}
+.milestone-icon-wrap{width:60px;height:60px;margin:0 auto 16px;position:relative;z-index:1}
+.milestone-icon-wrap svg{width:100%;height:100%;stroke:var(--YLT)}
+.milestone-icon-wrap.bounce{animation:milestoneIconBounce .6s ease}
+@keyframes milestoneIconBounce{0%{transform:scale(.7) rotate(-8deg)}50%{transform:scale(1.15) rotate(6deg)}100%{transform:scale(1) rotate(0)}}
+.milestone-name{font-size:calc(18px * var(--fs-mult));font-weight:900;color:#000;margin-bottom:6px;position:relative;z-index:1}
+.milestone-desc{font-size:calc(13px * var(--fs-mult));color:var(--txt2);line-height:1.5;position:relative;z-index:1}
+
+/* ── item 2: personal best celebration ── */
+.rscr,.br-rscr{position:relative;overflow:hidden}
+/* v14.9 item 3: the header/bottom-nav/full-card yellow wash is gone — celebration is now
+   concentrated on the individual stat boxes (.rcd / .br-rcd) instead. See .rcd.celebrate below. */
+.pb-ribbon{display:none;background:#000;color:var(--YL);font-size:calc(11px * var(--fs-mult));font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:5px 16px;border-radius:20px;margin:0 auto 10px;width:fit-content}
+.pb-ribbon.show{display:block;animation:ribbonPop .4s ease}
+@keyframes ribbonPop{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.08);opacity:1}100%{transform:scale(1);opacity:1}}
+@keyframes numberPopCeleb{0%{transform:scale(1)}30%{transform:scale(1.3)}100%{transform:scale(1)}}
+.celebrate-pop{display:inline-block;animation:numberPopCeleb .5s cubic-bezier(.34,1.56,.64,1)}
+.confetti-wrap{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:5}
+@keyframes confettiFall{0%{transform:translateY(0) rotate(0deg);opacity:.95}100%{transform:translateY(340px) rotate(220deg);opacity:0}}
+
+/* ── item 3: fastest/slowest operation summary card ── */
+.op-summary-card{background:var(--card);border-radius:var(--rs);padding:11px 14px;margin:0 0 12px;text-align:center;font-size:calc(12px * var(--fs-mult));color:var(--txt2);font-weight:600;position:relative;z-index:1}
+
+/* ══════════════════ v16 SESSION 6 ══════════════════ */
+
+/* ── item 3: profile — two small edit links instead of the single "Edit" button ── */
+.prof-edit-row{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.prof-edit-row button{background:none;border:none;cursor:pointer;font-size:calc(11px * var(--fs-mult));font-weight:700;color:var(--G)}
+
+/* ── item 3: profile icon picker screen ── */
+.icon-picker-screen{display:none;position:fixed;inset:0;z-index:600;background:var(--bg);flex-direction:column;overflow-y:auto}
+.icon-picker-screen.on{display:flex}
+.ip-hdr{padding:20px 20px 4px;flex-shrink:0;text-align:center}
+.ip-title{font-size:calc(16px * var(--fs-mult));font-weight:900;color:var(--txt)}
+.ip-body{padding:8px 20px 110px;flex:1}
+.ip-preview-wrap{display:flex;justify-content:center;margin:10px 0 20px}
+.ip-preview{width:96px;height:96px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;overflow:hidden}
+.ip-preview svg{flex-shrink:0}
+.ip-size-row{max-width:240px;margin:0 auto 22px;text-align:center}
+.ip-size-row label{display:block;font-size:calc(11px * var(--fs-mult));font-weight:800;color:var(--txt3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.ip-size-row input[type=range]{width:100%;accent-color:var(--G)}
+.ip-card{background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:14px}
+.ip-tabs{display:flex;gap:6px;margin-bottom:12px}
+.ip-tab{flex:1;border:none;background:var(--bg);color:var(--txt3);font-weight:800;font-size:calc(12px * var(--fs-mult));padding:10px 0;border-radius:var(--rs);cursor:pointer;box-shadow:0 2px 0 var(--border2)}
+.ip-tab.on{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+.ip-tabc{display:none}
+.ip-tabc.on{display:block}
+.ip-letters-input{width:100%;text-align:center;font-weight:900;font-size:calc(20px * var(--fs-mult));letter-spacing:2px;padding:14px 0;border-radius:var(--rs);border:2px solid var(--border2);background:var(--bg);color:var(--txt);text-transform:uppercase;outline:none}
+.ip-letters-input:focus{border-color:var(--G)}
+.ip-sym-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.ip-icon-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}
+.ip-sym-btn,.ip-icon-btn{aspect-ratio:1;border:none;border-radius:var(--rs);background:var(--bg);box-shadow:0 2px 0 var(--border2);font-weight:900;font-size:calc(15px * var(--fs-mult));color:var(--txt);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.ip-icon-btn svg{width:20px;height:20px}
+.ip-sym-btn.on,.ip-icon-btn.on{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+.ip-swatch-row{display:flex;gap:12px;justify-content:center;padding:2px 0}
+.ip-swatch{width:40px;height:40px;border-radius:50%;border:none;cursor:pointer;box-shadow:0 2px 0 var(--border2)}
+.ip-swatch.on{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--G)}
+.ip-actions{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;display:flex;gap:10px;padding:14px 20px 26px;background:var(--bg)}
+.ip-btn{flex:1;padding:14px;border:none;border-radius:var(--r);font-size:calc(14px * var(--fs-mult));font-weight:800;cursor:pointer}
+.ip-btn.approve{background:var(--G);color:#fff;box-shadow:0 3px 0 var(--GD)}
+.ip-btn.approve:active{transform:translateY(2px);box-shadow:none}
+.ip-btn.back{background:var(--card-grey);color:var(--txt2);box-shadow:0 3px 0 var(--border2)}
+.ip-btn.back:active{transform:translateY(2px);box-shadow:none}
+
+/* v17 item 1: Terms & Conditions / Privacy Policy screen */
+.legal-screen{display:none;position:fixed;inset:0;z-index:610;background:var(--bg);flex-direction:column;overflow-y:auto}
+.legal-screen.on{display:flex}
+.legal-body h4{font-size:calc(13px * var(--fs-mult));font-weight:900;color:var(--txt);margin:18px 0 6px}
+.legal-body h4:first-child{margin-top:0}
+.legal-body p{font-size:calc(12.5px * var(--fs-mult));color:var(--txt2);line-height:1.6;margin-bottom:4px}
+.legal-updated{font-size:calc(10.5px * var(--fs-mult));color:var(--txt3);margin-bottom:16px}
+
+/* ── item 4: milestone popup "Create account" CTA (added to the existing milestone card) ── */
+.milestone-cta{display:none;margin-top:16px;width:100%;padding:12px;border:none;border-radius:var(--rs);background:var(--G);color:#fff;font-weight:800;font-size:calc(13px * var(--fs-mult));cursor:pointer;box-shadow:0 3px 0 var(--GD);position:relative;z-index:2}
+.milestone-cta.on{display:block}
+.milestone-cta:active{transform:translateY(2px);box-shadow:none}
+.milestone-hint{margin-top:12px;font-size:calc(10.5px * var(--fs-mult));color:var(--txt3);position:relative;z-index:1}
+
+/* v17 item 3: persistent light-green "Create account" button on both result screens, below
+   Play again / Try again — visible on every playthrough for as long as no account exists. */
+.result-acct-btn{display:none;width:100%;padding:14px;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;margin-bottom:8px;background:var(--GL2);color:var(--GDK);box-shadow:0 3px 0 #a8d8cc}
+.result-acct-btn.on{display:block}
+.result-acct-btn:active{transform:translateY(2px);box-shadow:none}
+
+/* ── item 4: occasional small reminder banner on the Challenge home screen ── */
+.guest-banner{display:none;align-items:center;justify-content:space-between;gap:10px;background:var(--GL2);border-radius:var(--rs);padding:11px 14px;margin:0 16px 12px;box-shadow:0 2px 0 #a8d8cc}
+.guest-banner.on{display:flex}
+.guest-banner span{font-size:calc(12px * var(--fs-mult));font-weight:700;color:var(--GDK)}
+.guest-banner button{background:var(--G);color:#fff;border:none;border-radius:20px;padding:7px 14px;font-size:calc(11px * var(--fs-mult));font-weight:800;cursor:pointer;flex-shrink:0}
+
+/* ── item 4: fallback "Save your progress?" plain prompt (non-celebratory) ── */
+.save-prompt-mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:310;align-items:center;justify-content:center}
+.save-prompt-mbg.on{display:flex}
+.save-prompt-card{background:var(--card);border-radius:20px;padding:28px 24px;width:290px;max-width:85vw;text-align:center}
+.save-prompt-title{font-size:calc(16px * var(--fs-mult));font-weight:900;color:var(--txt);margin-bottom:8px}
+.save-prompt-desc{font-size:calc(12.5px * var(--fs-mult));color:var(--txt2);line-height:1.5;margin-bottom:18px}
+.save-prompt-cta{width:100%;padding:13px;border:none;border-radius:var(--rs);background:var(--G);color:#fff;font-weight:800;font-size:calc(13px * var(--fs-mult));cursor:pointer;box-shadow:0 3px 0 var(--GD);margin-bottom:8px}
+.save-prompt-cta:active{transform:translateY(2px);box-shadow:none}
+.save-prompt-dismiss{width:100%;padding:10px;border:none;background:none;color:var(--txt3);font-weight:700;font-size:calc(12px * var(--fs-mult));cursor:pointer}
+
+/* ── item 4: account creation screen ── */
+.acct-screen{display:none;position:fixed;inset:0;z-index:550;background:var(--bg);flex-direction:column;overflow-y:auto;padding:28px 24px 120px}
+.acct-screen.on{display:flex}
+.acct-title{font-size:calc(20px * var(--fs-mult));font-weight:900;color:var(--txt);margin-bottom:4px;text-align:center}
+.acct-sub{font-size:calc(12px * var(--fs-mult));color:var(--txt2);margin-bottom:24px;text-align:center}
+.acct-field-label{font-size:calc(11px * var(--fs-mult));font-weight:800;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px}
+.acct-input{width:100%;padding:13px 15px;font-size:calc(14px * var(--fs-mult));font-weight:600;border:none;border-radius:var(--r);background:var(--card);color:var(--txt);outline:none}
+.acct-input:focus{background:var(--GL2)}
+.acct-avatar-row{display:flex;align-items:center;gap:14px;background:var(--card);border-radius:var(--r);padding:12px 14px;margin-top:14px}
+.acct-avatar-row button{margin-left:auto;background:none;border:none;color:var(--G);font-weight:700;font-size:calc(12px * var(--fs-mult));cursor:pointer}
+.acct-avail{font-size:calc(11px * var(--fs-mult));font-weight:700;margin-top:6px;min-height:16px}
+.acct-avail.ok{color:var(--GDK)}
+.acct-avail.bad{color:var(--TCB)}
+.acct-avail.checking{color:var(--txt3)}
+.acct-disclaimer{font-size:calc(10.5px * var(--fs-mult));color:var(--txt3);margin-top:6px;line-height:1.4}
+.acct-submit{width:100%;padding:15px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;margin-top:28px;box-shadow:0 3px 0 var(--GD)}
+.acct-submit:active{transform:translateY(2px);box-shadow:none}
+.acct-submit:disabled{background:var(--border2);color:var(--txt3);cursor:not-allowed;box-shadow:none}
+.acct-cancel{width:100%;padding:12px;background:none;border:none;color:var(--txt3);font-size:calc(12px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:8px}
+
+/* ── item 4: onboarding — live availability check + username-retention disclaimer ── */
+.ob-avail{font-size:calc(11px * var(--fs-mult));font-weight:700;margin:-6px 0 8px;min-height:14px;max-width:320px}
+.ob-avail.ok{color:var(--GDK)}
+.ob-avail.bad{color:var(--TCB)}
+.ob-avail.checking{color:var(--txt3)}
+.ob-disclaimer{font-size:calc(10px * var(--fs-mult));color:var(--txt3);max-width:300px;margin:0 0 16px;line-height:1.4}
