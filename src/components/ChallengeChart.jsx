@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { dateToKey, dayKey } from '../store/dates.js';
+import { dateToKey } from '../store/dates.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
 
@@ -13,7 +13,7 @@ export default function ChallengeChart({ db, diff, range }) {
     const svg = svgRef.current;
     if (!svg) return;
     svg.innerHTML = '';
-    const W = svg.clientWidth || 320, H = 72, days = range, today = dayKey();
+    const W = svg.clientWidth || 320, H = 72, days = range;
     const d = db[diff];
     const pts = [];
     const ns = (tag, attrs) => {

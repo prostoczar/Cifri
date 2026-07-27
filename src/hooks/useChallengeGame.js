@@ -17,12 +17,25 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
   const curRef = useRef(null); // mutable session data mirroring the reference's `cur`
   const alockRef = useRef(false);
   const ivRef = useRef(null);
+  // Mirrors `input` synchronously. The reference reads the live DOM value at submit time, so it
+  // is never stale; React state can still be a render behind if a digit and Submit are tapped
+  // within the same frame, which this ref avoids.
+  const inputRef = useRef('');
 
   const clearTimer = useCallback(() => {
     if (ivRef.current) {
       clearInterval(ivRef.current);
       ivRef.current = null;
     }
+  }, []);
+
+  const setInputBoth = useCallback((updater) => {
+    // Derive from the ref, not from React state: the ref is always current, whereas a state
+    // updater callback only runs during the render phase — too late for a Submit tap that
+    // lands in the same frame as the digit before it.
+    const next = typeof updater === 'function' ? updater(inputRef.current) : updater;
+    inputRef.current = next;
+    setInput(next);
   }, []);
 
   const loadQuestion = useCallback(() => {
@@ -33,12 +46,12 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
     c.op = res.op;
     c.qStart = Date.now();
     setQuestion({ text: res.q, opLabel: opName(lang, c.op) });
-    setInput('');
+    setInputBoth('');
     setInputClass('ai');
     setFeedback({ text: '', cls: 'fb' });
     setQcFlash(false);
     alockRef.current = false;
-  }, [lang]);
+  }, [lang, setInputBoth]);
 
   const pushTuiUpdate = useCallback(() => {
     const c = curRef.current;
@@ -117,22 +130,22 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
   );
 
   const padInput = useCallback((v) => {
-    setInput((prev) => {
+    setInputBoth((prev) => {
       if (v === 'neg') return prev.startsWith('-') ? prev.slice(1) : '-' + prev;
       if (v === '.') return prev.includes('.') ? prev : prev + v;
       return prev + String(v);
     });
-  }, []);
+  }, [setInputBoth]);
 
   const backspace = useCallback(() => {
-    setInput((prev) => prev.slice(0, -1));
-  }, []);
+    setInputBoth((prev) => prev.slice(0, -1));
+  }, [setInputBoth]);
 
   const submitAnswer = useCallback(() => {
     if (alockRef.current) return;
     const c = curRef.current;
     if (!c) return;
-    const raw = input.trim();
+    const raw = inputRef.current.trim();
     if (!raw || raw === '-' || raw === '.') return;
     const val = parseFloat(raw);
     if (isNaN(val)) return;
@@ -185,7 +198,7 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
         loadQuestion();
       }, 1200);
     }
-  }, [finishGame, input, lang, loadQuestion, pushTuiUpdate, soundOn]);
+  }, [finishGame, lang, loadQuestion, pushTuiUpdate, soundOn]);
 
   // Quit always discards — never records a session, matching the reference's doQuit().
   const quit = useCallback(() => {

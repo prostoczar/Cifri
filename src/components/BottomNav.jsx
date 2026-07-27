@@ -34,15 +34,38 @@ export default function BottomNav({ activeTab, onSelectTab, chDone, brDone, visi
     }
   };
 
+  const prevTabRef = useRef(activeTab);
+
   useLayoutEffect(() => {
-    positionIndicator(true);
+    // Never measure while the nav is hidden (during countdown/game): a display:none element
+    // reports a zero-sized rect, which would write left/top/width/height:0 onto the indicator
+    // and leave it animating in from the corner at the wrong size when the nav comes back.
+    if (!visible) return;
+    // Animate only on a genuine tab change — restoring visibility after a game should put the
+    // pill straight back in place, matching the reference's positionNavIndicator(false) calls.
+    const animate = prevTabRef.current !== activeTab;
+    prevTabRef.current = activeTab;
+    positionIndicator(animate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, visible]);
 
   useEffect(() => {
     const onResize = () => positionIndicator(false);
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    // The nav labels are set in Nunito, loaded asynchronously from Google Fonts. On first paint
+    // the buttons are still measured in the fallback font, so the pill can end up sized to the
+    // wrong text metrics until something else triggers a re-measure. Re-position once the real
+    // font is in — most visible on a phone over the network, where that gap is longest.
+    let cancelled = false;
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        if (!cancelled) positionIndicator(false);
+      });
+    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener('resize', onResize);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

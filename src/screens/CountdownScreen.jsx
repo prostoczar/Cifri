@@ -6,7 +6,9 @@ const CD_COLORS = { 3: '#d65a3a', 2: '#ffd166', 1: '#ecf7f3' };
 const CD_TXT = { 3: '#fff', 2: '#7a4f00', 1: '#075c3d' };
 
 // Ported from the reference prototype's shared runCountdown() — 3, 2, 1, Go!, 800ms per step.
-export default function CountdownScreen({ label, soundOn, onDone }) {
+// Both modes use the identical .cdn/.cdgo visuals; Braining just supplies its own surrounding
+// layout (subtitle + practice badge), so `variant="braining"` renders the digits only.
+export default function CountdownScreen({ label, soundOn, onDone, variant }) {
   const { t } = useI18n();
   const [n, setN] = useState(3);
   const [showGo, setShowGo] = useState(false);
@@ -43,15 +45,23 @@ export default function CountdownScreen({ label, soundOn, onDone }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soundOn]);
 
-  return (
-    <div className="cds">
-      <div className="cdd">{label}</div>
+  const digits = (
+    <>
       {!showGo && (
         <div key={popKey} className="cdn" style={{ background: CD_COLORS[n], color: CD_TXT[n] }}>
           {n}
         </div>
       )}
       {showGo && <div className="cdgo">{t('go')}</div>}
+    </>
+  );
+
+  if (variant === 'braining') return digits;
+
+  return (
+    <div className="cds">
+      <div className="cdd">{label}</div>
+      {digits}
     </div>
   );
 }

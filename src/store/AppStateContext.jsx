@@ -34,6 +34,8 @@ function defaultState() {
     settings: { sound: true, dark: null, fontSize: 'medium', lang: null },
     selDiff: 'easy',
     chRange: 7,
+    brChartRange: 7,
+    brChartType: 'age',
     username: '',
   };
 }
@@ -97,6 +99,55 @@ function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
   return { milestones: nextMilestones, unlocked };
 }
 
+// creditStreakIfBothDone() from the reference, as a pure helper shared by both modes.
+// `chDone`/`brDone` must reflect the db/brState as they will be AFTER the session being
+// recorded. Returns the streak-related fields to merge, plus any milestone cards unlocked.
+function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
+  const today = dayKey();
+  let unlocked = [];
+  let nextMilestones = milestones;
+  let nextStreak = state.streak;
+  let nextStreakCreditedForDay = state.streakCreditedForDay;
+  let nextStreakRestoreAvailable = state.streakRestoreAvailable;
+  let nextBestStreakEver = state.bestStreakEver;
+  const prevStreak = state.streak;
+  let justCredited = false;
+
+  if (state.streakCreditedForDay !== today && chDone && brDone) {
+    const wasZero = state.streak === 0;
+    const neverLitBefore = state.bestStreakEver === 0;
+    nextStreak = (state.streak || 0) + 1;
+    nextStreakCreditedForDay = today;
+    if (nextStreak > nextBestStreakEver) nextBestStreakEver = nextStreak;
+    if (wasZero) nextStreakRestoreAvailable = true;
+    justCredited = true;
+    // The dedicated first-ever "you've lit a streak" popup — the one milestone that always
+    // carries the account-creation CTA. Separate from the recurring 7/14/30-day thresholds.
+    if (neverLitBefore && !nextMilestones.firstStreakLit) {
+      nextMilestones = {
+        ...nextMilestones,
+        firstStreakLit: true,
+        achievedLog: [...nextMilestones.achievedLog, 'streak_lit'],
+      };
+      unlocked.push({ icon: 'flame', nameKey: 'ms_streaklit_name', descKey: 'ms_streaklit_desc', cta: true });
+    }
+  }
+
+  const streakResult = checkStreakMilestonesPure(lang, nextMilestones, prevStreak, nextStreak);
+  nextMilestones = streakResult.milestones;
+  unlocked = unlocked.concat(streakResult.unlocked);
+
+  return {
+    milestones: nextMilestones,
+    unlocked,
+    justCredited,
+    streak: nextStreak,
+    streakCreditedForDay: nextStreakCreditedForDay,
+    streakRestoreAvailable: nextStreakRestoreAvailable,
+    bestStreakEver: nextBestStreakEver,
+  };
+}
+
 function reducer(state, action) {
   switch (action.type) {
     case 'HYDRATE':
@@ -107,6 +158,12 @@ function reducer(state, action) {
 
     case 'SET_CH_RANGE':
       return { ...state, chRange: action.range };
+
+    case 'SET_BR_CHART_RANGE':
+      return { ...state, brChartRange: action.range };
+
+    case 'SET_BR_CHART_TYPE':
+      return { ...state, brChartType: action.chartType };
 
     case 'SET_USERNAME':
       return { ...state, username: action.username };
@@ -215,25 +272,18 @@ function reducer(state, action) {
         nextMilestones = m;
 
         if (isFirstToday) {
-          // creditStreakIfBothDone, using the db/brState as they'll be *after* this session
-          const chDone = chDoneToday(newDb);
-          const brDone = brDoneToday(state.brState);
-          const prevStreak = state.streak;
-          if (state.streakCreditedForDay !== today && chDone && brDone) {
-            const wasZero = state.streak === 0;
-            const neverLitBefore = state.bestStreakEver === 0;
-            nextStreak = (state.streak || 0) + 1;
-            nextStreakCreditedForDay = today;
-            if (nextStreak > nextBestStreakEver) nextBestStreakEver = nextStreak;
-            if (wasZero) nextStreakRestoreAvailable = true;
-            if (neverLitBefore && !nextMilestones.firstStreakLit) {
-              nextMilestones = { ...nextMilestones, firstStreakLit: true, achievedLog: [...nextMilestones.achievedLog, 'streak_lit'] };
-              unlocked.push({ icon: 'flame', nameKey: 'ms_streaklit_name', descKey: 'ms_streaklit_desc', cta: true });
-            }
-          }
-          const streakResult = checkStreakMilestonesPure(lang, nextMilestones, prevStreak, nextStreak);
-          nextMilestones = streakResult.milestones;
-          unlocked = unlocked.concat(streakResult.unlocked);
+          const credit = applyStreakCredit(state, {
+            chDone: chDoneToday(newDb),
+            brDone: brDoneToday(state.brState),
+            milestones: nextMilestones,
+            lang,
+          });
+          nextMilestones = credit.milestones;
+          unlocked = unlocked.concat(credit.unlocked);
+          nextStreak = credit.streak;
+          nextStreakCreditedForDay = credit.streakCreditedForDay;
+          nextStreakRestoreAvailable = credit.streakRestoreAvailable;
+          nextBestStreakEver = credit.bestStreakEver;
         }
       }
 
@@ -250,6 +300,114 @@ function reducer(state, action) {
           diff, score, correct, wrong, isPrac,
           opTimes: action.opTimes,
           isNewBest, unlocked, isFirstToday,
+        },
+      };
+    }
+
+    // Mirrors the reference's brFinish(): records the session, updates best time/age, credits
+    // the unified streak, and collects milestone unlocks.
+    case 'BRAINING_SESSION_COMPLETE': {
+      const { sec, age, isPrac, lang } = action;
+      const today = dayKey();
+      const br = state.brState;
+      const sessions = br.sessions || [];
+
+      let isFirst = false;
+      let isPR = false;
+      let nextBr;
+      let unlocked = [];
+      let nextMilestones = state.milestones;
+      let nextStreak = state.streak;
+      let nextStreakCreditedForDay = state.streakCreditedForDay;
+      let nextStreakRestoreAvailable = state.streakRestoreAvailable;
+      let nextBestStreakEver = state.bestStreakEver;
+
+      if (!isPrac) {
+        isFirst = br.lastDay !== today;
+        if (isFirst) {
+          const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
+          if (br.bestTime === null || sec < br.bestTime) isPR = true;
+          const bestAge = br.bestAge === null || age < br.bestAge ? age : br.bestAge;
+          nextBr = {
+            ...br,
+            sessions: [...sessions, { date: today, time: sec, age, real: true }],
+            todayTime: sec, todayAge: age,
+            bestTime, bestAge,
+            prevDay: today, lastDay: today,
+          };
+        } else {
+          // A retry after today's trial is already logged: it can still quietly improve the
+          // stored personal best, but never re-credits the day.
+          let bestTime = br.bestTime, bestAge = br.bestAge;
+          if (br.bestTime !== null && sec < br.bestTime) {
+            isPR = true;
+            bestTime = sec;
+            bestAge = Math.min(br.bestAge === null ? age : br.bestAge, age);
+          }
+          nextBr = {
+            ...br,
+            sessions: [...sessions, { date: today, time: sec, age, real: false }],
+            bestTime, bestAge,
+          };
+        }
+
+        // checkBrainingMilestones
+        const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+        if (!m.brFirst) {
+          m.brFirst = true;
+          m.achievedLog.push('br_first');
+          unlocked.push({ icon: 'brain', nameKey: 'ms_br_first_name', descKey: 'ms_br_first_desc' });
+        }
+        if (sec < 240 && !m.brSub4) {
+          m.brSub4 = true;
+          m.achievedLog.push('br_sub4');
+          unlocked.push({ icon: 'brain', nameKey: 'ms_sub4_name', descKey: 'ms_sub4_desc' });
+        }
+        if (age <= 20 && !m.brAge20) {
+          m.brAge20 = true;
+          m.achievedLog.push('br_age20');
+          unlocked.push({ icon: 'brain', nameKey: 'ms_age20_name', descKey: 'ms_age20_desc' });
+        }
+        nextMilestones = m;
+
+        if (isFirst) {
+          const credit = applyStreakCredit(state, {
+            chDone: chDoneToday(state.db),
+            brDone: true, // this session is what makes Braining done today
+            milestones: nextMilestones,
+            lang,
+          });
+          nextMilestones = credit.milestones;
+          unlocked = unlocked.concat(credit.unlocked);
+          nextStreak = credit.streak;
+          nextStreakCreditedForDay = credit.streakCreditedForDay;
+          nextStreakRestoreAvailable = credit.streakRestoreAvailable;
+          nextBestStreakEver = credit.bestStreakEver;
+        }
+      } else {
+        // Practice: recorded as non-counting, but may still improve the stored best.
+        const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
+        const bestAge = br.bestAge === null || age < br.bestAge ? age : br.bestAge;
+        nextBr = {
+          ...br,
+          sessions: [...sessions, { date: today, time: sec, age, real: false }],
+          bestTime, bestAge,
+        };
+      }
+
+      return {
+        ...state,
+        brState: nextBr,
+        milestones: nextMilestones,
+        streak: nextStreak,
+        streakCreditedForDay: nextStreakCreditedForDay,
+        streakRestoreAvailable: nextStreakRestoreAvailable,
+        bestStreakEver: nextBestStreakEver,
+        _lastBrResult: {
+          reqId: action.reqId,
+          sec, age, isPrac, isFirst, isPR,
+          opTimes: action.opTimes,
+          unlocked,
         },
       };
     }
