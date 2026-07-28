@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { DIFFS, makeQ, calcSc, opName, fn } from '../store/questionEngine.js';
+import { makePracticeQ } from '../store/practiceEngine.js';
 import { tick, buzz, urgentTick } from '../store/sound.js';
 import { t } from '../i18n_data.js';
 
@@ -41,7 +42,9 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
   const loadQuestion = useCallback(() => {
     const c = curRef.current;
     const cfg = c.isPrac ? c.pcfg : DIFFS[c.diff];
-    const res = makeQ(lang, cfg);
+    // The Practice tab is the only caller with a parameter-driven config; everything else (real
+    // Challenge, Challenge warm-up practice) keeps using the difficulty-tier generator unchanged.
+    const res = cfg && cfg.custom ? makePracticeQ(lang, cfg) : makeQ(lang, cfg);
     c.answer = res.ans;
     c.op = res.op;
     c.qStart = Date.now();

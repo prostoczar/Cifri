@@ -214,15 +214,12 @@ function AppShell() {
     setScreen('countdown');
   }
 
-  // The standalone Practice tab. Note (faithful port): the reference builds this config and
-  // passes it to makeQ(), but makeQ() only ever reads cfg._diff — which this config does not
-  // set — so it falls back to the Easy engine and the operations/digits/terms/negatives/
-  // decimals choices do not affect the questions generated. Only the mode (time / exercise
-  // limit / unlimited) and its duration or count take effect. Replicated as-is; see the notes
-  // to the user if this should instead be made to honour the settings.
+  // The standalone Practice tab. `custom: true` routes question generation to the
+  // parameter-driven practice engine, so the settings below actually take effect.
   function handleStartCustomPractice() {
     if (!pracCfg.ops.length || !pracCfg.digits.length || !pracCfg.terms.length) return;
     const cfg = {
+      custom: true,
       ops: pracCfg.ops,
       digits: pracCfg.digits,
       terms: pracCfg.terms,

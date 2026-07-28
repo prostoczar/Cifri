@@ -25,19 +25,20 @@ const TERMS = [
 export default function PracticeScreen({ cfg, onChange, onStart }) {
   const { t } = useI18n();
 
+  // Every update derives from the previous config rather than the one captured at render, so two
+  // taps landing in the same frame can't discard the first.
   // A group can never be emptied — the reference blocks deselecting the last active chip.
   function toggleIn(listKey, value) {
-    const list = cfg[listKey];
-    const on = list.indexOf(value) !== -1;
-    if (on && list.length === 1) return;
-    onChange({
-      ...cfg,
-      [listKey]: on ? list.filter((v) => v !== value) : [...list, value],
+    onChange((prev) => {
+      const list = prev[listKey];
+      const on = list.indexOf(value) !== -1;
+      if (on && list.length === 1) return prev;
+      return { ...prev, [listKey]: on ? list.filter((v) => v !== value) : [...list, value] };
     });
   }
 
-  const adjT = (d) => onChange({ ...cfg, timeMin: Math.min(5, Math.max(1, cfg.timeMin + d)) });
-  const adjC = (d) => onChange({ ...cfg, count: Math.min(100, Math.max(10, cfg.count + d)) });
+  const adjT = (d) => onChange((prev) => ({ ...prev, timeMin: Math.min(5, Math.max(1, prev.timeMin + d)) }));
+  const adjC = (d) => onChange((prev) => ({ ...prev, count: Math.min(100, Math.max(10, prev.count + d)) }));
 
   const chip = (listKey, item) => (
     <div
@@ -76,7 +77,7 @@ export default function PracticeScreen({ cfg, onChange, onStart }) {
             <div className="ssub">{t('prac_negatives_sub')}</div>
           </div>
           <label className="tog" style={{ marginTop: 2 }}>
-            <input type="checkbox" checked={cfg.neg} onChange={(e) => onChange({ ...cfg, neg: e.target.checked })} />
+            <input type="checkbox" checked={cfg.neg} onChange={(e) => onChange((prev) => ({ ...prev, neg: e.target.checked }))} />
             <span className="tsl"></span>
           </label>
         </div>
@@ -87,7 +88,7 @@ export default function PracticeScreen({ cfg, onChange, onStart }) {
             <div className="ssub">{t('prac_decimals_sub')}</div>
           </div>
           <label className="tog" style={{ marginTop: 2 }}>
-            <input type="checkbox" checked={cfg.dec} onChange={(e) => onChange({ ...cfg, dec: e.target.checked })} />
+            <input type="checkbox" checked={cfg.dec} onChange={(e) => onChange((prev) => ({ ...prev, dec: e.target.checked }))} />
             <span className="tsl"></span>
           </label>
         </div>
@@ -95,9 +96,9 @@ export default function PracticeScreen({ cfg, onChange, onStart }) {
         <div className="sh">{t('prac_mode')}</div>
         <div className="ssub" style={{ padding: '0 0 6px' }}>{t('prac_mode_sub')}</div>
         <div className="msel">
-          <button className={'mb' + (cfg.mode === 'time' ? ' on' : '')} onClick={() => onChange({ ...cfg, mode: 'time' })}>{t('prac_time_limit')}</button>
-          <button className={'mb' + (cfg.mode === 'count' ? ' on' : '')} onClick={() => onChange({ ...cfg, mode: 'count' })}>{t('prac_exercise_limit')}</button>
-          <button className={'mb' + (cfg.mode === 'unlimited' ? ' on' : '')} onClick={() => onChange({ ...cfg, mode: 'unlimited' })}>{t('prac_unlimited')}</button>
+          <button className={'mb' + (cfg.mode === 'time' ? ' on' : '')} onClick={() => onChange((prev) => ({ ...prev, mode: 'time' }))}>{t('prac_time_limit')}</button>
+          <button className={'mb' + (cfg.mode === 'count' ? ' on' : '')} onClick={() => onChange((prev) => ({ ...prev, mode: 'count' }))}>{t('prac_exercise_limit')}</button>
+          <button className={'mb' + (cfg.mode === 'unlimited' ? ' on' : '')} onClick={() => onChange((prev) => ({ ...prev, mode: 'unlimited' }))}>{t('prac_unlimited')}</button>
         </div>
 
         <div className={'msub' + (cfg.mode === 'time' ? ' on' : '')}>
