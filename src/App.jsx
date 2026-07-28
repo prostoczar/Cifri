@@ -7,22 +7,25 @@ import { useSwipeTabs, TAB_ORDER } from './hooks/useSwipeTabs.js';
 import { DIFFS, diffLabel } from './store/questionEngine.js';
 import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors.js';
 import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
+import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
 import { dayKey } from './store/dates.js';
 
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import QuitModal from './components/QuitModal.jsx';
+import MilestonePopup from './components/MilestonePopup.jsx';
 import BrainingQuitModal from './components/BrainingQuitModal.jsx';
 import ChallengeHomeScreen from './screens/ChallengeHomeScreen.jsx';
 import CountdownScreen from './screens/CountdownScreen.jsx';
 import ChallengeGameScreen from './screens/ChallengeGameScreen.jsx';
 import ChallengeResultScreen from './screens/ChallengeResultScreen.jsx';
 import PracticeScreen from './screens/PracticeScreen.jsx';
+import TricksScreen from './screens/TricksScreen.jsx';
+import TrickGameScreen from './screens/TrickGameScreen.jsx';
 import BrainingHomeScreen from './screens/BrainingHomeScreen.jsx';
 import BrainingGameScreen from './screens/BrainingGameScreen.jsx';
 import BrainingResultScreen from './screens/BrainingResultScreen.jsx';
-import PlaceholderTab from './screens/PlaceholderTab.jsx';
 
 function AppShell() {
   const { state, dispatch } = useAppState();
@@ -42,6 +45,10 @@ function AppShell() {
   const [brMilestoneQueue, setBrMilestoneQueue] = useState([]);
   const [tabAnimKey, setTabAnimKey] = useState(0);
   const [slide, setSlide] = useState(null); // {from, to, dir} while a swipe animation runs
+  const [trickGame, setTrickGame] = useState(null); // {gi, ti} while drilling one trick
+  const [tricksOpenIndex, setTricksOpenIndex] = useState(null); // deep-link from a TotD card
+  const [trickMilestoneQueue, setTrickMilestoneQueue] = useState([]);
+  const pendingTrickReqId = useRef(0);
   // Practice tab settings. Held here (not in the persisted store) so they survive tab switches
   // but reset on reload — the same lifetime the reference's DOM-held state has.
   const [pracCfg, setPracCfg] = useState({
@@ -234,6 +241,57 @@ function AppShell() {
     setScreen('countdown');
   }
 
+  // ── Tricks ──
+  // Both entry points may unlock a milestone, and the reference shows those BEFORE revealing
+  // what you tapped (queueAndShowMilestones(unlocked, thenReveal)). This ref holds that reveal.
+  const afterTrickMilestonesRef = useRef(null);
+
+  function handlePracticeTrick(gi, ti) {
+    const reqId = ++pendingTrickReqId.current;
+    afterTrickMilestonesRef.current = () => {
+      setTrickGame({ gi, ti });
+      setScreen('trickgame');
+    };
+    dispatch({ type: 'PRACTICE_TRICK', reqId, gi, ti, total: TRICKS_FLAT.length });
+  }
+
+  function handleOpenTrickOfDay() {
+    const idx = trickOfDayIndex();
+    const reqId = ++pendingTrickReqId.current;
+    afterTrickMilestonesRef.current = () => {
+      handleSelectTab('tricks');
+      setTricksOpenIndex(idx);
+    };
+    dispatch({ type: 'VIEW_TRICK_OF_DAY', reqId });
+  }
+
+  useEffect(() => {
+    const r = state._lastTrickUnlocked;
+    if (!r || r.reqId !== pendingTrickReqId.current) return;
+    const reveal = afterTrickMilestonesRef.current;
+    afterTrickMilestonesRef.current = null;
+    if (r.unlocked && r.unlocked.length) {
+      // Queue the cards; the reveal runs once the player dismisses the last one.
+      setTrickMilestoneQueue(r.unlocked);
+      afterTrickMilestonesRef.current = reveal;
+    } else if (reveal) {
+      reveal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state._lastTrickUnlocked]);
+
+  function handleTrickMilestonesDone() {
+    setTrickMilestoneQueue([]);
+    const reveal = afterTrickMilestonesRef.current;
+    afterTrickMilestonesRef.current = null;
+    if (reveal) reveal();
+  }
+
+  function handleExitTrick() {
+    setTrickGame(null);
+    setScreen('tricks');
+  }
+
   function handleCountdownDone() {
     const { diff, isPrac, pcfg, origin } = countdownInfo;
     game.begin(diff, isPrac, pcfg, origin);
@@ -297,7 +355,7 @@ function AppShell() {
     setScreen('braining');
   }
 
-  const showNav = ['countdown', 'game', 'br-countdown', 'br-game'].indexOf(screen) === -1;
+  const showNav = ['countdown', 'game', 'br-countdown', 'br-game', 'trickgame'].indexOf(screen) === -1;
   const isTabScreen = TAB_ORDER.indexOf(screen) !== -1;
 
   // One tab's content, so the swipe animation can render two of them side by side.
@@ -314,6 +372,8 @@ function AppShell() {
           bestStreakEver={state.bestStreakEver}
           onStartChallenge={handleStartChallenge}
           onStartPractice={handleStartPractice}
+          totdLastViewed={state.totdLastViewed}
+          onOpenTrickOfDay={handleOpenTrickOfDay}
         />
       );
     }
@@ -329,13 +389,23 @@ function AppShell() {
           onChartType={(ty) => dispatch({ type: 'SET_BR_CHART_TYPE', chartType: ty })}
           onStart={() => handleStartBraining(false)}
           onPractice={() => handleStartBraining(true)}
+          totdLastViewed={state.totdLastViewed}
+          onOpenTrickOfDay={handleOpenTrickOfDay}
         />
       );
     }
     if (tab === 'practice') {
       return <PracticeScreen cfg={pracCfg} onChange={setPracCfg} onStart={handleStartCustomPractice} />;
     }
-    if (tab === 'tricks') return <PlaceholderTab name={t('nav_tricks')} />;
+    if (tab === 'tricks') {
+      return (
+        <TricksScreen
+          openIndex={tricksOpenIndex}
+          onOpenedIndexConsumed={() => setTricksOpenIndex(null)}
+          onPractice={handlePracticeTrick}
+        />
+      );
+    }
     return null;
   }
 
@@ -385,6 +455,9 @@ function AppShell() {
           </div>
         )}
         {screen === 'br-game' && <BrainingGameScreen game={brGame} onShowQuit={() => setBrQuitOpen(true)} />}
+        {screen === 'trickgame' && trickGame && (
+          <TrickGameScreen gi={trickGame.gi} ti={trickGame.ti} soundOn={soundOn} onExit={handleExitTrick} />
+        )}
         {screen === 'br-result' && brResultData && (
           <BrainingResultScreen
             result={brResultData}
@@ -401,6 +474,7 @@ function AppShell() {
       </div>
       <BottomNav activeTab={activeTab} onSelectTab={handleSelectTab} chDone={chDone} brDone={brDone} visible={showNav} />
       <QuitModal open={quitOpen} onKeepGoing={() => setQuitOpen(false)} onQuit={handleQuitConfirm} />
+      <MilestonePopup queue={trickMilestoneQueue} onDone={handleTrickMilestonesDone} />
       <BrainingQuitModal
         open={brQuitOpen}
         warning={brGame.quitWarningFor(brDone)}

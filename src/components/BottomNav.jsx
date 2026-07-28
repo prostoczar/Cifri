@@ -49,8 +49,15 @@ export default function BottomNav({ activeTab, onSelectTab, chDone, brDone, visi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, visible]);
 
+  // These two handlers outlive the render that created them, so they must not close over
+  // `positionIndicator` directly — that would pin them to whichever tab was active at mount and
+  // snap the pill back there. A resize fires on every phone rotation, and on mobile Safari every
+  // time the toolbar collapses during a scroll, so a stale one is very visible.
+  const positionRef = useRef(positionIndicator);
+  positionRef.current = positionIndicator;
+
   useEffect(() => {
-    const onResize = () => positionIndicator(false);
+    const onResize = () => positionRef.current(false);
     window.addEventListener('resize', onResize);
     // The nav labels are set in Nunito, loaded asynchronously from Google Fonts. On first paint
     // the buttons are still measured in the fallback font, so the pill can end up sized to the
@@ -59,14 +66,13 @@ export default function BottomNav({ activeTab, onSelectTab, chDone, brDone, visi
     let cancelled = false;
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {
-        if (!cancelled) positionIndicator(false);
+        if (!cancelled) positionRef.current(false);
       });
     }
     return () => {
       cancelled = true;
       window.removeEventListener('resize', onResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const urgentFor = (id) => (id === 'challenge' ? !chDone : id === 'braining' ? !brDone : false);

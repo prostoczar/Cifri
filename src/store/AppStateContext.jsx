@@ -36,6 +36,9 @@ function defaultState() {
     chRange: 7,
     brChartRange: 7,
     brChartType: 'age',
+    // Last calendar day the Trick of the Day card was opened. Drives both the card's
+    // yellow→green styling and the "distinct days viewed" count behind Trick Explorer.
+    totdLastViewed: null,
     username: '',
   };
 }
@@ -164,6 +167,39 @@ function reducer(state, action) {
 
     case 'SET_BR_CHART_TYPE':
       return { ...state, brChartType: action.chartType };
+
+    // Opening the Trick of the Day card. Only the first open on a given calendar day counts,
+    // which is what makes Trick Explorer a "10 distinct days" milestone rather than 10 taps.
+    case 'VIEW_TRICK_OF_DAY': {
+      const today = dayKey();
+      if (state.totdLastViewed === today) return { ...state, _lastTrickUnlocked: null };
+      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+      const unlocked = [];
+      m.trickCount = (m.trickCount || 0) + 1;
+      if (m.trickCount >= 10 && !m.trickShown) {
+        m.trickShown = true;
+        m.achievedLog.push('trick_explorer');
+        unlocked.push({ icon: 'trick', nameKey: 'ms_trickexplorer_name', descKey: 'ms_trickexplorer_desc' });
+      }
+      return { ...state, totdLastViewed: today, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
+    }
+
+    // Opening a trick via "Practice this trick" counts it as practiced. Once every trick in the
+    // library has been practiced at least once, Trick Master unlocks.
+    case 'PRACTICE_TRICK': {
+      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+      const set = [...(m.tricksPracticedSet || [])];
+      const key = action.gi + '-' + action.ti;
+      if (set.indexOf(key) === -1) set.push(key);
+      m.tricksPracticedSet = set;
+      const unlocked = [];
+      if (!m.allTricksShown && action.total > 0 && set.length >= action.total) {
+        m.allTricksShown = true;
+        m.achievedLog.push('trick_master');
+        unlocked.push({ icon: 'trick', nameKey: 'ms_trickmaster_name', descKey: 'ms_trickmaster_desc' });
+      }
+      return { ...state, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
+    }
 
     case 'SET_USERNAME':
       return { ...state, username: action.username };

@@ -4,12 +4,13 @@ import { brDoneToday } from '../store/AppStateContext.jsx';
 import { brFmtSec, fmtBrCountdown } from '../store/braining.js';
 import { msToMidnight } from '../store/dates.js';
 import BrainingChart from '../components/BrainingChart.jsx';
+import TrickOfDayCard from '../components/TrickOfDayCard.jsx';
 
 // Ported from the reference prototype's Braining home markup + brUpdateHome().
-// Trick of the Day card omitted this stage — Tricks isn't built yet.
 export default function BrainingHomeScreen({
   brState, streak, bestStreakEver, chartRange, chartType,
   onChartRange, onChartType, onStart, onPractice,
+  totdLastViewed, onOpenTrickOfDay,
 }) {
   const { t } = useI18n();
   const [infoOpen, setInfoOpen] = useState(false);
@@ -61,6 +62,11 @@ export default function BrainingHomeScreen({
         <BrainingChart brState={brState} range={chartRange} type={chartType} />
       </div>
 
+      <TrickOfDayCard
+        doneToday={done}
+        totdLastViewed={totdLastViewed}
+        onOpen={onOpenTrickOfDay}
+      />
       {done ? (
         <button className="br-btn-g timer" disabled>{fmtBrCountdown(msToMidnight())}</button>
       ) : (

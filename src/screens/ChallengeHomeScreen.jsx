@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
+import TrickOfDayCard from '../components/TrickOfDayCard.jsx';
 import { todayDone } from '../store/AppStateContext.jsx';
 import { todaySessionsFor } from '../store/selectors.js';
 import { diffLabel, diffInfoText } from '../store/questionEngine.js';
@@ -15,6 +16,7 @@ const DIFF_KEYS = ['easy', 'medium', 'hard'];
 export default function ChallengeHomeScreen({
   db, selDiff, onSelDiff, chRange, onChRange, streak, bestStreakEver,
   onStartChallenge, onStartPractice,
+  totdLastViewed, onOpenTrickOfDay,
 }) {
   const { t, lang } = useI18n();
   const [infoOpen, setInfoOpen] = useState(false);
@@ -70,6 +72,11 @@ export default function ChallengeHomeScreen({
         <ChallengeChart db={db} diff={selDiff} range={chRange} />
       </div>
 
+      <TrickOfDayCard
+        doneToday={done}
+        totdLastViewed={totdLastViewed}
+        onOpen={onOpenTrickOfDay}
+      />
       {done ? (
         <button className="sbtn timer" disabled>{fmtChCountdown(msToMidnight())}</button>
       ) : (
