@@ -40,6 +40,18 @@ function defaultState() {
     // yellow→green styling and the "distinct days viewed" count behind Trick Explorer.
     totdLastViewed: null,
     username: '',
+
+    // ── Guest → account flow. Everything here is mocked and local only: no Supabase call, no
+    // network request, no real authentication anywhere in this group. ──
+    acctCreated: false,          // true once the mocked account-creation screen is submitted
+    acctData: { email: '', fullName: '', password: '' },
+    guestConvoStarted: false,    // true from the moment the first conversion ask has been shown
+    savePromptShown: false,      // the 5-day fallback prompt fires once, ever
+    firstOpenDate: null,         // day the onboarding username screen was completed
+    guestBannerLastShownDay: null, // caps the home-screen reminder banner to once per day
+    anyGuestPromptDismissed: false, // true once a dedicated conversion prompt was dismissed
+    tutorialShown: false,
+    avatar: { type: 'letters', value: '', color: 'green', size: 55, customized: false },
   };
 }
 
@@ -113,6 +125,7 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
   let nextStreakCreditedForDay = state.streakCreditedForDay;
   let nextStreakRestoreAvailable = state.streakRestoreAvailable;
   let nextBestStreakEver = state.bestStreakEver;
+  let nextGuestConvoStarted = state.guestConvoStarted;
   const prevStreak = state.streak;
   let justCredited = false;
 
@@ -124,14 +137,17 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
     if (nextStreak > nextBestStreakEver) nextBestStreakEver = nextStreak;
     if (wasZero) nextStreakRestoreAvailable = true;
     justCredited = true;
-    // The dedicated first-ever "you've lit a streak" popup — the one milestone that always
-    // carries the account-creation CTA. Separate from the recurring 7/14/30-day thresholds.
-    if (neverLitBefore && !nextMilestones.firstStreakLit) {
+    // The dedicated first-ever "you've lit a streak" popup — separate from the recurring
+    // 7/14/30-day thresholds. This is also the moment guest-conversion nudging begins: from
+    // here every milestone popup carries the CTA until a (mock) account exists. Skipped
+    // entirely when an account already exists, matching the reference's guard.
+    if (neverLitBefore && !nextMilestones.firstStreakLit && !state.acctCreated) {
       nextMilestones = {
         ...nextMilestones,
         firstStreakLit: true,
         achievedLog: [...nextMilestones.achievedLog, 'streak_lit'],
       };
+      nextGuestConvoStarted = true;
       unlocked.push({ icon: 'flame', nameKey: 'ms_streaklit_name', descKey: 'ms_streaklit_desc', cta: true });
     }
   }
@@ -148,6 +164,7 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
     streakCreditedForDay: nextStreakCreditedForDay,
     streakRestoreAvailable: nextStreakRestoreAvailable,
     bestStreakEver: nextBestStreakEver,
+    guestConvoStarted: nextGuestConvoStarted,
   };
 }
 
@@ -161,6 +178,86 @@ function reducer(state, action) {
 
     case 'SET_CH_RANGE':
       return { ...state, chRange: action.range };
+
+    // ── Guest → account flow (all mocked; no network or auth call anywhere below) ──
+
+    // Onboarding finished: the guest experience starts here, which is what the 5-day fallback
+    // prompt counts from. The tutorial only ever shows on this very first completion.
+    case 'ONBOARDING_FINISH':
+      return {
+        ...state,
+        _loggedOut: false,
+        username: action.username,
+        firstOpenDate: state.firstOpenDate || dayKey(),
+        tutorialShown: true,
+        _showTutorial: !state.tutorialShown,
+      };
+
+    case 'TUTORIAL_DONE':
+      return { ...state, _showTutorial: false };
+
+    // Mocked log in: populates local state from a demo account and skips onboarding/tutorial,
+    // as a returning player on a fresh install would expect. Still entirely local.
+    case 'MOCK_LOGIN':
+      return {
+        ...state,
+        _loggedOut: false,
+        username: action.account.username,
+        acctData: {
+          email: action.account.email,
+          fullName: action.account.fullName,
+          password: action.account.password,
+        },
+        acctCreated: true,
+        tutorialShown: true,
+        firstOpenDate: state.firstOpenDate || dayKey(),
+      };
+
+    // Mocked account creation: sets a local flag and keeps every bit of existing local data
+    // exactly as it is.
+    case 'ACCOUNT_CREATE':
+      return {
+        ...state,
+        username: action.username,
+        acctData: { email: action.email, fullName: action.fullName, password: action.password },
+        acctCreated: true,
+      };
+
+    case 'ACCOUNT_EDIT':
+      return {
+        ...state,
+        username: action.username,
+        acctData: { ...state.acctData, email: action.email, fullName: action.fullName },
+      };
+
+    case 'ACCOUNT_SET_PASSWORD':
+      return { ...state, acctData: { ...state.acctData, password: action.password } };
+
+    // Backing out of a dedicated conversion ask. From here on nudges switch to the small
+    // occasional banner rather than another full-screen prompt.
+    case 'GUEST_PROMPT_DISMISSED':
+      return { ...state, anyGuestPromptDismissed: true };
+
+    // The 5-day fallback prompt: fires once ever, and counts as the first ask, so later
+    // milestones start carrying the CTA.
+    case 'SAVE_PROMPT_SHOWN':
+      return { ...state, savePromptShown: true, guestConvoStarted: true };
+
+    case 'DISMISS_GUEST_BANNER':
+      return { ...state, guestBannerLastShownDay: dayKey() };
+
+    // Logging out keeps all local progress — only the "logged in" status changes — and reopens
+    // a fresh conversion cycle. The player lands back on the onboarding screen with their
+    // username prefilled, so continuing as the same guest is one tap away, and logging back in
+    // is reachable from the same screen.
+    case 'MOCK_LOGOUT':
+      return { ...state, acctCreated: false, guestConvoStarted: false, _loggedOut: true };
+
+    case 'SET_AVATAR':
+      return { ...state, avatar: { ...action.avatar, customized: true } };
+
+    case 'SET_SETTING':
+      return { ...state, settings: { ...state.settings, [action.key]: action.value } };
 
     case 'SET_BR_CHART_RANGE':
       return { ...state, brChartRange: action.range };
@@ -294,6 +391,7 @@ function reducer(state, action) {
       let nextStreakCreditedForDay = state.streakCreditedForDay;
       let nextStreakRestoreAvailable = state.streakRestoreAvailable;
       let nextBestStreakEver = state.bestStreakEver;
+      let nextGuestConvoStarted = state.guestConvoStarted;
       let isNewBest = false;
 
       if (!isPrac) {
@@ -337,12 +435,14 @@ function reducer(state, action) {
           nextStreakCreditedForDay = credit.streakCreditedForDay;
           nextStreakRestoreAvailable = credit.streakRestoreAvailable;
           nextBestStreakEver = credit.bestStreakEver;
+          nextGuestConvoStarted = credit.guestConvoStarted;
         }
       }
 
       return {
         ...state,
         db: newDb,
+        guestConvoStarted: nextGuestConvoStarted,
         milestones: nextMilestones,
         streak: nextStreak,
         streakCreditedForDay: nextStreakCreditedForDay,
@@ -375,6 +475,7 @@ function reducer(state, action) {
       let nextStreakCreditedForDay = state.streakCreditedForDay;
       let nextStreakRestoreAvailable = state.streakRestoreAvailable;
       let nextBestStreakEver = state.bestStreakEver;
+      let nextGuestConvoStarted = state.guestConvoStarted;
 
       if (!isPrac) {
         isFirst = br.lastDay !== today;
@@ -437,6 +538,7 @@ function reducer(state, action) {
           nextStreakCreditedForDay = credit.streakCreditedForDay;
           nextStreakRestoreAvailable = credit.streakRestoreAvailable;
           nextBestStreakEver = credit.bestStreakEver;
+          nextGuestConvoStarted = credit.guestConvoStarted;
         }
       } else {
         // Practice: recorded as non-counting, but may still improve the stored best.
@@ -452,6 +554,7 @@ function reducer(state, action) {
       return {
         ...state,
         brState: nextBr,
+        guestConvoStarted: nextGuestConvoStarted,
         milestones: nextMilestones,
         streak: nextStreak,
         streakCreditedForDay: nextStreakCreditedForDay,

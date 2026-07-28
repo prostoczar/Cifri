@@ -1,7 +1,9 @@
 import { chDoneToday, brDoneToday } from '../store/AppStateContext.jsx';
+import { avatarSpecFor } from '../store/avatar.js';
+import Avatar from './Avatar.jsx';
 
 // Ported from the reference prototype's header markup + updateStreakPill()/updateRefillPill().
-export default function Header({ db, brState, streak, streakRestoreAvailable }) {
+export default function Header({ db, brState, streak, streakRestoreAvailable, username, avatar, onOpenProfile }) {
   const chD = chDoneToday(db);
   const brD = brDoneToday(brState);
   let pillCls = 'streak-pill';
@@ -26,11 +28,21 @@ export default function Header({ db, brState, streak, streakRestoreAvailable }) 
           <span className="streak-badge">{refillAvailable ? '1' : '0'}</span>
         </div>
       </div>
-      <button className="prof-btn" id="prof-btn-hdr" style={{ background: 'var(--card)' }}>
-        <svg id="prof-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="8" r="4" />
-          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-        </svg>
+      {/* Once a username exists the generic icon is replaced by the player's avatar, and the
+          button's own background switches to light green — matching updateProfileBtn(). */}
+      <button
+        className="prof-btn"
+        style={{ background: username ? 'var(--GL2)' : 'var(--card)' }}
+        onClick={onOpenProfile}
+      >
+        {username ? (
+          <Avatar spec={avatarSpecFor(avatar, username)} size={36} />
+        ) : (
+          <svg id="prof-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+        )}
       </button>
     </div>
   );

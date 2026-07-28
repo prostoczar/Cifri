@@ -3,12 +3,15 @@ import { useI18n } from '../store/useI18n.js';
 import { opName } from '../store/questionEngine.js';
 import { todaySessionsFor, computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
+import { ResultAccountButton } from '../components/GuestConversion.jsx';
 import MilestonePopup from '../components/MilestonePopup.jsx';
 
 // Ported from the reference prototype's #scr-result markup + the relevant parts of endGame()/
-// triggerResultCelebration(). The "Create account" button and "Complete streak" cross-mode CTA
-// are intentionally omitted this stage — deferred to the onboarding/account and Braining stages.
-export default function ChallengeResultScreen({ result, db, streak, lang, milestoneQueue, onMilestonesDone, onPlayAgain, onBack }) {
+// triggerResultCelebration().
+export default function ChallengeResultScreen({
+  result, db, streak, lang, milestoneQueue, onMilestonesDone, onPlayAgain, onBack,
+  guestConvoStarted, acctCreated, onCreateAccount,
+}) {
   const { t } = useI18n();
   const [celebrate, setCelebrate] = useState(false);
 
@@ -57,9 +60,16 @@ export default function ChallengeResultScreen({ result, db, streak, lang, milest
         </div>
       )}
       <button className="abtn" onClick={onPlayAgain}>{t('play_again')}</button>
+      <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="bbtn" onClick={onBack}>{t('back')}</button>
       {celebrate && <ConfettiBurst />}
-      <MilestonePopup queue={milestoneQueue} onDone={onMilestonesDone} />
+      <MilestonePopup
+        queue={milestoneQueue}
+        onDone={onMilestonesDone}
+        guestConvoStarted={guestConvoStarted}
+        acctCreated={acctCreated}
+        onCreateAccount={onCreateAccount}
+      />
     </div>
   );
 }

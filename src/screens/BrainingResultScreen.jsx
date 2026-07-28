@@ -3,13 +3,14 @@ import { useI18n } from '../store/useI18n.js';
 import { brAgeColor, brFmtSec, BR_SCALE_SHOWN } from '../store/braining.js';
 import { computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
+import { ResultAccountButton } from '../components/GuestConversion.jsx';
 import MilestonePopup from '../components/MilestonePopup.jsx';
 
 // Ported from the reference prototype's #scr-br-result markup + the display half of brFinish().
-// The "Create account" button is omitted this stage (account UI isn't built yet).
 export default function BrainingResultScreen({
   result, brState, streak, chDone, milestoneQueue, onMilestonesDone,
   onTryAgain, onBack, onCompleteStreak,
+  guestConvoStarted, acctCreated, onCreateAccount,
 }) {
   const { t } = useI18n();
   const [celebrate, setCelebrate] = useState(false);
@@ -110,10 +111,17 @@ export default function BrainingResultScreen({
         </button>
       )}
       <button className="br-btn-g" onClick={onTryAgain}>{t('try_again_not_counted')}</button>
+      <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="br-btn-out" onClick={onBack}>{t('back_to_braining')}</button>
 
       {celebrate && <ConfettiBurst />}
-      <MilestonePopup queue={milestoneQueue} onDone={onMilestonesDone} />
+      <MilestonePopup
+        queue={milestoneQueue}
+        onDone={onMilestonesDone}
+        guestConvoStarted={guestConvoStarted}
+        acctCreated={acctCreated}
+        onCreateAccount={onCreateAccount}
+      />
     </div>
   );
 }

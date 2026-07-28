@@ -9,12 +9,23 @@ import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors
 import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
-import { dayKey } from './store/dates.js';
+import { dayKey, dateStrToDate } from './store/dates.js';
 
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import QuitModal from './components/QuitModal.jsx';
 import MilestonePopup from './components/MilestonePopup.jsx';
+import ProfileSheet from './components/ProfileSheet.jsx';
+import TutorialOverlay from './components/TutorialOverlay.jsx';
+import ConfirmModal from './components/ConfirmModal.jsx';
+import { SavePromptModal, GuestBanner } from './components/GuestConversion.jsx';
+import OnboardingScreen from './screens/OnboardingScreen.jsx';
+import LoginScreen from './screens/LoginScreen.jsx';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen.jsx';
+import AccountCreateScreen from './screens/AccountCreateScreen.jsx';
+import EditAccountScreen from './screens/EditAccountScreen.jsx';
+import IconPickerScreen from './screens/IconPickerScreen.jsx';
+import { LegalScreen, MilestonesListScreen } from './screens/LegalScreen.jsx';
 import BrainingQuitModal from './components/BrainingQuitModal.jsx';
 import ChallengeHomeScreen from './screens/ChallengeHomeScreen.jsx';
 import CountdownScreen from './screens/CountdownScreen.jsx';
@@ -49,6 +60,20 @@ function AppShell() {
   const [tricksOpenIndex, setTricksOpenIndex] = useState(null); // deep-link from a TotD card
   const [trickMilestoneQueue, setTrickMilestoneQueue] = useState([]);
   const pendingTrickReqId = useRef(0);
+  // Account / onboarding overlay state. All of it is local UI — the data behind it lives in the
+  // store, and nothing here performs a network or auth call.
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotPrefill, setForgotPrefill] = useState('');
+  const [acctOpen, setAcctOpen] = useState(false);
+  const [editAcctOpen, setEditAcctOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerReturnTo, setPickerReturnTo] = useState('profile');
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [legal, setLegal] = useState(null);
+  const [msListOpen, setMsListOpen] = useState(false);
+  const [savePromptOpen, setSavePromptOpen] = useState(false);
+  const [confirm, setConfirm] = useState(null);
   // Practice tab settings. Held here (not in the persisted store) so they survive tab switches
   // but reset on reload — the same lifetime the reference's DOM-held state has.
   const [pracCfg, setPracCfg] = useState({
@@ -241,6 +266,55 @@ function AppShell() {
     setScreen('countdown');
   }
 
+  // ── Account / onboarding (all mocked — no network or auth call anywhere below) ──
+  // Onboarding shows for a brand-new player, and again after logging out — the reference
+  // returns you there with your username prefilled rather than to a bare login screen.
+  const needsOnboarding = !state.username || !!state._loggedOut;
+
+  function openAccountCreation() {
+    setSavePromptOpen(false);
+    setProfileOpen(false);
+    setAcctOpen(true);
+  }
+
+  // Backing out without submitting counts as dismissing a dedicated conversion ask, so later
+  // nudges become the small banner rather than another full-screen prompt.
+  function closeAccountCreation() {
+    setAcctOpen(false);
+    if (!state.acctCreated) dispatch({ type: 'GUEST_PROMPT_DISMISSED' });
+  }
+
+  // The 5-day fallback prompt: once ever, only if a streak has never been lit (if it has, the
+  // dedicated streak-lit popup already made this ask), and only for a guest.
+  useEffect(() => {
+    if (state.acctCreated || state.savePromptShown || !state.firstOpenDate) return;
+    if (state.bestStreakEver > 0) return;
+    const days = Math.round(
+      (dateStrToDate(dayKey()).getTime() - dateStrToDate(state.firstOpenDate).getTime()) / 86400000
+    );
+    if (days >= 5) {
+      dispatch({ type: 'SAVE_PROMPT_SHOWN' });
+      setSavePromptOpen(true);
+    }
+  }, [state.acctCreated, state.savePromptShown, state.firstOpenDate, state.bestStreakEver, dispatch]);
+
+  const guestBannerVisible =
+    !state.acctCreated && state.anyGuestPromptDismissed && state.guestBannerLastShownDay !== dayKey();
+
+  function openIconPicker(returnTo) {
+    setPickerReturnTo(returnTo);
+    setProfileOpen(false);
+    setPickerOpen(true);
+  }
+
+  // Approve commits the draft; Back throws it away, so nothing is ever half-saved. Either way
+  // we return to whichever screen opened the picker.
+  function closeIconPicker(draft) {
+    if (draft) dispatch({ type: 'SET_AVATAR', avatar: draft });
+    setPickerOpen(false);
+    if (pickerReturnTo === 'profile') setProfileOpen(true);
+  }
+
   // ── Tricks ──
   // Both entry points may unlock a milestone, and the reference shows those BEFORE revealing
   // what you tapped (queueAndShowMilestones(unlocked, thenReveal)). This ref holds that reveal.
@@ -362,6 +436,12 @@ function AppShell() {
   function renderTabContent(tab) {
     if (tab === 'challenge') {
       return (
+        <>
+        <GuestBanner
+          visible={guestBannerVisible}
+          onCreateAccount={openAccountCreation}
+          onDismiss={() => dispatch({ type: 'DISMISS_GUEST_BANNER' })}
+        />
         <ChallengeHomeScreen
           db={state.db}
           selDiff={state.selDiff}
@@ -375,6 +455,7 @@ function AppShell() {
           totdLastViewed={state.totdLastViewed}
           onOpenTrickOfDay={handleOpenTrickOfDay}
         />
+        </>
       );
     }
     if (tab === 'braining') {
@@ -411,7 +492,12 @@ function AppShell() {
 
   return (
     <div className="wrap">
-      <Header db={state.db} brState={state.brState} streak={state.streak} streakRestoreAvailable={state.streakRestoreAvailable} />
+      <Header
+        db={state.db} brState={state.brState} streak={state.streak}
+        streakRestoreAvailable={state.streakRestoreAvailable}
+        username={state.username} avatar={state.avatar}
+        onOpenProfile={() => setProfileOpen(true)}
+      />
       <div className="scroll" ref={scrollRef} style={{ paddingBottom: showNav ? 80 : 0 }}>
         {slide ? (
           // Mid-swipe: both screens are on-screen and absolutely positioned (.swiping), sliding
@@ -442,6 +528,9 @@ function AppShell() {
             lang={lang}
             milestoneQueue={milestoneQueue}
             onMilestonesDone={() => setMilestoneQueue([])}
+            guestConvoStarted={state.guestConvoStarted}
+            acctCreated={state.acctCreated}
+            onCreateAccount={() => { setMilestoneQueue([]); openAccountCreation(); }}
             onPlayAgain={handlePlayAgain}
             onBack={handleBackHome}
           />
@@ -466,6 +555,9 @@ function AppShell() {
             chDone={chDone}
             milestoneQueue={brMilestoneQueue}
             onMilestonesDone={() => setBrMilestoneQueue([])}
+            guestConvoStarted={state.guestConvoStarted}
+            acctCreated={state.acctCreated}
+            onCreateAccount={() => { setBrMilestoneQueue([]); openAccountCreation(); }}
             onTryAgain={handleBrTryAgain}
             onBack={handleBrBack}
             onCompleteStreak={() => handleSelectTab('challenge')}
@@ -474,12 +566,122 @@ function AppShell() {
       </div>
       <BottomNav activeTab={activeTab} onSelectTab={handleSelectTab} chDone={chDone} brDone={brDone} visible={showNav} />
       <QuitModal open={quitOpen} onKeepGoing={() => setQuitOpen(false)} onQuit={handleQuitConfirm} />
-      <MilestonePopup queue={trickMilestoneQueue} onDone={handleTrickMilestonesDone} />
+      <MilestonePopup
+        queue={trickMilestoneQueue}
+        onDone={handleTrickMilestonesDone}
+        guestConvoStarted={state.guestConvoStarted}
+        acctCreated={state.acctCreated}
+        onCreateAccount={() => { setTrickMilestoneQueue([]); openAccountCreation(); }}
+      />
+      <ProfileSheet
+        open={profileOpen}
+        state={state}
+        onClose={() => setProfileOpen(false)}
+        onEditPrimary={() => {
+          setProfileOpen(false);
+          if (state.acctCreated) setEditAcctOpen(true); else openAccountCreation();
+        }}
+        onEditPicture={() => openIconPicker('profile')}
+        onOpenMilestones={() => { setProfileOpen(false); setMsListOpen(true); }}
+        onOpenLegal={(which) => { setProfileOpen(false); setLegal(which); }}
+        onSetting={(key, value) => dispatch({ type: 'SET_SETTING', key, value })}
+        onSetFontSize={(sz) => dispatch({ type: 'SET_SETTING', key: 'fontSize', value: sz })}
+        onSetLanguage={(l) => dispatch({ type: 'SET_SETTING', key: 'lang', value: l })}
+        onLogout={() => { setProfileOpen(false); setConfirm('logout'); }}
+        onReset={() => { setProfileOpen(false); setConfirm('reset'); }}
+        onDeleteAccount={() => { setProfileOpen(false); setConfirm('delete'); }}
+      />
+
+      <AccountCreateScreen
+        open={acctOpen}
+        username={state.username}
+        acctData={state.acctData}
+        avatar={state.avatar}
+        onEditPicture={() => { setAcctOpen(false); openIconPicker('account'); }}
+        onClose={closeAccountCreation}
+        onSubmit={(d) => { dispatch({ type: 'ACCOUNT_CREATE', ...d }); setAcctOpen(false); }}
+      />
+
+      <EditAccountScreen
+        open={editAcctOpen}
+        username={state.username}
+        acctData={state.acctData}
+        avatar={state.avatar}
+        onEditPicture={() => { setEditAcctOpen(false); openIconPicker('editaccount'); }}
+        onClose={() => setEditAcctOpen(false)}
+        onSubmit={(d) => { dispatch({ type: 'ACCOUNT_EDIT', ...d }); setEditAcctOpen(false); }}
+        onSubmitPassword={(password) => dispatch({ type: 'ACCOUNT_SET_PASSWORD', password })}
+      />
+
+      <IconPickerScreen
+        open={pickerOpen}
+        avatar={state.avatar}
+        username={state.username}
+        onApprove={(draft) => {
+          closeIconPicker(draft);
+          if (pickerReturnTo === 'account') setAcctOpen(true);
+          if (pickerReturnTo === 'editaccount') setEditAcctOpen(true);
+        }}
+        onBack={() => {
+          closeIconPicker(null);
+          if (pickerReturnTo === 'account') setAcctOpen(true);
+          if (pickerReturnTo === 'editaccount') setEditAcctOpen(true);
+        }}
+      />
+
+      <LegalScreen open={!!legal} which={legal} onClose={() => { setLegal(null); setProfileOpen(true); }} />
+      <MilestonesListScreen open={msListOpen} milestones={state.milestones} onClose={() => { setMsListOpen(false); setProfileOpen(true); }} />
+
+      <SavePromptModal
+        open={savePromptOpen}
+        onCreateAccount={openAccountCreation}
+        onDismiss={() => { setSavePromptOpen(false); dispatch({ type: 'GUEST_PROMPT_DISMISSED' }); }}
+      />
+
+      <ConfirmModal
+        open={confirm === 'logout'}
+        title={t('logout_title')} desc={t('logout_desc')} confirmLabel={t('set_logout')}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => { setConfirm(null); dispatch({ type: 'MOCK_LOGOUT' }); }}
+      />
+      <ConfirmModal
+        open={confirm === 'reset'} danger
+        title={t('reset_title')} desc={t('reset_desc')} confirmLabel={t('set_reset')}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => { localStorage.removeItem('cifri_react_v1'); location.reload(); }}
+      />
+      <ConfirmModal
+        open={confirm === 'delete'} danger
+        title={t('delete_account_title')} desc={t('delete_account_desc')} confirmLabel={t('set_delete_account')}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => { localStorage.removeItem('cifri_react_v1'); location.reload(); }}
+      />
+
       <BrainingQuitModal
         open={brQuitOpen}
         warning={brGame.quitWarningFor(brDone)}
         onKeepGoing={() => setBrQuitOpen(false)}
         onQuit={handleBrQuitConfirm}
+      />
+      {needsOnboarding && (
+        <OnboardingScreen
+          initialUsername={state.username}
+          onOpenLogin={() => setLoginOpen(true)}
+          onFinish={(u) => dispatch({ type: 'ONBOARDING_FINISH', username: u })}
+        />
+      )}
+      <LoginScreen
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onForgotPassword={(idf) => { setForgotPrefill(idf); setForgotOpen(true); }}
+        onLoggedIn={(account) => { dispatch({ type: 'MOCK_LOGIN', account }); setLoginOpen(false); }}
+      />
+      <ForgotPasswordScreen open={forgotOpen} prefillEmail={forgotPrefill} onClose={() => setForgotOpen(false)} />
+
+      <TutorialOverlay
+        open={!!state._showTutorial}
+        onSelectTab={handleSelectTab}
+        onFinish={() => { dispatch({ type: 'TUTORIAL_DONE' }); handleSelectTab('challenge'); }}
       />
     </div>
   );
