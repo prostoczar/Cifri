@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import TrickOfDayCard from '../components/TrickOfDayCard.jsx';
+import MidnightCountdown from '../components/MidnightCountdown.jsx';
 import { todayDone } from '../store/AppStateContext.jsx';
 import { todaySessionsFor } from '../store/selectors.js';
 import { diffLabel, diffInfoText } from '../store/questionEngine.js';
-import { fmtChCountdown, msToMidnight } from '../store/dates.js';
+import { fmtChCountdown } from '../store/dates.js';
 import ChallengeChart from '../components/ChallengeChart.jsx';
 import StatInfoModal from '../components/StatInfoModal.jsx';
 
@@ -78,7 +79,7 @@ export default function ChallengeHomeScreen({
         onOpen={onOpenTrickOfDay}
       />
       {done ? (
-        <button className="sbtn timer" disabled>{fmtChCountdown(msToMidnight())}</button>
+        <button className="sbtn timer" disabled><MidnightCountdown format={fmtChCountdown} /></button>
       ) : (
         // updateChUI() in the reference prototype overwrites the button's initial (translated)
         // text with this literal English string at runtime — ported as-is for fidelity.

@@ -32,12 +32,15 @@ export function useSwipeTabs({ containerRef, activeTab, enabled, onSwitchTab }) 
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
       const idx = TAB_ORDER.indexOf(activeTab);
       if (idx === -1) return;
+      const n = TAB_ORDER.length;
       if (dx < 0) {
-        // swiped left → forward to the next tab
-        if (idx < TAB_ORDER.length - 1) onSwitchTab(TAB_ORDER[idx + 1], 'left');
+        // Swiped left → forward. Past the last tab this wraps round to the first, so Tricks
+        // continues on to Challenge with the new screen still entering from the right.
+        onSwitchTab(TAB_ORDER[(idx + 1) % n], 'left');
       } else {
-        // swiped right → back to the previous tab
-        if (idx > 0) onSwitchTab(TAB_ORDER[idx - 1], 'right');
+        // Swiped right → back, wrapping the other way: Challenge goes round to Tricks, which
+        // enters from the left just like any other backwards move.
+        onSwitchTab(TAB_ORDER[(idx - 1 + n) % n], 'right');
       }
     };
 

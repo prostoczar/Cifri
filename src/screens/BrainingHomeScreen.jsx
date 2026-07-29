@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { brDoneToday } from '../store/AppStateContext.jsx';
 import { brFmtSec, fmtBrCountdown } from '../store/braining.js';
-import { msToMidnight } from '../store/dates.js';
 import BrainingChart from '../components/BrainingChart.jsx';
 import TrickOfDayCard from '../components/TrickOfDayCard.jsx';
+import MidnightCountdown from '../components/MidnightCountdown.jsx';
 
 // Ported from the reference prototype's Braining home markup + brUpdateHome().
 export default function BrainingHomeScreen({
@@ -68,7 +68,7 @@ export default function BrainingHomeScreen({
         onOpen={onOpenTrickOfDay}
       />
       {done ? (
-        <button className="br-btn-g timer" disabled>{fmtBrCountdown(msToMidnight())}</button>
+        <button className="br-btn-g timer" disabled><MidnightCountdown format={fmtBrCountdown} /></button>
       ) : (
         <button className="br-btn-g br-btn-red" onClick={onStart}>{t('start_braining')}</button>
       )}

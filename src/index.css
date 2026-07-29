@@ -112,7 +112,10 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
    contained within .bnav's own stacking context since .bnav is position:fixed) so the static .nb
    buttons always paint on top of it. Position/size are set by JS (positionNavIndicator) to match
    whichever button is currently .on. */
-.nb-indicator{position:absolute;z-index:-1;background:var(--NAV);box-shadow:0 2px 0 #c49030;border-radius:999px;transition:left .25s cubic-bezier(.4,0,.2,1)}
+/* The pill's motion is matched to the screen slide (duration and easing) so that during a swipe
+   the two travel together. Left as `left` rather than a transform because the indicator is also
+   resized to each tab, and animating both would fight. */
+.nb-indicator{position:absolute;z-index:-1;background:var(--NAV);box-shadow:0 2px 0 #c49030;border-radius:999px;transition:left .32s cubic-bezier(.32,.72,0,1);will-change:left}
 /* Nav button — grey by default */.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:8px 6px 9px;color:var(--txt3);font-size:calc(10px * var(--fs-mult));font-weight:700;letter-spacing:.01em;transition:all .15s;border-radius:999px}
 .nb svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* Selected nav tab — text+icon colour only; the yellow pill background now lives on the shared sliding indicator (item 9) */.nb.on{color:var(--NAVT)}

@@ -91,6 +91,7 @@ function AppShell() {
   const pendingBrReqId = useRef(0);
   const scrollRef = useRef(null);
   const slideElsRef = useRef({ from: null, to: null });
+  const slideWrapRef = useRef(null);
   const soundOnRef = useRef(soundOn);
   soundOnRef.current = soundOn;
 
@@ -108,6 +109,20 @@ function AppShell() {
     attachAudioUnlock();
     attachGlobalClickSound(() => soundOnRef.current);
   }, []);
+
+  // The other half of the reference's tickMidnightTimers(): if the app is left open across
+  // midnight, re-run the streak-break check so the day rolls over without needing a reload.
+  useEffect(() => {
+    let last = dayKey();
+    const iv = setInterval(() => {
+      const now = dayKey();
+      if (now !== last) {
+        last = now;
+        dispatch({ type: 'CHECK_STREAK_BREAK' });
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [dispatch]);
 
   const game = useChallengeGame({
     lang,
@@ -186,42 +201,74 @@ function AppShell() {
     setTabAnimKey((k) => k + 1);
   }, []);
 
-  // Swiping runs the horizontal slide first, then commits the tab change once it finishes —
-  // the same order as the reference's slideToTab(), which calls showTab() in its timeout.
+  // Swiping moves the nav highlight immediately and slides the screens underneath it, so the
+  // pill travels alongside the content instead of snapping into place once the slide is over.
+  // Only `screen` (what is actually rendered) waits for the animation to finish.
   const handleSwipeTab = useCallback(
     (tab, dir) => {
-      if (slide) return; // already animating (reference: swipeAnimating guard)
+      if (slide) return; // already animating
+      // Start from the top, the same place tapping a nav icon leaves you. Without this the
+      // scroll offset carries into a screen of a different height and the page appears to jump.
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
       setSlide({ from: activeTab, to: tab, dir });
+      setActiveTab(tab);
     },
     [activeTab, slide]
   );
 
-  // Drives the slide exactly as slideToTab() does: park the incoming screen off-screen with no
-  // transition, force a reflow, then transition both to their final positions.
+  // Drives the slide: park the incoming screen off-screen, let the browser paint that frame,
+  // then transition both screens across.
+  //
+  // The wait for a painted frame matters — the incoming screen can be heavy (Tricks renders
+  // ~180 nodes), and starting the transition in the same frame it mounts means the first frames
+  // are eaten by that work, which is what reads as jitter. Transforms are 3D so the compositor
+  // handles the movement rather than the main thread.
   useLayoutEffect(() => {
     if (!slide) return;
     const fromEl = slideElsRef.current.from;
     const toEl = slideElsRef.current.to;
     if (!fromEl || !toEl) return;
+
     const enterFrom = slide.dir === 'left' ? 100 : -100;
     const exitTo = slide.dir === 'left' ? -100 : 100;
-    const EASE = 'transform .28s cubic-bezier(.4,0,.2,1)';
+    const EASE = 'transform .32s cubic-bezier(.32,.72,0,1)'; // iOS-style: quick out, soft settle
 
+    // A percentage min-height does not resolve against a flex-sized scroll container, so the
+    // wrapper is sized from the container's own measured height instead. Without this it
+    // collapses to zero the moment both screens go out of flow.
+    if (slideWrapRef.current && scrollRef.current) {
+      slideWrapRef.current.style.height = scrollRef.current.clientHeight + 'px';
+    }
+
+    [fromEl, toEl].forEach((el) => { el.style.willChange = 'transform'; });
     toEl.style.transition = 'none';
-    toEl.style.transform = 'translateX(' + enterFrom + '%)';
-    // eslint-disable-next-line no-unused-expressions
-    toEl.offsetWidth; // force reflow so the starting position actually takes effect
-    fromEl.style.transition = EASE;
-    toEl.style.transition = EASE;
-    fromEl.style.transform = 'translateX(' + exitTo + '%)';
-    toEl.style.transform = 'translateX(0)';
+    toEl.style.transform = 'translate3d(' + enterFrom + '%,0,0)';
+    fromEl.style.transition = 'none';
+    fromEl.style.transform = 'translate3d(0,0,0)';
 
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        fromEl.style.transition = EASE;
+        toEl.style.transition = EASE;
+        fromEl.style.transform = 'translate3d(' + exitTo + '%,0,0)';
+        toEl.style.transform = 'translate3d(0,0,0)';
+      });
+    });
+
+    // Commit slightly after the transition ends so the final frame is never cut off.
     const timer = setTimeout(() => {
-      handleSelectTab(slide.to);
+      setScreen(slide.to);
+      setTabAnimKey((k) => k + 1);
       setSlide(null);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [slide, handleSelectTab]);
+    }, 360);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      clearTimeout(timer);
+    };
+  }, [slide]);
 
   // Swipe left/right between the four home screens (reference: attachSwipeHandlers).
   // Only enabled while one of those screens is showing — never mid-game, never mid-slide.
@@ -510,15 +557,20 @@ function AppShell() {
       <div className="scroll" ref={scrollRef} style={{ paddingBottom: showNav ? 80 : 0 }}>
         {slide ? (
           // Mid-swipe: both screens are on-screen and absolutely positioned (.swiping), sliding
-          // horizontally past each other. The tab change itself commits when the slide ends.
-          <>
+          // horizontally past each other.
+          //
+          // They need a wrapper that holds its own height: taken out of flow, they leave the
+          // scroll container with nothing to size against, it collapses, and the page visibly
+          // jumps. The wrapper keeps the viewport's height for the duration, and clips the
+          // outgoing screen so it can't widen the page as it leaves.
+          <div ref={slideWrapRef} style={{ position: 'relative', overflow: 'hidden' }}>
             <div className="scr on swiping" ref={(el) => (slideElsRef.current.from = el)}>
               {renderTabContent(slide.from)}
             </div>
             <div className="scr on swiping" ref={(el) => (slideElsRef.current.to = el)}>
               {renderTabContent(slide.to)}
             </div>
-          </>
+          </div>
         ) : (
           isTabScreen && (
             <div key={tabAnimKey} className="tab-fade-in">{renderTabContent(screen)}</div>
