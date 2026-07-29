@@ -18,6 +18,7 @@ import MilestonePopup from './components/MilestonePopup.jsx';
 import ProfileSheet from './components/ProfileSheet.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
+import StreakRestoreModal from './components/StreakRestoreModal.jsx';
 import { SavePromptModal, GuestBanner } from './components/GuestConversion.jsx';
 import OnboardingScreen from './screens/OnboardingScreen.jsx';
 import LoginScreen from './screens/LoginScreen.jsx';
@@ -265,6 +266,14 @@ function AppShell() {
     setCountdownInfo({ diff: null, isPrac: true, pcfg: cfg, origin: 'practice', label: t('practice_mode') });
     setScreen('countdown');
   }
+
+  // A pending streak-restore offer expires 24 hours after the break. Checked on mount, the
+  // same point the reference calls maybeShowStreakRestoreModal().
+  useEffect(() => {
+    if (!state.pendingRestore) return;
+    const hoursSince = (Date.now() - state.pendingRestore.brokenAtMs) / 3600000;
+    if (hoursSince >= 24) dispatch({ type: 'STREAK_RESTORE_EXPIRE' });
+  }, [state.pendingRestore, dispatch]);
 
   // ── Account / onboarding (all mocked — no network or auth call anywhere below) ──
   // Onboarding shows for a brand-new player, and again after logging out — the reference
@@ -573,6 +582,12 @@ function AppShell() {
         acctCreated={state.acctCreated}
         onCreateAccount={() => { setTrickMilestoneQueue([]); openAccountCreation(); }}
       />
+      <StreakRestoreModal
+        pendingRestore={state.pendingRestore}
+        onRestore={() => dispatch({ type: 'STREAK_RESTORE' })}
+        onStartOver={() => dispatch({ type: 'STREAK_START_OVER' })}
+      />
+
       <ProfileSheet
         open={profileOpen}
         state={state}

@@ -347,6 +347,12 @@ function reducer(state, action) {
     case 'STREAK_START_OVER':
       return { ...state, streak: 0, streakCreditedForDay: null, pendingRestore: null };
 
+    // The restore offer expires 24 hours after the break — once the window closes it is gone
+    // for good, and the modal is never shown.
+    case 'STREAK_RESTORE_EXPIRE':
+      if (!state.pendingRestore) return state;
+      return { ...state, pendingRestore: null };
+
     // Records a completed Challenge session (real trial or practice) and runs every piece of
     // derived state that the reference app's endGame() touches: best score, streak crediting,
     // and milestone unlocks. Returns the unlocked-milestones list via action.onUnlocked.
