@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
-import { findMockAccount } from '../store/mockAccounts.js';
 
 // Ported from the reference prototype's login screen + loginSubmit().
-// Checked against a small local demo-account list — no network or auth call.
-export default function LoginScreen({ open, onLoggedIn, onClose, onForgotPassword }) {
+// Now real Supabase authentication. The screen is unchanged apart from the button showing a
+// working state while the request is in flight — everything else, including the single
+// deliberately vague error message, is exactly as it was.
+export default function LoginScreen({ open, busy, onSubmit, onClose, onForgotPassword }) {
   const { t } = useI18n();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -20,17 +21,17 @@ export default function LoginScreen({ open, onLoggedIn, onClose, onForgotPasswor
     return () => clearTimeout(id);
   }, [open]);
 
-  function submit() {
+  async function submit() {
+    if (busy) return;
     if (!identifier.trim() || !password) {
       setError(t('login_error'));
       return;
     }
-    const match = findMockAccount(identifier, password);
-    if (!match) {
-      setError(t('login_error'));
-      return;
-    }
-    onLoggedIn(match);
+    setError('');
+    // Wrong name, wrong email and wrong password all produce the same message on purpose —
+    // telling them apart would reveal which accounts exist.
+    const res = await onSubmit({ identifier: identifier.trim(), password });
+    if (!res.ok) setError(t(res.messageKey || 'login_error'));
   }
 
   return (
@@ -60,7 +61,9 @@ export default function LoginScreen({ open, onLoggedIn, onClose, onForgotPasswor
 
       <div className={'acct-avail' + (error ? ' bad' : '')}>{error}</div>
 
-      <button className="acct-submit" onClick={submit}>{t('login_btn')}</button>
+      <button className="acct-submit" disabled={busy} onClick={submit}>
+        {busy ? t('login_working') : t('login_btn')}
+      </button>
       <div style={{ textAlign: 'center', marginTop: 6 }}>
         <button className="prof-edit-btn" onClick={() => onForgotPassword(identifier)}>{t('login_forgot_password')}</button>
       </div>

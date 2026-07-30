@@ -10,6 +10,12 @@ import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braini
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
 import { dayKey, dateStrToDate } from './store/dates.js';
+import {
+  changePassword, deleteAccount, errorKey, fetchAccount, onAuthChange, requestEmailChange,
+  sendPasswordReset, signInWithIdentifier, signOut, signUpWithProfile, updateProfile,
+} from './lib/accountApi.js';
+import { toSyncPayload } from './lib/syncedState.js';
+import { arrivedFromRecoveryLink, clearRecoveryUrl } from './lib/recoveryLink.js';
 
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
@@ -23,6 +29,7 @@ import { SavePromptModal, GuestBanner } from './components/GuestConversion.jsx';
 import OnboardingScreen from './screens/OnboardingScreen.jsx';
 import LoginScreen from './screens/LoginScreen.jsx';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen.jsx';
+import ResetPasswordScreen from './screens/ResetPasswordScreen.jsx';
 import AccountCreateScreen from './screens/AccountCreateScreen.jsx';
 import EditAccountScreen from './screens/EditAccountScreen.jsx';
 import IconPickerScreen from './screens/IconPickerScreen.jsx';
@@ -40,7 +47,7 @@ import BrainingGameScreen from './screens/BrainingGameScreen.jsx';
 import BrainingResultScreen from './screens/BrainingResultScreen.jsx';
 
 function AppShell() {
-  const { state, dispatch } = useAppState();
+  const { state, dispatch, beginSync } = useAppState();
   const { t, lang } = useI18n();
   const soundOn = state.settings.sound;
 
@@ -61,9 +68,21 @@ function AppShell() {
   const [tricksOpenIndex, setTricksOpenIndex] = useState(null); // deep-link from a TotD card
   const [trickMilestoneQueue, setTrickMilestoneQueue] = useState([]);
   const pendingTrickReqId = useRef(0);
-  // Account / onboarding overlay state. All of it is local UI — the data behind it lives in the
-  // store, and nothing here performs a network or auth call.
+  // Account / onboarding overlay state. The data behind it lives in the store; the network
+  // calls behind the buttons live in src/lib/accountApi.js.
+  const [acctBusy, setAcctBusy] = useState(false);
+  const [acctError, setAcctError] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [emailPending, setEmailPending] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  // Opened by a password-reset email. Seeded synchronously from the URL because supabase-js
+  // strips the token as it starts up; the PASSWORD_RECOVERY listener below is the second route
+  // in, for the auth flow where the token is not visible in the address bar at all.
+  const [resetOpen, setResetOpen] = useState(arrivedFromRecoveryLink);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotPrefill, setForgotPrefill] = useState('');
   const [acctOpen, setAcctOpen] = useState(false);
@@ -322,7 +341,7 @@ function AppShell() {
     if (hoursSince >= 24) dispatch({ type: 'STREAK_RESTORE_EXPIRE' });
   }, [state.pendingRestore, dispatch]);
 
-  // ── Account / onboarding (all mocked — no network or auth call anywhere below) ──
+  // ── Account / onboarding (real Supabase auth; the calls live in src/lib/accountApi.js) ──
   // Onboarding shows for a brand-new player, and again after logging out — the reference
   // returns you there with your username prefilled rather than to a bare login screen.
   const needsOnboarding = !state.username || !!state._loggedOut;
@@ -330,7 +349,142 @@ function AppShell() {
   function openAccountCreation() {
     setSavePromptOpen(false);
     setProfileOpen(false);
+    setAcctError('');
     setAcctOpen(true);
+  }
+
+  // Signup. The guest's existing progress is handed to signUpWithProfile and uploaded as part
+  // of creating the account, so there is no window in which the account exists but the player's
+  // streak and history do not.
+  async function handleSignup(d) {
+    if (acctBusy) return;
+    setAcctBusy(true);
+    setAcctError('');
+    const payload = toSyncPayload(state);
+    const res = await signUpWithProfile({
+      email: d.email,
+      password: d.password,
+      username: d.username,
+      fullName: d.fullName,
+      avatar: state.avatar,
+      localState: state,
+    });
+    setAcctBusy(false);
+    if (!res.ok) {
+      // A lost race on the username is shown against the username field's own message, which
+      // the live check already owns — everything else gets the shared error line.
+      setAcctError(res.error === 'taken' ? 'username_taken' : errorKey(res.error));
+      return;
+    }
+    dispatch({ type: 'ACCOUNT_CREATED', username: d.username, email: d.email, fullName: d.fullName });
+    // Device and server now hold the same thing, so sync starts from that as its baseline.
+    beginSync(payload);
+    setAcctOpen(false);
+  }
+
+  // Login. Authenticating is only half of it — the account's saved progress is downloaded and
+  // adopted before the screen closes, so the player never sees a blank app on a new device.
+  async function handleLogin({ identifier, password }) {
+    if (loginBusy) return { ok: false };
+    setLoginBusy(true);
+    const res = await signInWithIdentifier({ identifier, password });
+    if (!res.ok) {
+      setLoginBusy(false);
+      return { ok: false, messageKey: res.error === 'invalid_credentials' ? 'login_error' : errorKey(res.error) };
+    }
+    const acct = await fetchAccount();
+    setLoginBusy(false);
+    if (!acct.ok || !acct.profile) return { ok: false, messageKey: 'err_generic' };
+
+    dispatch({
+      type: 'ACCOUNT_LOADED',
+      username: acct.profile.username,
+      email: acct.email,
+      fullName: acct.profile.full_name || '',
+      avatar: acct.profile.avatar,
+      synced: acct.syncedState,
+    });
+    dispatch({ type: 'CHECK_STREAK_BREAK' });
+    // If the account somehow has no saved progress yet, pass no baseline so the very next
+    // change uploads the whole thing rather than being skipped as unchanged.
+    beginSync(acct.hasRemoteState ? acct.syncedState : null);
+    setLoginOpen(false);
+    return { ok: true };
+  }
+
+  useEffect(() => onAuthChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') setResetOpen(true);
+  }), []);
+
+  // Saving the edit-account screen. Username and full name land immediately; an email change
+  // only starts a confirmation, so the screen stays open to say so rather than closing on a
+  // change that has not actually happened yet.
+  async function handleEditAccount(d) {
+    if (editBusy) return;
+    setEditBusy(true);
+    setEditError('');
+    setEmailPending(false);
+
+    const res = await updateProfile({ username: d.username, fullName: d.fullName });
+    if (!res.ok) {
+      setEditBusy(false);
+      setEditError(res.error === 'taken' ? 'username_taken' : errorKey(res.error));
+      return;
+    }
+
+    // The profile write has already landed on the server, so record it locally now. Doing this
+    // only after the email step would mean a failed email change left the app showing the old
+    // username while the database held the new one.
+    dispatch({ type: 'ACCOUNT_EDIT', username: d.username, fullName: d.fullName });
+
+    const emailChanged = d.email && d.email.toLowerCase() !== (state.acctData.email || '').toLowerCase();
+    if (emailChanged) {
+      const em = await requestEmailChange(d.email);
+      if (!em.ok) {
+        setEditBusy(false);
+        setEditError(errorKey(em.error));
+        return;
+      }
+    }
+
+    setEditBusy(false);
+    if (emailChanged) setEmailPending(true);
+    else setEditAcctOpen(false);
+  }
+
+  // Verified by signing in again as the same account — see changePassword() for why that is the
+  // safe way to prove knowledge of the old password.
+  async function handleChangePassword({ currentPassword, newPassword }) {
+    const res = await changePassword({ currentPassword, newPassword });
+    if (!res.ok) return { ok: false, error: res.error, messageKey: errorKey(res.error) };
+    return { ok: true };
+  }
+
+  // Permanent, and the local copy goes too — otherwise the next person on this device would
+  // inherit the deleted player's history as guest progress.
+  async function handleDeleteAccount() {
+    if (deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError('');
+    const res = await deleteAccount();
+    setDeleteBusy(false);
+    if (!res.ok) {
+      // Stay on the confirmation rather than closing, so a failure is impossible to mistake for
+      // a deletion that succeeded.
+      setDeleteError('err_generic');
+      return;
+    }
+    setConfirm(null);
+    localStorage.removeItem('cifri_react_v1');
+    location.reload();
+  }
+
+  // Logout ends the real Supabase session. Local progress is kept, exactly as before — but it
+  // is a local copy now, no longer syncing anywhere.
+  async function handleLogout() {
+    setConfirm(null);
+    await signOut();
+    dispatch({ type: 'ACCOUNT_SIGNED_OUT' });
   }
 
   // Backing out without submitting counts as dismissing a dedicated conversion ask, so later
@@ -366,7 +520,13 @@ function AppShell() {
   // Approve commits the draft; Back throws it away, so nothing is ever half-saved. Either way
   // we return to whichever screen opened the picker.
   function closeIconPicker(draft) {
-    if (draft) dispatch({ type: 'SET_AVATAR', avatar: draft });
+    if (draft) {
+      dispatch({ type: 'SET_AVATAR', avatar: draft });
+      // The avatar lives in the profiles table, not in the synced progress blob, so it needs
+      // its own write. Not awaited: the picker should close instantly, and a failed write just
+      // means the server still holds the previous icon until the next change.
+      if (state.acctCreated) updateProfile({ avatar: { ...draft, customized: true } });
+    }
     setPickerOpen(false);
     if (pickerReturnTo === 'profile') setProfileOpen(true);
   }
@@ -664,9 +824,11 @@ function AppShell() {
         username={state.username}
         acctData={state.acctData}
         avatar={state.avatar}
+        busy={acctBusy}
+        error={acctError}
         onEditPicture={() => { setAcctOpen(false); openIconPicker('account'); }}
         onClose={closeAccountCreation}
-        onSubmit={(d) => { dispatch({ type: 'ACCOUNT_CREATE', ...d }); setAcctOpen(false); }}
+        onSubmit={handleSignup}
       />
 
       <EditAccountScreen
@@ -674,10 +836,13 @@ function AppShell() {
         username={state.username}
         acctData={state.acctData}
         avatar={state.avatar}
+        busy={editBusy}
+        error={editError}
+        emailPending={emailPending}
         onEditPicture={() => { setEditAcctOpen(false); openIconPicker('editaccount'); }}
-        onClose={() => setEditAcctOpen(false)}
-        onSubmit={(d) => { dispatch({ type: 'ACCOUNT_EDIT', ...d }); setEditAcctOpen(false); }}
-        onSubmitPassword={(password) => dispatch({ type: 'ACCOUNT_SET_PASSWORD', password })}
+        onClose={() => { setEditAcctOpen(false); setEditError(''); setEmailPending(false); }}
+        onSubmit={handleEditAccount}
+        onSubmitPassword={handleChangePassword}
       />
 
       <IconPickerScreen
@@ -709,7 +874,7 @@ function AppShell() {
         open={confirm === 'logout'}
         title={t('logout_title')} desc={t('logout_desc')} confirmLabel={t('set_logout')}
         onCancel={() => setConfirm(null)}
-        onConfirm={() => { setConfirm(null); dispatch({ type: 'MOCK_LOGOUT' }); }}
+        onConfirm={handleLogout}
       />
       <ConfirmModal
         open={confirm === 'reset'} danger
@@ -719,9 +884,11 @@ function AppShell() {
       />
       <ConfirmModal
         open={confirm === 'delete'} danger
-        title={t('delete_account_title')} desc={t('delete_account_desc')} confirmLabel={t('set_delete_account')}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => { localStorage.removeItem('cifri_react_v1'); location.reload(); }}
+        title={t('delete_account_title')}
+        desc={deleteError ? t(deleteError) : t('delete_account_desc')}
+        confirmLabel={deleteBusy ? t('deleting_account') : t('set_delete_account')}
+        onCancel={() => { setConfirm(null); setDeleteError(''); }}
+        onConfirm={handleDeleteAccount}
       />
 
       <BrainingQuitModal
@@ -739,11 +906,21 @@ function AppShell() {
       )}
       <LoginScreen
         open={loginOpen}
+        busy={loginBusy}
         onClose={() => setLoginOpen(false)}
         onForgotPassword={(idf) => { setForgotPrefill(idf); setForgotOpen(true); }}
-        onLoggedIn={(account) => { dispatch({ type: 'MOCK_LOGIN', account }); setLoginOpen(false); }}
+        onSubmit={handleLogin}
       />
-      <ForgotPasswordScreen open={forgotOpen} prefillEmail={forgotPrefill} onClose={() => setForgotOpen(false)} />
+      <ForgotPasswordScreen
+        open={forgotOpen}
+        prefillEmail={forgotPrefill}
+        onSubmit={sendPasswordReset}
+        onClose={() => setForgotOpen(false)}
+      />
+      <ResetPasswordScreen
+        open={resetOpen}
+        onDone={() => { setResetOpen(false); clearRecoveryUrl(); setLoginOpen(false); }}
+      />
 
       <TutorialOverlay
         open={!!state._showTutorial}

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
-import { EMAIL_RE, stripSpaces } from '../store/mockAccounts.js';
+import { EMAIL_RE, stripSpaces } from '../store/accountRules.js';
 import { useUsernameCheck } from '../hooks/useUsernameCheck.js';
 import { avatarSpecFor } from '../store/avatar.js';
 import Avatar from '../components/Avatar.jsx';
 
 // Ported from the reference prototype's account-creation screen + acctSubmit().
-// Fully mocked: submitting sets a local flag and keeps every bit of existing local data exactly
-// as it is. No Supabase call, no authentication, nothing sent anywhere.
+// Submitting now creates a real Supabase account, a real profile row, and uploads whatever
+// progress this player already built up as a guest. The screen itself is unchanged apart from
+// two things real signup makes possible and mocked signup did not: it can be busy, and it can
+// fail, so the button shows a working state and there is a line for the reason.
 export default function AccountCreateScreen({
-  open, username, acctData, avatar, onSubmit, onClose, onEditPicture,
+  open, username, acctData, avatar, busy, error, onSubmit, onClose, onEditPicture,
 }) {
   const { t } = useI18n();
   const [name, setName] = useState('');
@@ -34,7 +36,7 @@ export default function AccountCreateScreen({
   const { avail, ok: nameOk } = useUsernameCheck(name, username);
   const emailOk = EMAIL_RE.test(email.trim());
   const pwOk = password.length >= 6;
-  const canSubmit = nameOk && emailOk && pwOk;
+  const canSubmit = nameOk && emailOk && pwOk && !busy;
 
   return (
     <div className={'acct-screen' + (open ? ' on' : '')}>
@@ -71,6 +73,8 @@ export default function AccountCreateScreen({
 
       <div className="acct-disclaimer">{t('ob_disclaimer')}</div>
 
+      <div className={'acct-avail' + (error ? ' bad' : '')}>{error ? t(error) : ''}</div>
+
       <button
         className="acct-submit"
         disabled={!canSubmit}
@@ -78,7 +82,7 @@ export default function AccountCreateScreen({
           username: stripSpaces(name.trim()), email: email.trim(), fullName: fullName.trim(), password,
         })}
       >
-        {t('create_account')}
+        {busy ? t('acct_creating') : t('create_account')}
       </button>
       <button className="acct-cancel" onClick={onClose}>{t('not_now')}</button>
     </div>

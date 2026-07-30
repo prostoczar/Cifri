@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
-import { MOCK_TAKEN_USERNAMES, stripSpaces } from '../store/mockAccounts.js';
+import { stripSpaces } from '../store/accountRules.js';
+import { useUsernameCheck } from '../hooks/useUsernameCheck.js';
 
 const FEATURES = [
   { key: 'ob_feat_challenge', icon: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /> },
@@ -10,40 +11,20 @@ const FEATURES = [
 ];
 
 // Ported from the reference prototype's onboarding screen + obCheck()/obFinish().
-// The availability check is mocked against a local list — no network call.
+// The availability check is real: it uses the same shared hook as the account screens, so a
+// guest cannot settle on a name here that would then be rejected at signup. A guest name is
+// still only held locally — nothing is reserved in the database until an account exists.
 export default function OnboardingScreen({ initialUsername, onFinish, onOpenLogin }) {
   const { t } = useI18n();
   const [value, setValue] = useState(initialUsername || '');
-  const [avail, setAvail] = useState({ text: '', cls: '' });
-  const [canSubmit, setCanSubmit] = useState(false);
   const inputRef = useRef(null);
-  // Guards against a slower earlier check overwriting a faster later one.
-  const seqRef = useRef(0);
 
   useEffect(() => {
     const id = setTimeout(() => inputRef.current && inputRef.current.focus(), 400);
     return () => clearTimeout(id);
   }, []);
 
-  // Re-runs the simulated availability check whenever the name changes.
-  useEffect(() => {
-    const v = value.trim();
-    const mySeq = ++seqRef.current;
-    if (v.length < 2) {
-      setAvail({ text: '', cls: '' });
-      setCanSubmit(false);
-      return;
-    }
-    setAvail({ text: t('checking_availability'), cls: 'checking' });
-    setCanSubmit(false);
-    const id = setTimeout(() => {
-      if (mySeq !== seqRef.current) return; // a newer keystroke started a fresher check
-      const taken = MOCK_TAKEN_USERNAMES.indexOf(v.toLowerCase()) !== -1;
-      setAvail({ text: taken ? t('username_taken') : t('username_available'), cls: taken ? 'bad' : 'ok' });
-      setCanSubmit(!taken);
-    }, 450);
-    return () => clearTimeout(id);
-  }, [value, t]);
+  const { avail, ok: canSubmit } = useUsernameCheck(value, null);
 
   return (
     <div className="ob-screen">

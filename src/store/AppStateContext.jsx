@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { dayKey, yesterday, addDaysStr, dateStrToDate } from './dates.js';
 import { streakMilestoneThreshold } from './milestones.js';
+import { fetchAccount, getSession, onAuthChange, pushPlayerState } from '../lib/accountApi.js';
+import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
 
 const LS_KEY = 'cifri_react_v1';
 
@@ -41,10 +43,14 @@ function defaultState() {
     totdLastViewed: null,
     username: '',
 
-    // ── Guest → account flow. Everything here is mocked and local only: no Supabase call, no
-    // network request, no real authentication anywhere in this group. ──
-    acctCreated: false,          // true once the mocked account-creation screen is submitted
-    acctData: { email: '', fullName: '', password: '' },
+    // ── Guest → account flow. Backed by real Supabase authentication. ──
+    // `acctCreated` mirrors "there is a live Supabase session"; it is set from the session on
+    // boot rather than being an independent source of truth.
+    acctCreated: false,
+    // No password field: under real authentication the app never holds one. Supabase stores
+    // only a one-way encrypted version, and the current-password check at edit time is done by
+    // signing in again rather than by comparing anything locally.
+    acctData: { email: '', fullName: '' },
     guestConvoStarted: false,    // true from the moment the first conversion ask has been shown
     savePromptShown: false,      // the 5-day fallback prompt fires once, ever
     firstOpenDate: null,         // day the onboarding username screen was completed
@@ -139,7 +145,7 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
     justCredited = true;
     // The dedicated first-ever "you've lit a streak" popup — separate from the recurring
     // 7/14/30-day thresholds. This is also the moment guest-conversion nudging begins: from
-    // here every milestone popup carries the CTA until a (mock) account exists. Skipped
+    // here every milestone popup carries the CTA until a real account exists. Skipped
     // entirely when an account already exists, matching the reference's guard.
     if (neverLitBefore && !nextMilestones.firstStreakLit && !state.acctCreated) {
       nextMilestones = {
@@ -179,7 +185,8 @@ function reducer(state, action) {
     case 'SET_CH_RANGE':
       return { ...state, chRange: action.range };
 
-    // ── Guest → account flow (all mocked; no network or auth call anywhere below) ──
+    // ── Guest → account flow (real Supabase auth; the network calls themselves live in
+    // src/lib/accountApi.js — this reducer only records their outcome) ──
 
     // Onboarding finished: the guest experience starts here, which is what the 5-day fallback
     // prompt counts from. The tutorial only ever shows on this very first completion.
@@ -196,30 +203,34 @@ function reducer(state, action) {
     case 'TUTORIAL_DONE':
       return { ...state, _showTutorial: false };
 
-    // Mocked log in: populates local state from a demo account and skips onboarding/tutorial,
-    // as a returning player on a fresh install would expect. Still entirely local.
-    case 'MOCK_LOGIN':
+    // A real account was loaded — either just logged into, or found already signed in at app
+    // start. `synced` is the progress downloaded from the server and has already been filtered
+    // through SYNCED_KEYS, so it can only ever contain known game/settings keys.
+    //
+    // The server's copy wins over whatever is on the device. That is what makes "play on any
+    // device" mean anything: the account's history is the truth, and a second phone adopts it
+    // rather than competing with it.
+    case 'ACCOUNT_LOADED':
       return {
         ...state,
+        ...action.synced,
         _loggedOut: false,
-        username: action.account.username,
-        acctData: {
-          email: action.account.email,
-          fullName: action.account.fullName,
-          password: action.account.password,
-        },
+        _showTutorial: false,
+        username: action.username,
+        avatar: action.avatar || state.avatar,
+        acctData: { email: action.email, fullName: action.fullName },
         acctCreated: true,
         tutorialShown: true,
-        firstOpenDate: state.firstOpenDate || dayKey(),
+        firstOpenDate: action.synced.firstOpenDate || state.firstOpenDate || dayKey(),
       };
 
-    // Mocked account creation: sets a local flag and keeps every bit of existing local data
-    // exactly as it is.
-    case 'ACCOUNT_CREATE':
+    // Signup succeeded. Every bit of existing local data stays exactly as it is — it has just
+    // been uploaded to the new account, so device and server already agree.
+    case 'ACCOUNT_CREATED':
       return {
         ...state,
         username: action.username,
-        acctData: { email: action.email, fullName: action.fullName, password: action.password },
+        acctData: { email: action.email, fullName: action.fullName },
         acctCreated: true,
       };
 
@@ -227,11 +238,15 @@ function reducer(state, action) {
       return {
         ...state,
         username: action.username,
-        acctData: { ...state.acctData, email: action.email, fullName: action.fullName },
+        // The email is deliberately NOT updated here. Supabase only changes it once the player
+        // clicks the link sent to the new address, so showing the new one immediately would be
+        // claiming something that has not happened yet.
+        acctData: { ...state.acctData, fullName: action.fullName },
       };
 
-    case 'ACCOUNT_SET_PASSWORD':
-      return { ...state, acctData: { ...state.acctData, password: action.password } };
+    // The confirmed email finally landing, read back from the session.
+    case 'ACCOUNT_EMAIL_CONFIRMED':
+      return { ...state, acctData: { ...state.acctData, email: action.email } };
 
     // Backing out of a dedicated conversion ask. From here on nudges switch to the small
     // occasional banner rather than another full-screen prompt.
@@ -250,8 +265,18 @@ function reducer(state, action) {
     // a fresh conversion cycle. The player lands back on the onboarding screen with their
     // username prefilled, so continuing as the same guest is one tap away, and logging back in
     // is reachable from the same screen.
-    case 'MOCK_LOGOUT':
-      return { ...state, acctCreated: false, guestConvoStarted: false, _loggedOut: true };
+    //
+    // The real session has already been ended by the time this runs, so the retained progress
+    // is a local copy only: it is no longer being synced anywhere, and logging in as anyone
+    // else replaces it outright with that account's own history.
+    case 'ACCOUNT_SIGNED_OUT':
+      return {
+        ...state,
+        acctCreated: false,
+        guestConvoStarted: false,
+        _loggedOut: true,
+        acctData: { email: '', fullName: '' },
+      };
 
     case 'SET_AVATAR':
       return { ...state, avatar: { ...action.avatar, customized: true } };
@@ -610,7 +635,8 @@ export function AppStateProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist on every change.
+  // Persist on every change. localStorage stays the primary store even when signed in — the
+  // app must keep working offline, and the server copy is a mirror of it, not a replacement.
   useEffect(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(state));
@@ -619,7 +645,112 @@ export function AppStateProvider({ children }) {
     }
   }, [state]);
 
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  // ── Account sync ─────────────────────────────────────────────────────────────
+  //
+  // `ready` gates uploading. It is false until we know the server's copy, which is what stops
+  // the worst possible bug here: a signed-in player opening the app on a second device and
+  // uploading that device's empty state over their real history before the download lands.
+  const sync = useRef({ ready: false, lastPushed: null });
+  const [syncRetry, setSyncRetry] = useState(0);
+
+  // Adopt an existing session at startup, and follow it if it ends elsewhere (token expiry, or
+  // logging out in another tab).
+  useEffect(() => {
+    let cancelled = false;
+
+    async function adopt() {
+      const res = await fetchAccount();
+      if (cancelled || !res.ok || !res.profile) return;
+      dispatch({
+        type: 'ACCOUNT_LOADED',
+        username: res.profile.username,
+        email: res.email,
+        fullName: res.profile.full_name || '',
+        avatar: res.profile.avatar,
+        synced: res.syncedState,
+      });
+      // The downloaded state may have last been checked on an earlier day, on another device.
+      // Re-running the break check is a no-op if it has already run today.
+      dispatch({ type: 'CHECK_STREAK_BREAK' });
+      sync.current.lastPushed = res.hasRemoteState ? res.syncedState : null;
+      sync.current.ready = true;
+    }
+
+    getSession().then((session) => {
+      if (!cancelled && session) adopt();
+    });
+
+    const unsubscribe = onAuthChange((event) => {
+      if (cancelled) return;
+      if (event === 'SIGNED_OUT') {
+        sync.current.ready = false;
+        sync.current.lastPushed = null;
+      }
+      // A session that appears after startup — most importantly the one a password-reset link
+      // creates, since that URL is parsed asynchronously and usually lands after this effect has
+      // already run. Without this the app would not realise the player is signed in until they
+      // reloaded. Guarded on `ready` so the ordinary login and signup paths, which have already
+      // loaded the account themselves, do not repeat the work.
+      if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
+        if (!sync.current.ready) adopt();
+      }
+      // USER_UPDATED fires when a pending email change is finally confirmed.
+      if (event === 'USER_UPDATED') {
+        getSession().then((s) => {
+          if (!cancelled && s) dispatch({ type: 'ACCOUNT_EMAIL_CONFIRMED', email: s.user.email });
+        });
+      }
+    });
+
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+
+  // Upload progress whenever it changes. Debounced, because a finished game updates several
+  // fields at once and there is no reason to send five near-identical writes.
+  useEffect(() => {
+    if (!state.acctCreated || !sync.current.ready) return;
+    const payload = toSyncPayload(state);
+    if (sameSyncPayload(payload, sync.current.lastPushed)) return;
+
+    const id = setTimeout(async () => {
+      const res = await pushPlayerState(payload);
+      if (res.ok) {
+        sync.current.lastPushed = payload;
+      } else {
+        // Leave lastPushed alone so this payload is still considered unsent, and nudge the
+        // effect to run again. Progress is already safe in localStorage either way — a failed
+        // upload delays the copy on the server, it never loses anything on the device.
+        setTimeout(() => setSyncRetry((n) => n + 1), 15000);
+      }
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [state, syncRetry]);
+
+  // Mobile browsers can discard a backgrounded tab without warning, which would strand the
+  // 1.5s debounce above. Flush immediately when the app is hidden instead.
+  useEffect(() => {
+    function flush() {
+      if (document.visibilityState !== 'hidden') return;
+      if (!state.acctCreated || !sync.current.ready) return;
+      const payload = toSyncPayload(state);
+      if (sameSyncPayload(payload, sync.current.lastPushed)) return;
+      sync.current.lastPushed = payload;
+      pushPlayerState(payload).then((res) => {
+        if (!res.ok) sync.current.lastPushed = null; // unsent after all — let the retry catch it
+      });
+    }
+    document.addEventListener('visibilitychange', flush);
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, [state]);
+
+  // Called by the account screens once a signup or login has completed, so uploading can begin
+  // from a known-good baseline rather than guessing.
+  const beginSync = useCallback((baseline) => {
+    sync.current.lastPushed = baseline || null;
+    sync.current.ready = true;
+  }, []);
+
+  const value = useMemo(() => ({ state, dispatch, beginSync }), [state, beginSync]);
 
   return <AppStateStoreContext.Provider value={value}>{children}</AppStateStoreContext.Provider>;
 }

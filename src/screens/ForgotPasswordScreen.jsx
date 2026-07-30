@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
-import { EMAIL_RE } from '../store/mockAccounts.js';
+import { EMAIL_RE } from '../store/accountRules.js';
 
-// Ported from the reference prototype's forgot-password screen. Mocked: no email is ever sent.
-// It always shows the same success state whether or not the address matches anything, which is
-// also what avoids leaking which addresses have accounts. When real password reset is wired up,
-// submit() is the only body that needs replacing — the screens are already the real UX.
-export default function ForgotPasswordScreen({ open, prefillEmail, onClose }) {
+// Ported from the reference prototype's forgot-password screen. A real reset email is now sent
+// by Supabase. It still shows the same success state whether or not the address matches an
+// account — that is what avoids leaking which addresses are registered, and it is what the
+// existing "If an account exists for that email…" copy already promises.
+export default function ForgotPasswordScreen({ open, prefillEmail, onSubmit, onClose }) {
   const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -24,6 +24,10 @@ export default function ForgotPasswordScreen({ open, prefillEmail, onClose }) {
       setError(t('fp_invalid_email'));
       return;
     }
+    // Deliberately not awaited: the confirmation must look identical for a registered and an
+    // unregistered address, and waiting on the result would make a registered one measurably
+    // slower to respond.
+    onSubmit(email.trim());
     setSent(true);
   }
 
