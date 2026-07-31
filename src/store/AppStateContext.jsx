@@ -4,6 +4,7 @@ import { streakMilestoneThreshold } from './milestones.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
 import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
+import { clearBaseline, fingerprint, readBaseline, writeBaseline } from '../lib/syncBaseline.js';
 import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
 
 // Remembers which account has already had its full history projected into daily_results, so the
@@ -656,8 +657,13 @@ export function AppStateProvider({ children }) {
   // `ready` gates uploading. It is false until we know the server's copy, which is what stops
   // the worst possible bug here: a signed-in player opening the app on a second device and
   // uploading that device's empty state over their real history before the download lands.
-  const sync = useRef({ ready: false, lastPushed: null });
+  const sync = useRef({ ready: false, lastPushed: null, uid: null });
   const [syncRetry, setSyncRetry] = useState(0);
+
+  // The startup effect below runs once and closes over the state as it was at mount. It needs to
+  // ask what the state is NOW, so it can tell whether this device is carrying unsynced progress.
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Adopt an existing session at startup, and follow it if it ends elsewhere (token expiry, or
   // logging out in another tab).
@@ -665,25 +671,49 @@ export function AppStateProvider({ children }) {
     let cancelled = false;
 
     async function adopt() {
+      const session = await getSession();
       const res = await fetchAccount();
       if (cancelled || !res.ok || !res.profile) return;
+      const uid = session ? session.user.id : null;
+
+      // Does this device hold progress the server has never received? That is precisely the case
+      // where adopting the server's copy would destroy it — playing offline, then reconnecting.
+      //
+      // Only true when this device has synced with THIS account before AND the local state has
+      // moved on since. On a phone logging in for the first time there is no baseline, so the
+      // server still wins and picking up an account on a new device works exactly as it did.
+      const baseline = uid ? readBaseline(uid) : null;
+      const deviceIsAhead =
+        baseline !== null && fingerprint(toSyncPayload(stateRef.current)) !== baseline;
+
       dispatch({
         type: 'ACCOUNT_LOADED',
         username: res.profile.username,
         email: res.email,
         fullName: res.profile.full_name || '',
         avatar: res.profile.avatar,
-        synced: res.syncedState,
+        // The profile above (name, avatar) is always taken from the server. Only the PROGRESS is
+        // withheld when this device is ahead — an empty patch leaves the local history intact.
+        synced: deviceIsAhead ? {} : res.syncedState,
       });
       // The downloaded state may have last been checked on an earlier day, on another device.
       // Re-running the break check is a no-op if it has already run today.
       dispatch({ type: 'CHECK_STREAK_BREAK' });
-      sync.current.lastPushed = res.hasRemoteState ? res.syncedState : null;
+      if (deviceIsAhead) {
+        // Nothing on the server matches what is on this device, so treat everything here as
+        // unsent. The sync effect below then uploads it, which is how the offline session gets
+        // to the account instead of being rolled back.
+        sync.current.lastPushed = null;
+      } else {
+        sync.current.lastPushed = res.hasRemoteState ? res.syncedState : null;
+        // Just downloaded, so the server's contents are known — safe to record as the baseline.
+        if (uid && res.hasRemoteState) writeBaseline(uid, res.syncedState);
+      }
       sync.current.ready = true;
+      sync.current.uid = uid;
       // From here, attempts belong to this account. Set immediately rather than waiting for the
       // bootstrap effect below, so nothing logged during startup is misattributed as guest data.
-      const session = await getSession();
-      if (session) setLogOwner(session.user.id);
+      if (uid) setLogOwner(uid);
     }
 
     getSession().then((session) => {
@@ -699,6 +729,8 @@ export function AppStateProvider({ children }) {
         // owner, so they can never be handed to whoever signs in next.
         setLogOwner(null);
         bootstrap.current.doneFor = null;
+        sync.current.uid = null;
+        clearBaseline();
       }
       // A session that appears after startup — most importantly the one a password-reset link
       // creates, since that URL is parsed asynchronously and usually lands after this effect has
@@ -730,6 +762,9 @@ export function AppStateProvider({ children }) {
       const res = await pushPlayerState(payload);
       if (res.ok) {
         sync.current.lastPushed = payload;
+        // The upload is confirmed, so this is now genuinely what the server holds. Recorded here
+        // and nowhere optimistic, so the baseline can never claim a sync that did not happen.
+        if (sync.current.uid) writeBaseline(sync.current.uid, payload);
         // The normalized mirror of what was just saved. Only today's rows: earlier days are
         // already stored and cannot change. Upserted on the primary key, so this repeats
         // harmlessly all day rather than accumulating rows.
@@ -781,6 +816,7 @@ export function AppStateProvider({ children }) {
         const session = await getSession();
         const uid = session ? session.user.id : null;
         if (!uid) return;
+        sync.current.uid = uid;
         setLogOwner(uid);
 
         // Everything queued on this device, including every question answered as a guest before
@@ -808,6 +844,14 @@ export function AppStateProvider({ children }) {
   const beginSync = useCallback((baseline) => {
     sync.current.lastPushed = baseline || null;
     sync.current.ready = true;
+    // `baseline` is what the caller just confirmed the server holds — the payload signup uploaded,
+    // or the state login downloaded. When it is null the server's contents are NOT known, so
+    // nothing is recorded and the first successful push sets the baseline instead.
+    getSession().then((s) => {
+      if (!s) return;
+      sync.current.uid = s.user.id;
+      if (baseline) writeBaseline(s.user.id, baseline);
+    });
   }, []);
 
   const value = useMemo(() => ({ state, dispatch, beginSync }), [state, beginSync]);
