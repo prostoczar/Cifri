@@ -15,6 +15,7 @@ import {
   sendPasswordReset, signInWithIdentifier, signOut, signUpWithProfile, updateProfile,
 } from './lib/accountApi.js';
 import { toSyncPayload } from './lib/syncedState.js';
+import { recordAttempt, endSession, discardSession } from './lib/attemptLog.js';
 import { arrivedFromRecoveryLink, clearRecoveryUrl } from './lib/recoveryLink.js';
 
 import Header from './components/Header.jsx';
@@ -148,7 +149,26 @@ function AppShell() {
     soundOn,
     getYestScore: (diff) => getYestChallengeScore(state.db, diff),
     getTodayScore: (diff) => getTodayChallengeScore(state.db, diff),
+    // Silent background logging. The standalone Practice tab is its own mode; a warm-up started
+    // from the Challenge screen is still Challenge, just not a counting run.
+    onAttempt: (a) => recordAttempt({
+      sessionId: a.sessionId,
+      mode: a.origin === 'practice' ? 'practice' : 'challenge',
+      difficulty: a.diff,
+      operation: a.operation,
+      digits: a.digits,
+      terms: a.terms,
+      timeMs: a.timeMs,
+      isCorrect: a.isCorrect,
+    }),
     onGameEnd: (summary) => {
+      // Whether this run counted for the day. Read BEFORE the reducer runs, so state.db still
+      // describes the day as it was before this session — which is exactly the condition the
+      // reducer itself uses (`!isPrac && isFirstToday`).
+      const isReal = !summary.isPrac && !!summary.diff &&
+        state.db[summary.diff] && state.db[summary.diff].lastDay !== dayKey();
+      endSession(summary.sessionId, { isReal });
+
       if (summary.correct === 0 && summary.wrong === 0) {
         // Nothing answered — discard, exactly like the reference's early-return in endGame().
         setScreen(summary.origin === 'practice' ? 'practice' : 'challenge');
@@ -186,7 +206,21 @@ function AppShell() {
     soundOn,
     getLastTime: () => getLastBrainingTime(state.brState, dayKey()),
     getTodayTime: () => (brDoneToday(state.brState) ? getTodayBrainingTime(state.brState, dayKey()) : null),
+    onAttempt: (a) => recordAttempt({
+      sessionId: a.sessionId,
+      mode: 'braining',
+      difficulty: null, // Braining has a single fixed format, so there is no tier to record
+      operation: a.operation,
+      digits: a.digits,
+      terms: a.terms,
+      timeMs: a.timeMs,
+      isCorrect: a.isCorrect,
+    }),
     onGameEnd: (summary) => {
+      // Same reasoning as Challenge above: read before the reducer moves brState.lastDay on.
+      endSession(summary.sessionId, {
+        isReal: !summary.isPrac && state.brState.lastDay !== dayKey(),
+      });
       const reqId = ++pendingBrReqId.current;
       dispatch({
         type: 'BRAINING_SESSION_COMPLETE',
@@ -589,7 +623,10 @@ function AppShell() {
   }
 
   function handleQuitConfirm() {
-    const { origin } = game.quit();
+    const { origin, sessionId } = game.quit();
+    // A quit session is discarded by the game and records nothing, so its attempts are dropped
+    // too rather than being logged as a partial run.
+    discardSession(sessionId);
     setQuitOpen(false);
     setScreen(origin === 'practice' ? 'practice' : 'challenge');
     setActiveTab(origin === 'practice' ? 'practice' : 'challenge');
@@ -630,7 +667,7 @@ function AppShell() {
   }
 
   function handleBrQuitConfirm() {
-    brGame.quit();
+    discardSession(brGame.quit().sessionId);
     setBrQuitOpen(false);
     setScreen('braining');
   }

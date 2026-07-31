@@ -50,6 +50,32 @@ export function fn(n) {
   if (Number.isInteger(r)) return r.toLocaleString();
   return r.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
+// ── Question metadata, for the attempt log only ────────────────────────────────
+//
+// The generators below already know how big a question is and how many terms it has, but
+// until now they threw that away and returned only {q, ans, op}. Every change in this file
+// is the same shape: build the question string into a variable, then report `digits` and
+// `terms` alongside it. Nothing that decides what a question IS, or what it scores, is
+// touched — remove the two extra keys from every return and the file is byte-identical in
+// behaviour.
+//
+// `digits` is the digit count of the largest number the player is shown. Commas are stripped
+// first (fn() groups thousands), and only the whole part of a decimal counts, so "1,234.5"
+// reads as 4 digits.
+export function digitsInQuestion(q) {
+  const runs = String(q).replace(/,/g, '').match(/\d+/g);
+  if (!runs) return 1;
+  return runs.reduce((m, r) => Math.max(m, r.length), 1);
+}
+
+// How many values the player has to combine. Counts whole numbers, so "12.5 + 3" is two terms
+// rather than three, and "47 + (8 × 6) − 12" is four. Used by the Practice generator, which
+// picks its term count deep inside a chain builder rather than at a single point.
+export function termsInQuestion(q) {
+  const nums = String(q).replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
+  return nums ? nums.length : 1;
+}
+
 export function maxD(d) {
   return Math.pow(10, d) - 1;
 }
@@ -74,10 +100,12 @@ function _makePctQ(lang, ec) {
       if (mxN < mnN) { att++; continue; }
       n = rn(mnN, mxN); base = n * def.m; ans = Math.round(base * def.p / 100); att++;
     } while ((base < mnB || ans <= 0) && att < 50);
-    return { q: def.p + '% ' + t(lang, 'word_of') + ' ' + base + ' = ?', ans, op: 'percentage' };
+    // digits comes from the base, not from digitsInQuestion: the percentage literal is also a
+    // number in the string, and "5% of 20" is a 2-digit question, not a 1-digit one.
+    return { q: def.p + '% ' + t(lang, 'word_of') + ' ' + base + ' = ?', ans, op: 'percentage', digits: String(base).length, terms: 2 };
   } else {
     const pct = rn(1, 99), b2 = rn(Math.max(mnB, minD(mxD > 1 ? mxD - 1 : 1)), mxB);
-    return { q: pct + '% ' + t(lang, 'word_of') + ' ' + b2 + ' = ?', ans: parseFloat((b2 * pct / 100).toFixed(1)), op: 'percentage' };
+    return { q: pct + '% ' + t(lang, 'word_of') + ' ' + b2 + ' = ?', ans: parseFloat((b2 * pct / 100).toFixed(1)), op: 'percentage', digits: String(b2).length, terms: 2 };
   }
 }
 
@@ -100,9 +128,13 @@ function _makeDivQ(ec) {
   } while ((dvd > mxDiv || dvd < mnDiv) && att < 50);
   if (ec.dec && Math.random() > 0.55 && div > 1) {
     const rem = rn(1, div - 1), dd = dvd + rem;
-    if (dd <= mxDiv) return { q: dd + ' ÷ ' + div + ' = ?', ans: parseFloat((dd / div).toFixed(1)), op: 'division' };
+    if (dd <= mxDiv) {
+      const q = dd + ' ÷ ' + div + ' = ?';
+      return { q, ans: parseFloat((dd / div).toFixed(1)), op: 'division', digits: digitsInQuestion(q), terms: 2 };
+    }
   }
-  return { q: fn(dvd) + ' ÷ ' + fn(div) + ' = ?', ans: quo, op: 'division' };
+  const q = fn(dvd) + ' ÷ ' + fn(div) + ' = ?';
+  return { q, ans: quo, op: 'division', digits: digitsInQuestion(q), terms: 2 };
 }
 
 function _makeAddQ(ec, tc) {
@@ -128,7 +160,8 @@ function _makeAddQ(ec, tc) {
     ans = terms.reduce((a, b) => a + b, 0);
     ans = dec ? parseFloat(ans.toFixed(1)) : Math.round(ans);
   } while (ans === 0 && att < 20);
-  return { q: qp.join(' ') + ' = ?', ans, op: 'addition' };
+  const q = qp.join(' ') + ' = ?';
+  return { q, ans, op: 'addition', digits: digitsInQuestion(q), terms: tc };
 }
 
 function _makeSubQ(ec, tc) {
@@ -158,9 +191,11 @@ function _makeSubQ(ec, tc) {
   } while (((!neg && ans <= 0) || ans === 0) && att < 50);
   if (!neg && ans <= 0) {
     const a = rn(20, maxD(digits[digits.length - 1])), b = rn(Math.max(5, Math.floor(a * 0.1)), a - 1);
-    return { q: fn(a) + ' − ' + fn(b) + ' = ?', ans: a - b, op: 'subtraction' };
+    const qf = fn(a) + ' − ' + fn(b) + ' = ?';
+    return { q: qf, ans: a - b, op: 'subtraction', digits: digitsInQuestion(qf), terms: 2 };
   }
-  return { q: qp.join(' ') + ' = ?', ans, op: 'subtraction' };
+  const q = qp.join(' ') + ' = ?';
+  return { q, ans, op: 'subtraction', digits: digitsInQuestion(q), terms: tc };
 }
 
 function _makeMulQ(ec, tc) {
@@ -188,9 +223,11 @@ function _makeMulQ(ec, tc) {
   } while (Math.abs(ans) > mxA && att < 40);
   if (Math.abs(ans) > mxA) {
     const a2 = rn(11, 19), b2 = rn(2, 9);
-    return { q: fn(a2) + ' × ' + fn(b2) + ' = ?', ans: a2 * b2, op: 'multiplication' };
+    const qf = fn(a2) + ' × ' + fn(b2) + ' = ?';
+    return { q: qf, ans: a2 * b2, op: 'multiplication', digits: digitsInQuestion(qf), terms: 2 };
   }
-  return { q: qp.join(' ') + ' = ?', ans, op: 'multiplication' };
+  const q = qp.join(' ') + ' = ?';
+  return { q, ans, op: 'multiplication', digits: digitsInQuestion(q), terms: tc };
 }
 
 // Mixed multi-term: 0 = pure +/- chain; 1 = A OP (B x C) [OP D]; 2 = A OP (B / C) [OP D]
@@ -230,7 +267,12 @@ function _makeMixedQ(ec, tc) {
       ans0 = dec ? parseFloat(ans0.toFixed(1)) : Math.round(ans0);
     } while ((ans0 === 0 || Math.abs(ans0) > ec.ans_max) && att < 30);
     if (ans0 === 0 || Math.abs(ans0) > ec.ans_max) return _makeAddQ(ec, 2);
-    return { q: qp0.join(' ') + ' = ?', ans: ans0, op: t0.slice(1).some((x) => x > 0) ? 'addition' : 'subtraction' };
+    const q0 = qp0.join(' ') + ' = ?';
+    return {
+      q: q0, ans: ans0,
+      op: t0.slice(1).some((x) => x > 0) ? 'addition' : 'subtraction',
+      digits: digitsInQuestion(q0), terms: tc,
+    };
   }
   if (st === 1) {
     let att1 = 0, res1, qs1;
@@ -253,7 +295,7 @@ function _makeMixedQ(ec, tc) {
       qs1 = fn(A1) + ' ' + op1 + ' ' + bD1 + xD1 + ' = ?';
     } while ((res1 === 0 || Math.abs(res1) > ec.ans_max) && att1 < 30);
     if (res1 === 0 || Math.abs(res1) > ec.ans_max) return _makeAddQ(ec, 2);
-    return { q: qs1, ans: res1, op: 'multiplication' };
+    return { q: qs1, ans: res1, op: 'multiplication', digits: digitsInQuestion(qs1), terms: tc };
   }
   let att2 = 0, res2, qs2;
   do {
@@ -275,7 +317,7 @@ function _makeMixedQ(ec, tc) {
     qs2 = fn(A2) + ' ' + op2 + ' ' + bD2 + xD2 + ' = ?';
   } while ((res2 === 0 || Math.abs(res2) > ec.ans_max) && att2 < 30);
   if (res2 === 0 || Math.abs(res2) > ec.ans_max) return _makeAddQ(ec, 2);
-  return { q: qs2, ans: res2, op: 'division' };
+  return { q: qs2, ans: res2, op: 'division', digits: digitsInQuestion(qs2), terms: tc };
 }
 
 // makeQ — bridges the old game flow (passes DIFFS[diff] cfg) to the engine above.

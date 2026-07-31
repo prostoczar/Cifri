@@ -259,6 +259,33 @@ export async function pushPlayerState(payload) {
   return { ok: true };
 }
 
+// ── Saving the normalized daily results ────────────────────────────────────────
+//
+// The companion write to pushPlayerState above. The blob remains the source of truth; these
+// rows are a derived, indexed mirror of it, shaped for the ranking queries a future leaderboard
+// will run. Nothing reads them across accounts today, and RLS would not permit it if it tried.
+//
+// Upsert on the full primary key, so re-sending a day updates its row instead of duplicating it.
+// That is what lets this run on every sync and after every failure without accumulating junk.
+
+export async function pushDailyResults(rows) {
+  if (!rows || !rows.length) return { ok: true };
+  const session = await getSession();
+  if (!session) return { ok: false, error: ERR.INVALID_CREDENTIALS };
+
+  const withOwner = rows.map((r) => ({ ...r, user_id: session.user.id }));
+
+  // A long history is sent in pieces — a first-login backfill can be hundreds of rows, and one
+  // oversized request on a phone connection is far more likely to fail than several small ones.
+  for (let i = 0; i < withOwner.length; i += 200) {
+    const { error } = await supabase
+      .from('daily_results')
+      .upsert(withOwner.slice(i, i + 200), { onConflict: 'user_id,day,mode,difficulty' });
+    if (error) return { ok: false, error: mapAuthError(error) };
+  }
+  return { ok: true };
+}
+
 // ── Editing the account ────────────────────────────────────────────────────────
 
 export async function updateProfile({ username, fullName, avatar }) {

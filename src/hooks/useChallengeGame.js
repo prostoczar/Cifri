@@ -2,12 +2,16 @@ import { useCallback, useRef, useState } from 'react';
 import { DIFFS, makeQ, calcSc, opName, fn } from '../store/questionEngine.js';
 import { makePracticeQ } from '../store/practiceEngine.js';
 import { tick, buzz, urgentTick } from '../store/sound.js';
+import { startSession } from '../lib/attemptLog.js';
 import { t } from '../i18n_data.js';
 
 // Ported from the reference prototype's beginGame/loadQ/submitAns/updateTUI/endGame timer logic.
 // Pure game-loop state — knows nothing about the persisted app store. Calls onGameEnd(summary)
 // exactly once when a session is over (timer hit 0, or a count-mode session reached its target).
-export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTodayScore }) {
+// `onAttempt` is optional and purely a REPORT: it is called after a question has been marked,
+// and nothing in this file reads its return value or changes course because of it. Remove it and
+// the game behaves identically.
+export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestScore, getTodayScore }) {
   const [session, setSession] = useState(null); // {diff,isPrac,isUnlim,timer,ttotal,score,correct,wrong,origin,yestScore,todayScore,pcfgMode}
   const [question, setQuestion] = useState({ text: '--', opLabel: '' });
   const [input, setInput] = useState('');
@@ -47,6 +51,9 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
     const res = cfg && cfg.custom ? makePracticeQ(lang, cfg) : makeQ(lang, cfg);
     c.answer = res.ans;
     c.op = res.op;
+    // Question shape, carried only so the attempt log can describe what was asked.
+    c.digits = res.digits;
+    c.terms = res.terms;
     c.qStart = Date.now();
     setQuestion({ text: res.q, opLabel: opName(lang, c.op) });
     setInputBoth('');
@@ -89,6 +96,7 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
       correct: c.correct,
       wrong: c.wrong,
       opTimes: c.opTimes,
+      sessionId: c.sessionId,
     });
   }, [clearTimer, onGameEnd]);
 
@@ -99,6 +107,8 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
         diff, isPrac, pcfg, origin,
         score: 0, correct: 0, wrong: 0, opTimes: {},
         answer: null, op: null, qStart: 0,
+        // Groups this sitting's answers together in the attempt log.
+        sessionId: startSession(),
       };
       let tsec;
       if (isPrac) {
@@ -158,6 +168,24 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
     const ok = Math.abs(val - c.answer) < 0.055;
     const pts = calcSc(ok, elapsed, c.op, dm);
 
+    // Report the answered question. Wrapped so a logging fault can never interrupt play, and
+    // placed after the marking above so it only ever describes a decision already made.
+    if (onAttempt) {
+      try {
+        onAttempt({
+          sessionId: c.sessionId,
+          origin: c.origin,
+          isPrac: c.isPrac,
+          diff: c.diff,
+          operation: c.op,
+          digits: c.digits,
+          terms: c.terms,
+          timeMs: elapsed * 1000,
+          isCorrect: ok,
+        });
+      } catch (e) { /* never let logging interrupt a game */ }
+    }
+
     if (ok) {
       if (!c.opTimes) c.opTimes = {};
       (c.opTimes[c.op] = c.opTimes[c.op] || []).push(elapsed);
@@ -201,13 +229,13 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, getYestScore, getTo
         loadQuestion();
       }, 1200);
     }
-  }, [finishGame, lang, loadQuestion, pushTuiUpdate, soundOn]);
+  }, [finishGame, lang, loadQuestion, onAttempt, pushTuiUpdate, soundOn]);
 
   // Quit always discards — never records a session, matching the reference's doQuit().
   const quit = useCallback(() => {
     clearTimer();
     const c = curRef.current;
-    return { origin: c ? c.origin : 'challenge' };
+    return { origin: c ? c.origin : 'challenge', sessionId: c ? c.sessionId : null };
   }, [clearTimer]);
 
   return { session, question, input, inputClass, feedback, qcFlash, begin, padInput, backspace, submitAnswer, quit };

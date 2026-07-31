@@ -1,12 +1,17 @@
 import { useCallback, useRef, useState } from 'react';
 import { brMakeSession, brFmtTimer } from '../store/braining.js';
 import { tick, buzz } from '../store/sound.js';
+import { startSession } from '../lib/attemptLog.js';
 import { t } from '../i18n_data.js';
 
 // Ported from the reference prototype's brBeginGame/brLoadQ/brSubmit/brFinish timer logic.
 // Braining has no countdown clock — the timer counts UP, and a wrong answer must be corrected
 // before advancing (the timer keeps running), so there is no "wrong" tally at all.
-export function useBrainingGame({ lang, soundOn, onGameEnd, getLastTime, getTodayTime }) {
+// `onAttempt` is optional and purely a REPORT — see the equivalent note in useChallengeGame.js.
+// Braining makes the player correct a wrong answer before moving on, so a single question can
+// produce several attempts. Each one is reported, which is the only record that the wrong
+// answers happened at all: the game itself keeps no tally of them.
+export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTime, getTodayTime }) {
   const [session, setSession] = useState(null);
   const [question, setQuestion] = useState({ text: '--', opLabel: '' });
   const [input, setInput] = useState('');
@@ -55,6 +60,9 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, getLastTime, getToda
     const q = g.questions[g.qIdx];
     g.answer = q.ans;
     g.curOp = q.op;
+    // Question shape, carried only so the attempt log can describe what was asked.
+    g.curDigits = q.digits;
+    g.curTerms = q.terms;
     g.qStart = Date.now();
     setQuestion({ text: q.q, opLabel: q.op });
     setInputBoth('');
@@ -69,7 +77,7 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, getLastTime, getToda
     const g = gameRef.current;
     if (!g) return;
     const sec = Math.floor((Date.now() - g.startTime) / 1000);
-    onGameEnd({ isPrac: g.isPrac, sec, opTimes: g.opTimes });
+    onGameEnd({ isPrac: g.isPrac, sec, opTimes: g.opTimes, sessionId: g.sessionId });
   }, [clearTimer, onGameEnd]);
 
   const begin = useCallback(
@@ -86,6 +94,8 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, getLastTime, getToda
         opTimes: {},
         startTime: Date.now(),
         elapsed: 0,
+        // Groups this sitting's answers together in the attempt log.
+        sessionId: startSession(),
         lastTime: isPrac ? null : getLastTime(),
         todayTime: isPrac ? getTodayTime() : null,
       };
@@ -127,6 +137,26 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, getLastTime, getToda
     if (isNaN(val)) return;
     const ok = Math.abs(val - g.answer) < 0.05;
 
+    // Report the answered question, right or wrong. Wrapped so a logging fault can never
+    // interrupt play, and placed after the marking above so it only describes what was decided.
+    if (onAttempt) {
+      try {
+        onAttempt({
+          sessionId: g.sessionId,
+          mode: 'braining',
+          isPrac: g.isPrac,
+          diff: null,
+          operation: g.curOp,
+          digits: g.curDigits,
+          terms: g.curTerms,
+          // Time since the question appeared. On a re-try after a wrong answer this is the
+          // running total for that question, not the time since the last keystroke.
+          timeMs: Date.now() - g.qStart,
+          isCorrect: ok,
+        });
+      } catch (e) { /* never let logging interrupt a game */ }
+    }
+
     if (ok) {
       if (!g.opTimes) g.opTimes = {};
       (g.opTimes[g.curOp] = g.opTimes[g.curOp] || []).push((Date.now() - g.qStart) / 1000);
@@ -146,10 +176,12 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, getLastTime, getToda
       setHint(t(lang, 'wrong_try_again'));
       setInputBoth('');
     }
-  }, [finishGame, lang, loadQuestion, setInputBoth, soundOn]);
+  }, [finishGame, lang, loadQuestion, onAttempt, setInputBoth, soundOn]);
 
   const quit = useCallback(() => {
     clearTimer();
+    const g = gameRef.current;
+    return { sessionId: g ? g.sessionId : null };
   }, [clearTimer]);
 
   // Which warning the quit modal shows depends on whether this run could still have counted.

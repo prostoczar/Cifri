@@ -1,4 +1,9 @@
 // Braining logic — ported verbatim from the reference prototype.
+//
+// The only addition is `digits` and `terms` on each generated question, for the attempt log.
+// brMakeQ already picked its term count on its first line and discarded it; it is now reported
+// instead. No question, answer or timing behaviour changes.
+import { digitsInQuestion } from './questionEngine.js';
 
 export const BR_SCALE = [
   { maxSec: 180, age: 20, label: 'Under 3 min', color: '#3d7020' },
@@ -70,7 +75,7 @@ export function brMakeQ(op) {
     for (let i = 0; i < terms; i++) nums.push(Math.random() < 0.5 ? brRn(1, 9) : brRn(10, 49));
     ans = nums.reduce((a, b) => a + b, 0);
     q = nums.join(' + ') + ' = ?';
-    return { q, ans, op: 'Addition' };
+    return { q, ans, op: 'Addition', digits: digitsInQuestion(q), terms };
   }
   if (op === 'sub') {
     // Starting number floor is 15 so there's always room for a meaningful subtraction.
@@ -90,7 +95,8 @@ export function brMakeQ(op) {
     }
     const qp = [String(first)];
     vals.forEach((v) => qp.push('− ' + v));
-    return { q: qp.join(' ') + ' = ?', ans, op: 'Subtraction' };
+    const qs = qp.join(' ') + ' = ?';
+    return { q: qs, ans, op: 'Subtraction', digits: digitsInQuestion(qs), terms };
   }
   if (op === 'mul') {
     let a, b, c;
@@ -106,7 +112,7 @@ export function brMakeQ(op) {
       ans = a * b * c;
       q = a + ' × ' + b + ' × ' + c + ' = ?';
     }
-    return { q, ans, op: 'Multiplication' };
+    return { q, ans, op: 'Multiplication', digits: digitsInQuestion(q), terms };
   }
   // div
   const div = brRn(2, 9), quot = Math.random() < 0.6 ? brRn(2, 9) : brRn(2, 12), divd = div * quot;
@@ -117,7 +123,8 @@ export function brMakeQ(op) {
     if (Math.random() < 0.5) { q += ' + ' + ex; ans += ex; }
     else { q += ' − ' + ex; ans -= ex; }
   }
-  return { q: q + ' = ?', ans, op: 'Division' };
+  const qd = q + ' = ?';
+  return { q: qd, ans, op: 'Division', digits: digitsInQuestion(qd), terms };
 }
 
 export function brMakeSession(total) {

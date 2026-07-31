@@ -24,7 +24,7 @@
 // the single decimal place). Plain JS numbers lose integer exactness above ~9×10^15, which four
 // quad-digit terms can reach — that silently produced fractional results and answers that did not
 // match the question shown.
-import { rn, fn, minD, maxD, negDisp } from './questionEngine.js';
+import { rn, fn, minD, maxD, negDisp, digitsInQuestion, termsInQuestion } from './questionEngine.js';
 import { t } from '../i18n_data.js';
 
 const pick = (arr) => arr[rn(0, arr.length - 1)];
@@ -294,7 +294,14 @@ export function makePracticeQ(lang, cfg) {
   let res;
   for (let i = 0; i < 25; i++) {
     res = build(lang, conf);
-    if (res.ans !== 0) return res;
+    if (res.ans !== 0) return withMeta(res);
   }
-  return res;
+  return withMeta(res);
+}
+
+// Attaches the attempt-log metadata at the single entry point rather than at each of build()'s
+// six return sites. Read off the finished question string, so it describes what the player was
+// actually shown — and so nothing inside the chain builders had to be disturbed to report it.
+function withMeta(res) {
+  return { ...res, digits: digitsInQuestion(res.q), terms: termsInQuestion(res.q) };
 }

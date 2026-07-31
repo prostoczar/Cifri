@@ -1,8 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { dayKey, yesterday, addDaysStr, dateStrToDate } from './dates.js';
 import { streakMilestoneThreshold } from './milestones.js';
-import { fetchAccount, getSession, onAuthChange, pushPlayerState } from '../lib/accountApi.js';
+import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
 import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
+import { projectDailyRows } from '../lib/dailyResults.js';
+import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
+
+// Remembers which account has already had its full history projected into daily_results, so the
+// backfill runs once per account rather than on every app start.
+const BACKFILL_KEY = 'cifri_daily_backfill_v1';
 
 const LS_KEY = 'cifri_react_v1';
 
@@ -674,6 +680,10 @@ export function AppStateProvider({ children }) {
       dispatch({ type: 'CHECK_STREAK_BREAK' });
       sync.current.lastPushed = res.hasRemoteState ? res.syncedState : null;
       sync.current.ready = true;
+      // From here, attempts belong to this account. Set immediately rather than waiting for the
+      // bootstrap effect below, so nothing logged during startup is misattributed as guest data.
+      const session = await getSession();
+      if (session) setLogOwner(session.user.id);
     }
 
     getSession().then((session) => {
@@ -685,6 +695,10 @@ export function AppStateProvider({ children }) {
       if (event === 'SIGNED_OUT') {
         sync.current.ready = false;
         sync.current.lastPushed = null;
+        // Anything played from now on is guest data again. Rows already queued keep the previous
+        // owner, so they can never be handed to whoever signs in next.
+        setLogOwner(null);
+        bootstrap.current.doneFor = null;
       }
       // A session that appears after startup — most importantly the one a password-reset link
       // creates, since that URL is parsed asynchronously and usually lands after this effect has
@@ -716,6 +730,10 @@ export function AppStateProvider({ children }) {
       const res = await pushPlayerState(payload);
       if (res.ok) {
         sync.current.lastPushed = payload;
+        // The normalized mirror of what was just saved. Only today's rows: earlier days are
+        // already stored and cannot change. Upserted on the primary key, so this repeats
+        // harmlessly all day rather than accumulating rows.
+        pushDailyResults(projectDailyRows(state, { todayOnly: true }));
       } else {
         // Leave lastPushed alone so this payload is still considered unsent, and nudge the
         // effect to run again. Progress is already safe in localStorage either way — a failed
@@ -741,6 +759,48 @@ export function AppStateProvider({ children }) {
     }
     document.addEventListener('visibilitychange', flush);
     return () => document.removeEventListener('visibilitychange', flush);
+  }, [state]);
+
+  // ── Once-per-account bootstrap ───────────────────────────────────────────────
+  //
+  // Two jobs that must happen however the account arrived — adopted at startup, freshly signed
+  // up, or just logged in. Those three paths do not share a code route, but they all end with
+  // `acctCreated` true and sync ready, so this watches for that state instead of hooking each
+  // one and hoping none is ever missed.
+  //
+  // It reads `state` at the moment it runs, which is what makes it correct for signup (the
+  // guest's own history, just uploaded) and for login (the account's history, just downloaded)
+  // without either case needing to pass a snapshot in.
+  const bootstrap = useRef({ busy: false, doneFor: null });
+  useEffect(() => {
+    if (!state.acctCreated || !sync.current.ready) return;
+    if (bootstrap.current.doneFor || bootstrap.current.busy) return;
+    bootstrap.current.busy = true;
+    (async () => {
+      try {
+        const session = await getSession();
+        const uid = session ? session.user.id : null;
+        if (!uid) return;
+        setLogOwner(uid);
+
+        // Everything queued on this device, including every question answered as a guest before
+        // signing up — this is the only moment that history can reach an account.
+        await flushOutbox();
+
+        // Project the full history into daily_results, once. Past days cannot change, so from
+        // here only the day in progress is rewritten (see the sync effect above).
+        if (localStorage.getItem(BACKFILL_KEY) !== uid) {
+          const out = await pushDailyResults(projectDailyRows(state, { todayOnly: false }));
+          // Left unmarked on failure, so the next state change retries rather than skipping a
+          // player's entire history for good.
+          if (!out.ok) return;
+          localStorage.setItem(BACKFILL_KEY, uid);
+        }
+        bootstrap.current.doneFor = uid;
+      } finally {
+        bootstrap.current.busy = false;
+      }
+    })();
   }, [state]);
 
   // Called by the account screens once a signup or login has completed, so uploading can begin
