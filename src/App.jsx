@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AppStateProvider, useAppState, chDoneToday, brDoneToday, todayDone } from './store/AppStateContext.jsx';
+import { AppStateProvider, useAppState, chDoneToday, brDoneToday } from './store/AppStateContext.jsx';
 import { useI18n } from './store/useI18n.js';
 import { useChallengeGame } from './hooks/useChallengeGame.js';
 import { useBrainingGame } from './hooks/useBrainingGame.js';
 import { useSwipeTabs, TAB_ORDER } from './hooks/useSwipeTabs.js';
-import { DIFFS, diffLabel } from './store/questionEngine.js';
+import { diffLabel } from './store/questionEngine.js';
 import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors.js';
 import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
@@ -162,11 +162,11 @@ function AppShell() {
       isCorrect: a.isCorrect,
     }),
     onGameEnd: (summary) => {
-      // Whether this run counted for the day. Read BEFORE the reducer runs, so state.db still
-      // describes the day as it was before this session — which is exactly the condition the
-      // reducer itself uses (`!isPrac && isFirstToday`).
-      const isReal = !summary.isPrac && !!summary.diff &&
-        state.db[summary.diff] && state.db[summary.diff].lastDay !== dayKey();
+      // Whether this run counted for the day, stamped onto every question answered in it. Under
+      // the averaging model that is simply "it was a Challenge run, not a Practice-tab run" —
+      // the same condition the reducer applies (`real: !isPrac`), with the `diff` test covering
+      // the Practice tab, which has no difficulty and never counts.
+      const isReal = !summary.isPrac && !!summary.diff;
       endSession(summary.sessionId, { isReal });
 
       if (summary.correct === 0 && summary.wrong === 0) {
@@ -332,18 +332,14 @@ function AppShell() {
     onSwitchTab: handleSwipeTab,
   });
 
+  // No daily cap and no first-trial guard: Challenge can be started as many times as the player
+  // wants, and each run is folded into today's average. (Braining keeps its own guard, in
+  // handleStartBraining below — that mode is unchanged.)
   function handleStartChallenge() {
-    if (todayDone(state.db, state.selDiff)) return;
     setCountdownInfo({
       diff: state.selDiff, isPrac: false, pcfg: null, origin: 'challenge',
       label: diffLabel(lang, state.selDiff) + ' ' + t('challenge_word'),
     });
-    setScreen('countdown');
-  }
-
-  function handleStartPractice(diff) {
-    const pc = { ...DIFFS[diff], isPrac: true, mode: 'time', timeSec: 60 };
-    setCountdownInfo({ diff, isPrac: true, pcfg: pc, origin: 'challenge', label: t('practice_mode') });
     setScreen('countdown');
   }
 
@@ -632,17 +628,25 @@ function AppShell() {
     setActiveTab(origin === 'practice' ? 'practice' : 'challenge');
   }
 
-  // againGame(): a Challenge-origin run replays as an uncounted warm-up on the same difficulty;
-  // a Practice-tab run replays the same custom setup.
+  // againGame(): a Challenge-origin run replays as another COUNTING run on the same difficulty,
+  // which is the same bet the green button on the home screen offers — it moves today's average.
+  // A Practice-tab run replays the same custom setup and counts for nothing, as before.
   function handlePlayAgain() {
     const { origin, diff } = resultData;
     setResultData(null);
-    if (origin === 'challenge') handleStartPractice(diff);
-    else handleStartCustomPractice();
+    if (origin === 'challenge') {
+      setCountdownInfo({
+        diff, isPrac: false, pcfg: null, origin: 'challenge',
+        label: diffLabel(lang, diff) + ' ' + t('challenge_word'),
+      });
+      setScreen('countdown');
+    } else {
+      handleStartCustomPractice();
+    }
   }
 
-  // backHome(): origin (not isPrac) decides where to return — Challenge's own practice button
-  // and the Practice tab both set isPrac, so isPrac alone can't tell them apart.
+  // backHome(): origin decides where to return — the Challenge screen and the Practice tab both
+  // end in a result screen, and only `origin` distinguishes which one to go back to.
   function handleBackHome() {
     const origin = resultData && resultData.origin;
     setResultData(null);
@@ -704,7 +708,6 @@ function AppShell() {
           streak={state.streak}
           bestStreakEver={state.bestStreakEver}
           onStartChallenge={handleStartChallenge}
-          onStartPractice={handleStartPractice}
           totdLastViewed={state.totdLastViewed}
           onOpenTrickOfDay={handleOpenTrickOfDay}
         />

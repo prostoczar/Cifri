@@ -8,8 +8,9 @@
 // The point is what a future leaderboard has to do to find the top 10: read a sorted index,
 // rather than download and parse every player's JSON.
 //
-// No game logic lives here. Which run counted for a day was already decided when it was played
-// and stored on the session as `real`; this only reads that decision back out.
+// No game logic lives here. Which runs counted for a day was already decided when they were
+// played and stored on each session as `real`; this only reads those decisions back out and
+// summarises them — for Challenge, into the average and the count and sum behind it.
 
 import { dayKey } from '../store/dates.js';
 
@@ -47,25 +48,52 @@ export function projectDailyRows(state, { todayOnly = true } = {}) {
     : { streak: null, best_streak: null });
 
   // ── Challenge ────────────────────────────────────────────────────────────────
+  //
+  // A day's score is the AVERAGE of that day's counting runs, and `attempt_count`/`score_sum`
+  // are the two numbers it is derived from. Sending those rather than the individual scores is
+  // what keeps one row per day the whole story however often somebody plays: a fifth play is a
+  // count of 5 and a bigger sum, never a fifth row.
+  //
+  // Averaging only the COUNTING runs is also what makes this safe to run over a player's whole
+  // history. Days played under the old rule hold exactly one counting run and a pile of practice
+  // runs, so their average is that single score and their count is 1 — identical to what was
+  // already stored for them. No past day's score moves because the rule changed.
   for (const diff of DIFFS) {
     const bucket = (state.db && state.db[diff]) || { sessions: [] };
     for (const [day, sessions] of groupByDate(bucket.sessions)) {
       if (todayOnly && day !== today) continue;
 
-      // The counting trial for a day, if there was one. Only the FIRST recorded run counts —
-      // the same rule the game itself applies, since afterwards the day is already logged.
-      const real = sessions.find(isRecorded);
+      const counted = sessions.filter(isRecorded).filter((s) => Number.isFinite(s.score) && s.score >= 0);
 
-      // Failing that, the day was practice only. The best of those is the representative score;
-      // it is stored so the history is complete, but is_real=false keeps it out of any ranking.
-      const chosen = real || sessions.reduce((b, s) => (b && b.score >= s.score ? b : s), null);
-      if (!chosen || !Number.isFinite(chosen.score) || chosen.score < 0) continue;
+      if (counted.length) {
+        const sum = counted.reduce((a, s) => a + Math.round(s.score), 0);
+        rows.push({
+          day, mode: 'challenge', difficulty: diff,
+          score: Math.round(sum / counted.length),
+          attempt_count: counted.length,
+          score_sum: sum,
+          time_sec: null, brain_age: null,
+          is_real: true,
+          ...streakFor(day),
+        });
+        continue;
+      }
+
+      // Nothing counted that day — under the old model, a day of practice with the real trial
+      // never played. Kept so the history has no holes, with the best run standing for the day
+      // and is_real=false keeping it out of any ranking. The count and sum still have to be
+      // filled in because the table now requires them of every Challenge row; describing one
+      // representative run as "1 attempt" is the honest reading of a day that never counted.
+      const best = sessions.reduce((b, s) => (b && b.score >= s.score ? b : s), null);
+      if (!best || !Number.isFinite(best.score) || best.score < 0) continue;
 
       rows.push({
         day, mode: 'challenge', difficulty: diff,
-        score: Math.round(chosen.score),
+        score: Math.round(best.score),
+        attempt_count: 1,
+        score_sum: Math.round(best.score),
         time_sec: null, brain_age: null,
-        is_real: !!real,
+        is_real: false,
         ...streakFor(day),
       });
     }
@@ -86,6 +114,13 @@ export function projectDailyRows(state, { todayOnly = true } = {}) {
     rows.push({
       day, mode: 'braining', difficulty: 'standard',
       score: null,
+      // Explicitly null, for two reasons. Braining keeps its one-official-trial rule and has no
+      // average to report — the database now REFUSES a Braining row that carries these, which is
+      // the guard rail against the new rule leaking across modes. And the upload sends rows in
+      // batches, which requires every row in a batch to name the same columns, so they have to be
+      // stated rather than left out.
+      attempt_count: null,
+      score_sum: null,
       time_sec: Math.round(chosen.time),
       brain_age: Number.isFinite(chosen.age) ? Math.round(chosen.age) : null,
       is_real: !!real,

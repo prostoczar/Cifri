@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { opName } from '../store/questionEngine.js';
-import { todaySessionsFor, computeOpSummary } from '../store/selectors.js';
+import { todayChallengeAvg, computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
 import MilestonePopup from '../components/MilestonePopup.jsx';
@@ -25,17 +25,18 @@ export default function ChallengeResultScreen({
   // The Practice tab has no difficulty, so there is no per-difficulty record to read.
   const d = diff ? db[diff] : null;
 
+  // The fourth card is the payoff of the whole averaging model: not the run just played, but what
+  // the day now scores having played it. On the first play of the day those are the same number;
+  // on the third they may well not be, and that is the point.
   let bestText = '--', streakText = '--', avgText = '--';
   if (!isPrac && d) {
     bestText = d.best || score;
     streakText = streak || 1;
-    const todayList = todaySessionsFor(db, diff);
-    avgText = todayList.length ? Math.round(todayList.reduce((a, s) => a + s.score, 0) / todayList.length) : score;
+    avgText = todayChallengeAvg(db, diff).avg ?? score;
   } else if (diff) {
     bestText = d.best || '--';
     streakText = streak || '--';
-    const todayList = todaySessionsFor(db, diff);
-    avgText = todayList.length ? Math.round(todayList.reduce((a, s) => a + s.score, 0) / todayList.length) : '--';
+    avgText = todayChallengeAvg(db, diff).avg ?? '--';
   }
 
   const opSummary = computeOpSummary(result.opTimes);
@@ -52,7 +53,7 @@ export default function ChallengeResultScreen({
         <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{acc}%</div><div className="rcl">{t('accuracy')}</div></div>
         <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{bestText}</div><div className="rcl">{t('stat_personal_best')}</div></div>
         <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{streakText}</div><div className="rcl">{t('streak')}</div></div>
-        <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{avgText}</div><div className="rcl">{t('stat_today_avg')}</div></div>
+        <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{avgText}</div><div className="rcl">{t('stat_today_score')}</div></div>
       </div>
       {opSummary && (
         <div className="op-summary-card">

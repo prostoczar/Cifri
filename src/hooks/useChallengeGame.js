@@ -121,7 +121,11 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       c.timer = tsec;
       c.ttotal = tsec;
       c.yestScore = diff ? getYestScore(diff) : null;
-      c.todayScore = isPrac && diff ? getTodayScore(diff) : null;
+      // Today's running average, once there is one. Previously only shown while practising,
+      // because during the one counting trial there was nothing yet to compare against. Now
+      // every Challenge play after the first has a live average sitting behind it, and that
+      // is precisely the number this run is wagering.
+      c.todayScore = diff ? getTodayScore(diff) : null;
       curRef.current = c;
       alockRef.current = false;
       loadQuestion();

@@ -409,17 +409,37 @@ function reducer(state, action) {
       }
 
       const d = state.db[diff];
+
+      // Whether the streak has anything to gain from this run. Note what it is NOT: it is no
+      // longer the test for whether the run counts toward the score. Those two ideas used to be
+      // the same question and are now separate — the day is credited to the streak once, on the
+      // first play, while the score keeps moving with every play after it.
       const isFirstToday = d.lastDay !== today;
-      const newSessions = [...d.sessions, { date: today, score, real: !isPrac && isFirstToday }];
+
+      // EVERY Challenge play counts now. There is no longer a first-trial-only rule and no
+      // practice mode on this screen, so a run is recorded unless it came from the standalone
+      // Practice tab. Each recorded score becomes one more term in today's average — which is
+      // computed where it is read (see dayAverage in store/selectors.js), not stored here, so
+      // there is no second copy of the day's score that could fall out of step with the sessions
+      // it is supposed to summarise.
+      const newSessions = [...d.sessions, { date: today, score, real: !isPrac }];
+
+      // Untouched by the averaging, deliberately: personal best has always been the best single
+      // run, and a day's average being dragged down by a bad replay must not cost a player the
+      // record they actually set.
       const prevBest = d.best;
       const newBest = score > prevBest ? score : prevBest;
+
       const newDb = {
         ...state.db,
         [diff]: {
           ...d,
           sessions: newSessions,
           best: newBest,
-          lastDay: !isPrac && isFirstToday ? today : d.lastDay,
+          // Stamped on the first counting play and then left alone. This is what `todayDone`
+          // reads, so it now means exactly "has played Challenge today" — which is both the
+          // green-styling condition and the streak condition.
+          lastDay: !isPrac ? today : d.lastDay,
         },
       };
 
@@ -460,6 +480,10 @@ function reducer(state, action) {
         }
         nextMilestones = m;
 
+        // Streak crediting happens on the day's FIRST play and never again — playing more times
+        // improves (or risks) the score without earning the day twice. applyStreakCredit is
+        // additionally guarded on `streakCreditedForDay`, so switching difficulty mid-day, which
+        // is "first today" for the new tier, still cannot credit the same day a second time.
         if (isFirstToday) {
           const credit = applyStreakCredit(state, {
             chDone: chDoneToday(newDb),

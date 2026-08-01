@@ -93,9 +93,17 @@ en:{
   diff_hard:"Hard",
   stat_best_streak:"best streak",
   stat_today_avg:"today avg",
+  // Challenge's third stat box: the best SINGLE run today, which is not the day's score (that is
+  // the average of every run, shown on the chart) and not the personal best beside it.
+  stat_today_high:"today's high",
+  // The result screen's fourth card — what the day scores now that this run has been folded in.
+  stat_today_score:"today's score",
   stat_personal_best:"personal best",
   totd_label:"Trick of the day",
   start_challenge:"Start challenge",
+  ch_play_again:"Feeling lucky? Play again",
+  attempts_today:"{{n}} {{unit}} today",
+  ch_avg_risk:"Today's score is the average of every attempt — playing again can pull it down as easily as push it up.",
   practice_not_counted:"Practice (not counted)",
   diff_info_link:"What does this difficulty include?",
   prac_operations:"OPERATIONS",
@@ -200,13 +208,13 @@ en:{
   diffinfo_hard:"All operations (+ - x / %) &middot; Double &amp; triple digits &middot; 2-4 terms &middot; Negatives &middot; Decimals (1dp)",
   mdl_streak_title:"Best streak",
   mdl_streak_body1:"Your longest streak of completing <strong>both Challenge and Braining</strong> on the same day is <strong>{{n}}</strong> {{unit}}.",
-  mdl_streak_body2:"Your current streak is {{n}}. Any difficulty counts for Challenge. Missing either mode on a day breaks the streak.",
+  mdl_streak_body2:"Your current streak is {{n}}. One Challenge play on any difficulty is enough to count the day — replaying moves your score, never your streak. Missing either mode on a day breaks the streak.",
   days_word:"days",
   day_word:"day",
-  mdl_today_title:"Today average - {{diff}}",
-  mdl_today_body1:"Average score today: <strong>{{avg}}</strong>",
-  mdl_today_body2:"Attempts today: <strong>{{att}}</strong>",
-  mdl_today_body3:"Mean of all your scores on this difficulty today.",
+  mdl_today_title:"Today - {{diff}}",
+  mdl_today_body1:"Best single attempt today: <strong>{{high}}</strong>",
+  mdl_today_body2:"Today's score: <strong>{{avg}}</strong> — the average of <strong>{{att}}</strong> {{unit}}",
+  mdl_today_body3:"The chart plots the average, and that is the number your day is worth. Every replay is added to it, so it can fall as well as rise. Your personal best is safe from this: it only ever tracks your single best run.",
   mdl_pb_title:"Personal best - {{diff}}",
   mdl_pb_body1:"Your highest ever score on <strong>{{diff}}</strong> is <strong>{{best}}</strong>.",
   mdl_pb_body2:"A weighted score combining speed, operation type, and difficulty.",
@@ -271,7 +279,7 @@ en:{
   tap_anywhere_close:"Tap anywhere to close",
   tut_welcome_title:"Welcome to Cifri",
   tut_welcome_desc:"A few minutes of daily practice keeps your mental math sharp. Each day, do your Challenge and Braining to build your streak. Here's a quick look at how it all works.",
-  tut_challenge_desc:"A 60-second daily drill — solve as many problems as you can before time runs out. Easy, Medium, and Hard each step up the numbers and operations. Only your first attempt each day counts toward your streak and best score — after that, practice as much as you like, it won't change anything.",
+  tut_challenge_desc:"A 60-second daily drill — solve as many problems as you can before time runs out. Easy, Medium, and Hard each step up the numbers and operations. Play as often as you like: your score for the day is the average of every attempt, so a second run can pull it down just as easily as lift it. Your streak is safe either way — one play is all it takes to count the day.",
   tut_braining_desc:"A quick daily brain age test — try to finish it as fast as you can, since speed is what shapes your score. Only your first attempt each day counts toward your result and streak, but there's a 20-question practice mode you can replay anytime.",
   tut_practice_desc:"Set your own rules. Pick the operations, digit sizes, and length that fit your mood — great for warming up, or just enjoying the numbers with no pressure.",
   tut_tricks_desc:"A library of mental math shortcuts. Read through them any time, then practice each one to make the technique stick.",
@@ -397,9 +405,14 @@ ru:{
   diff_hard:"Сложно",
   stat_best_streak:"лучшая серия",
   stat_today_avg:"среднее сегодня",
+  stat_today_high:"максимум сегодня",
+  stat_today_score:"результат за день",
   stat_personal_best:"личный рекорд",
   totd_label:"Приём дня",
   start_challenge:"Начать челлендж",
+  ch_play_again:"Рискнёте? Сыграть ещё раз",
+  attempts_today:"{{n}} {{unit}} сегодня",
+  ch_avg_risk:"Результат за день — это среднее всех попыток. Новая попытка может так же легко его понизить, как и повысить.",
   practice_not_counted:"Практика (не засчитывается)",
   diff_info_link:"Что включает этот уровень сложности?",
   prac_operations:"ОПЕРАЦИИ",
@@ -504,13 +517,17 @@ ru:{
   diffinfo_hard:"Все операции (+ − × / %) &middot; Две и три цифры &middot; 2-4 числа &middot; Отрицательные &middot; Десятичные (1 знак)",
   mdl_streak_title:"Лучшая серия",
   mdl_streak_body1:"Ваша самая длинная серия, где выполнены <strong>и Челлендж, и Брейнинг</strong> в один день — <strong>{{n}}</strong> {{unit}}.",
-  mdl_streak_body2:"Ваша текущая серия — {{n}}. Для Челленджа подходит любая сложность. Пропуск любого режима за день обрывает серию.",
+  mdl_streak_body2:"Ваша текущая серия — {{n}}. Для Челленджа достаточно одной игры на любой сложности — повторные попытки меняют результат, но не серию. Пропуск любого режима за день обрывает серию.",
   days_word:"дней",
   day_word:"день",
-  mdl_today_title:"Среднее сегодня - {{diff}}",
-  mdl_today_body1:"Средний балл сегодня: <strong>{{avg}}</strong>",
-  mdl_today_body2:"Попыток сегодня: <strong>{{att}}</strong>",
-  mdl_today_body3:"Среднее значение всех ваших баллов на этой сложности за сегодня.",
+  mdl_today_title:"Сегодня - {{diff}}",
+  mdl_today_body1:"Лучшая попытка сегодня: <strong>{{high}}</strong>",
+  // Deliberately NOT "среднее из {{att}} {{unit}}": after the preposition «из» Russian requires
+  // the genitive («из 3 попыток»), which disagrees with the nominative form the same number takes
+  // standing alone («3 попытки»). Phrasing it this way sidesteps the clash and stays correct for
+  // every number.
+  mdl_today_body2:"Результат за день: <strong>{{avg}}</strong> — среднее всех попыток. Сегодня их: <strong>{{att}}</strong>",
+  mdl_today_body3:"На графике показано среднее — именно оно и есть ваш результат за день. Каждая новая попытка входит в него, поэтому он может как вырасти, так и упасть. Личному рекорду это не грозит: он всегда считает только вашу лучшую отдельную попытку.",
   mdl_pb_title:"Личный рекорд - {{diff}}",
   mdl_pb_body1:"Ваш самый высокий результат на уровне <strong>{{diff}}</strong> — <strong>{{best}}</strong>.",
   mdl_pb_body2:"Взвешенный балл, учитывающий скорость, тип операции и сложность.",
@@ -574,7 +591,7 @@ ru:{
   tap_anywhere_close:"Нажмите в любом месте, чтобы закрыть",
   tut_welcome_title:"Добро пожаловать в Cifri",
   tut_welcome_desc:"Несколько минут практики каждый день поддерживают острый ум. Каждый день выполняйте Челлендж и Брейнинг, чтобы наращивать серию. Вот краткий обзор того, как всё это работает.",
-  tut_challenge_desc:"60-секундный ежедневный забег — решайте как можно больше примеров, пока не закончится время. Легко, Средне и Сложно постепенно усложняют числа и операции. Только первая попытка за день засчитывается в серию и личный рекорд — после этого можно тренироваться сколько угодно, это ничего не изменит.",
+  tut_challenge_desc:"60-секундный ежедневный забег — решайте как можно больше примеров, пока не закончится время. Легко, Средне и Сложно постепенно усложняют числа и операции. Играйте сколько хотите: результат за день — это среднее всех попыток, поэтому вторая попытка может его как поднять, так и опустить. Серии это не грозит: чтобы день засчитался, достаточно одной игры.",
   tut_braining_desc:"Быстрый ежедневный тест возраста мозга — постарайтесь закончить как можно быстрее, ведь именно скорость формирует результат. Только первая попытка за день засчитывается в результат и серию, но есть режим практики из 20 вопросов, который можно повторять когда угодно.",
   tut_practice_desc:"Задайте свои правила. Выберите операции, разрядность чисел и длину, которые подходят вашему настроению — отлично для разминки или просто удовольствия от чисел без давления.",
   tut_tricks_desc:"Библиотека приёмов устного счёта. Читайте их в любое время, затем отрабатывайте каждый, чтобы техника закрепилась.",
@@ -607,6 +624,20 @@ ru:{
   legal_privacy_body:"<h4>Что мы собираем</h4><p>Если вы используете Cifri как гость, ваши данные (результаты, серии, настройки) остаются на вашем устройстве. Если вы создаёте аккаунт, мы также храним имя пользователя, эл. почту и историю игр, чтобы прогресс сохранялся на всех устройствах.</p><h4>Как мы это используем</h4><p>Мы используем эти данные, чтобы приложение работало, показывать вашу статистику и таблицы лидеров, защищать честную игру и улучшать Cifri со временем.</p><h4>Чего мы не делаем</h4><p>Мы не показываем рекламу и не продаём ваши личные данные третьим лицам.</p><h4>Ваш выбор</h4><p>Вы можете сбросить все локальные данные в любой момент в Настройках. Если у вас есть аккаунт, вы можете запросить его удаление.</p><h4>Контакты</h4><p>Вопросы об этой политике можно направить через канал поддержки в приложении.</p>"
 }
 };
+
+// The word "attempt", agreeing with the number in front of it.
+//
+// The app's usual way of doing this is to pass a `unit` variable chosen with `n !== 1` (see
+// days_word / day_word). That is enough for English and not enough for Russian, where a counted
+// noun takes three forms picked by the last digits: 1 попытка, 2 попытки, 5 попыток, and then
+// 11–14 revert to the third form regardless of their last digit.
+export function attemptWord(lang, n) {
+  if (lang !== 'ru') return n === 1 ? 'attempt' : 'attempts';
+  var mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'попытка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'попытки';
+  return 'попыток';
+}
 
 export function t(lang, key, vars) {
   var table = I18N[lang] || I18N.en;

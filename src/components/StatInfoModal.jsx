@@ -1,6 +1,7 @@
 import { useI18n } from '../store/useI18n.js';
 import { diffLabel } from '../store/questionEngine.js';
-import { todaySessionsFor } from '../store/selectors.js';
+import { todayChallengeAvg, todayChallengeHigh } from '../store/selectors.js';
+import { attemptWord } from '../i18n_data.js';
 
 // Ported from the reference prototype's openMdl()/#info-mdl — the streak / today-avg /
 // personal-best stat popups on the Challenge home screen.
@@ -24,13 +25,16 @@ export default function StatInfoModal({ type, db, selDiff, streak, bestStreakEve
       </>
     );
   } else if (type === 'today') {
-    const todayList = todaySessionsFor(db, selDiff);
-    const avg = todayList.length ? Math.round(todayList.reduce((a, s) => a + s.score, 0) / todayList.length) : '--';
+    // Three different numbers that are easy to confuse, so the modal names all three side by
+    // side: the best single run today, the average those runs add up to (which is what the day
+    // actually scores), and how many runs there have been.
+    const { avg, count } = todayChallengeAvg(db, selDiff);
+    const high = todayChallengeHigh(db, selDiff);
     title = t('mdl_today_title', { diff: diffLabel(lang, selDiff) });
     body = (
       <>
-        <p dangerouslySetInnerHTML={{ __html: t('mdl_today_body1', { avg }) }} />
-        <p dangerouslySetInnerHTML={{ __html: t('mdl_today_body2', { att: todayList.length }) }} />
+        <p dangerouslySetInnerHTML={{ __html: t('mdl_today_body1', { high: high == null ? '--' : high }) }} />
+        <p dangerouslySetInnerHTML={{ __html: t('mdl_today_body2', { avg: avg == null ? '--' : avg, att: count, unit: attemptWord(lang, count) }) }} />
         <p style={{ marginTop: 8, fontSize: 'calc(12px * var(--fs-mult))', color: 'var(--txt3)' }}>{t('mdl_today_body3')}</p>
       </>
     );

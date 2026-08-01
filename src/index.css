@@ -161,7 +161,9 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ti.totd{background:var(--YL);box-shadow:0 2px 0 #c49030}
 .cl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
 .cl button{background:none;border:none;cursor:pointer;font-size:calc(11px * var(--fs-mult));color:var(--G);display:flex;align-items:center;gap:3px;font-weight:700}
-.spk{width:100%;height:72px;display:block;overflow:visible}
+/* Taller than the Braining chart below: Challenge draws a numeral above and below each day's
+   candle, and those need vertical room the single-value Braining chart does not. */
+.spk{width:100%;height:104px;display:block;overflow:visible}
 
 /* INFO POPUP */
 .ip{display:none;margin:0 16px 12px;background:var(--GL2);border-radius:var(--r);padding:12px 14px}
@@ -178,6 +180,9 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 @keyframes btnShrinkMorph{0%{transform:scaleY(1)}50%{transform:scaleY(.15)}100%{transform:scaleY(1)}}
 .sbtn.morph{animation:btnShrinkMorph .5s ease;transform-origin:center}
 .albl{text-align:center;margin-top:4px;font-size:calc(11px * var(--fs-mult));color:var(--txt3)}
+/* The "playing again can move it down too" note under the Challenge button. Narrower than the
+   button so it reads as small print rather than as another line of the label. */
+.albl-risk{max-width:280px;margin:3px auto 0;font-size:calc(10px * var(--fs-mult));line-height:1.45;color:var(--txt3);opacity:.85}
 
 /* PRACTICE */
 .pscr{padding:0 16px 12px}

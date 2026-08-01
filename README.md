@@ -23,10 +23,15 @@ npm run dev -- --host   # also reachable from a phone on the same network
 Other commands:
 
 ```bash
-npm run build     # production build into dist/
-npm run preview   # serve that build locally
-npm run lint      # oxlint
+npm run build             # production build into dist/
+npm run preview           # serve that build locally
+npm run lint              # oxlint
+npm run check:projection  # verify the daily-score arithmetic (see "How a day is scored")
 ```
+
+`check:projection` is worth knowing about: a mistake in how a day's score is averaged would not
+crash anything, it would quietly record wrong numbers. The check runs the real projection over a
+fixed history that spans both scoring eras and asserts the rows that come out.
 
 ## Layout
 
@@ -45,6 +50,35 @@ reference/
 ```
 
 State lives in one reducer (`store/AppStateContext.jsx`) and persists to `localStorage`.
+
+## How a day is scored
+
+The two modes score a day differently, and deliberately so.
+
+**Challenge** has no daily cap. Every play counts, and the day's score is the **average of that
+day's plays** — play once and it is that score, play again and it is the mean of both. Playing
+again is a real gamble: it can pull the day's number down as easily as push it up, which the
+button's small print says out loud rather than hiding.
+
+Two things are deliberately insulated from that gamble:
+
+- **The streak** is credited by the day's *first* Challenge play and never revisited. How often
+  someone plays changes their number, never whether the day counted. (The unified streak still
+  needs Braining that day too — that rule is unchanged.)
+- **Personal best** tracks the best *single* run, so a bad replay dragging the day's average down
+  can never cost someone a record they actually set.
+
+**Braining** is untouched by any of this: one official trial per day, retries are practice, exactly
+as before. `daily_results` enforces the separation rather than trusting it — a Braining row
+carrying Challenge's averaging columns is rejected by the database.
+
+The single definition of a day's score lives in `store/selectors.js` (`dayAverage`), and the chart,
+the stat boxes, the result screen and the server-side projection all read it from there, so none of
+them can quietly disagree about what a player scored.
+
+*Averaging only the day's counting runs is also what makes the rule work backwards.* Days played
+under the old first-trial-only model hold exactly one counting run plus some practice, so their
+average is that single score — the number they always showed. No history was rewritten.
 
 ## Accounts and stored data
 
@@ -73,6 +107,20 @@ cannot drift apart. It exists so a future leaderboard reads a sorted index inste
 player's JSON; partial indexes cover top scores by difficulty, fastest Braining times, and longest
 streaks. Streak values are null on rows backfilled from history — a past day's streak is not
 reconstructible once restores are involved.
+
+Challenge rows carry `attempt_count` and `score_sum` alongside `score`, and the score is the average
+of those two. Storing a running count and sum rather than one row per play is what keeps a day one
+row of one size however often somebody plays — a fifth play is a bigger sum, not a fifth row. Both
+columns are null on Braining rows, and the row-shape constraint refuses any row that mixes the two
+models up.
+
+`supabase/verification/` holds the SQL that re-proves RLS after a schema change. It sits down as a
+row's owner, as another player, and as a logged-out visitor, attempts every cross-account read and
+write, and reports what the database actually did — run it in the SQL editor after applying a
+migration that touches these tables, rather than assuming policies survived. It needs only one real
+account: the owner. The other player is whoever else exists, or an impersonated stranger if nobody
+does, since these policies compare `auth.uid()` to a row's owner and never ask whether that uid is
+a real account.
 
 **`profiles.leaderboard_visible`** is dormant: `false` for every account, no UI, nothing reads it.
 A placeholder so that when leaderboards launch, appearing on one has to be a deliberate act.
