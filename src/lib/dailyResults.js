@@ -58,6 +58,13 @@ export function projectDailyRows(state, { todayOnly = true } = {}) {
   // history. Days played under the old rule hold exactly one counting run and a pile of practice
   // runs, so their average is that single score and their count is 1 — identical to what was
   // already stored for them. No past day's score moves because the rule changed.
+  //
+  // ONE TERM IN THAT SUM MAY BE A BOOSTED SCORE. At most one attempt a day can consume the
+  // boost Braining grants, and the boost is applied when the attempt is recorded, so `s.score`
+  // is already the value that counts and nothing here has to know the boost exists. The raw
+  // score and a `boosted` flag stay on the session in player_state, which is where anything
+  // re-deriving this number goes to check it — a day's sum being larger than its raw scores
+  // imply is explained there, and provable, rather than being an unaccountable discrepancy.
   for (const diff of DIFFS) {
     const bucket = (state.db && state.db[diff]) || { sessions: [] };
     for (const [day, sessions] of groupByDate(bucket.sessions)) {

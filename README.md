@@ -63,8 +63,7 @@ button's small print says out loud rather than hiding.
 Two things are deliberately insulated from that gamble:
 
 - **The streak** is credited by the day's *first* Challenge play and never revisited. How often
-  someone plays changes their number, never whether the day counted. (The unified streak still
-  needs Braining that day too — that rule is unchanged.)
+  someone plays changes their number, never whether the day counted.
 - **Personal best** tracks the best *single* run, so a bad replay dragging the day's average down
   can never cost someone a record they actually set.
 
@@ -79,6 +78,45 @@ them can quietly disagree about what a player scored.
 *Averaging only the day's counting runs is also what makes the rule work backwards.* Days played
 under the old first-trial-only model hold exactly one counting run plus some practice, so their
 average is that single score — the number they always showed. No history was rewritten.
+
+## The streak, and the boost that replaced it
+
+**Either mode earns the day.** A day counts toward the unified streak if Challenge *or* Braining
+was played — one alone is enough, and the streak only breaks on a day with neither. It used to
+require both. The header pill still has three states, and they still mean something, but no
+longer what they used to: grey is nothing played and the streak at risk, green is the day
+secured by one mode, yellow is both modes done.
+
+Requiring both was how the app made a case for playing both, so removing that requirement removes
+the argument with it. **Completing Braining now grants a single 5% boost to the next Challenge
+attempt played that day** — a smaller, opt-in reason to do both, in place of a rule that
+punished doing one.
+
+The boost is deliberately narrow:
+
+- One attempt, not the day. The *next* counting Challenge attempt takes it, and the flag clears.
+  Attempts already played before Braining finished are never revisited.
+- No carry-over and no stacking. `brBoostDay` holds the day the boost was granted *for*, not a
+  bare "available" flag, and whoever spends it compares that against today. A boost left unspent
+  is dead once the date rolls over — expiry is a property of the shape of the data, not of a
+  timer that has to fire at midnight.
+- A Practice run neither grants it nor spends it, and a run that scored zero cannot burn it.
+
+**A boosted attempt shows its working.** It is stored with the boosted value as its score, the
+raw value it was earned at, and an explicit `boosted: true` — plus a timestamp, which both modes
+now carry, because Challenge and Braining sessions live in separate lists and without one there
+is no way to prove the boosted attempt came *after* the trial that granted it. So a day whose sum
+exceeds its raw scores is explained and re-derivable, not an unaccountable discrepancy. That is
+what the next session's server-side validation checks against.
+
+The percentage and its rounding live in `store/scoring.js` — one figure, in one place, meant to
+be retuned. `npm run check:projection` verifies both the averaging and the boost's own rules: a
+boosted attempt contributes its boosted value, that value really is the constant applied to the
+raw one, and a day never holds more than one boosted attempt.
+
+**Milestones never read the score.** Perfect Run counts answers and mistakes, Medium and Hard
+read the difficulty played, Braining's read time and brain age. None of them look at the score
+number, which is what makes a boosted score unable to unlock anything a raw score could not.
 
 ## Accounts and stored data
 

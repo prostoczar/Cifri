@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { dayKey, yesterday, addDaysStr, dateStrToDate } from './dates.js';
 import { streakMilestoneThreshold } from './milestones.js';
+import { applyBrainingBoost } from './scoring.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
 import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
@@ -31,6 +32,10 @@ function defaultState() {
     streakLastCheckedDay: null,
     pendingRestore: null,
     bestStreakEver: 0,
+    // The one-shot Challenge boost earned by completing Braining. Holds the DAY the boost was
+    // granted for, not a bare true/false — see BRAINING_SESSION_COMPLETE for why that difference
+    // is what makes the boost expire on its own at midnight.
+    brBoostDay: null,
     milestones: {
       streakShown: [],
       chFirst: false, chPerfect: false, chMedium: false, chHard: false,
@@ -127,9 +132,18 @@ function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
   return { milestones: nextMilestones, unlocked };
 }
 
-// creditStreakIfBothDone() from the reference, as a pure helper shared by both modes.
+// Credits the day to the unified streak, as a pure helper shared by both modes.
 // `chDone`/`brDone` must reflect the db/brState as they will be AFTER the session being
 // recorded. Returns the streak-related fields to merge, plus any milestone cards unlocked.
+//
+// EITHER MODE EARNS THE DAY. This used to require both, and the change to `||` below is the
+// whole of the loosened rule on the earning side. Doing both modes is still the better day —
+// it is what lights the header pill yellow and what grants the Challenge boost — but it is no
+// longer what the streak asks for.
+//
+// Playing the second mode afterwards cannot bank the day twice: the `streakCreditedForDay`
+// guard is what makes this safe to call from every counting session rather than only the
+// first one of the day.
 function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
   const today = dayKey();
   let unlocked = [];
@@ -142,7 +156,7 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
   const prevStreak = state.streak;
   let justCredited = false;
 
-  if (state.streakCreditedForDay !== today && chDone && brDone) {
+  if (state.streakCreditedForDay !== today && (chDone || brDone)) {
     const wasZero = state.streak === 0;
     const neverLitBefore = state.bestStreakEver === 0;
     nextStreak = (state.streak || 0) + 1;
@@ -340,13 +354,24 @@ function reducer(state, action) {
       const today = dayKey();
       if (state.streakLastCheckedDay === today) return state;
       let next = { ...state, streakLastCheckedDay: today };
+
+      // First check of a new day, so any boost still sitting here belongs to a day that is over.
+      // Clearing it is housekeeping, not the safety mechanism: what actually stops a stale boost
+      // being spent is that it is compared against today's date at the moment it would be used,
+      // which holds even if the app is left open across midnight and this never runs.
+      if (state.brBoostDay && state.brBoostDay !== today) next.brBoostDay = null;
+
       if (state.streak > 0 && state.streakCreditedForDay) {
         const breakDay = addDaysStr(state.streakCreditedForDay, 1);
         if (today > breakDay) {
           const wasCh = chCompletedOnDate(state.db, breakDay);
           const wasBr = brCompletedOnDate(state.brState, breakDay);
-          if (!(wasCh && wasBr)) {
-            const reason = !wasCh && !wasBr ? 'both' : !wasCh ? 'Challenge' : 'Braining';
+          // A day with EITHER mode played keeps the streak alive. Only a day with nothing at all
+          // breaks it — which also means 'both' is now the only reason a break can ever have.
+          // The modal still renders the older single-mode reasons, because a player whose streak
+          // broke under the previous rule may already be carrying one in their saved state.
+          if (!(wasCh || wasBr)) {
+            const reason = 'both';
             next = {
               ...next,
               pendingRestore: {
@@ -401,6 +426,9 @@ function reducer(state, action) {
           _lastSessionResult: {
             reqId: action.reqId,
             diff, score, correct, wrong, isPrac,
+            // Same shape as a recorded run, so anything reading a result never has to ask which
+            // path produced it. Nothing was boosted here — this run is not being recorded at all.
+            rawScore: score, boosted: false,
             origin: action.origin,
             opTimes: action.opTimes,
             isNewBest: false, unlocked: [], isFirstToday: false,
@@ -416,19 +444,54 @@ function reducer(state, action) {
       // first play, while the score keeps moving with every play after it.
       const isFirstToday = d.lastDay !== today;
 
+      // ── Spending the Braining boost ──────────────────────────────────────────────
+      //
+      // `brBoostDay` holds the day a boost was granted for. Comparing it against today is what
+      // gives the boost its lifetime for free: a value left over from yesterday is simply not
+      // equal to today, so it can never be spent, and there is no midnight timer that could fail
+      // to fire. It is also a single field holding a single date, which is why boosts cannot
+      // stack — a second Braining run that day re-grants nothing.
+      //
+      // Two guards sit in the position of this code rather than in its condition. `isPrac` keeps
+      // a standalone Practice run from burning it. And the `score <= 0` early return above means
+      // a run that scored nothing has already left this reducer, so it cannot spend a boost on a
+      // zero either.
+      const boostSpent = !isPrac && state.brBoostDay === today;
+      const countedScore = boostSpent ? applyBrainingBoost(score) : score;
+      const nextBrBoostDay = boostSpent ? null : state.brBoostDay;
+
       // EVERY Challenge play counts now. There is no longer a first-trial-only rule and no
       // practice mode on this screen, so a run is recorded unless it came from the standalone
       // Practice tab. Each recorded score becomes one more term in today's average — which is
       // computed where it is read (see dayAverage in store/selectors.js), not stored here, so
       // there is no second copy of the day's score that could fall out of step with the sessions
       // it is supposed to summarise.
-      const newSessions = [...d.sessions, { date: today, score, real: !isPrac }];
+      //
+      // `score` on the entry is the value that counts, boosted or not, so every existing reader —
+      // the average, the chart, the projection — picks the boost up without having to know it
+      // exists. A boosted entry additionally carries the two things that make the boost provable
+      // rather than merely asserted: `rawScore`, the number actually earned in the run, and
+      // `boosted`, saying plainly that this specific attempt is the one that consumed the day's
+      // boost. Given both, the boost can be recalculated and checked by anything reading the
+      // history back — which is what next session's server-side validation will do.
+      //
+      // `ts` is stamped on every entry, boosted or not. Challenge and Braining sessions live in
+      // separate lists, so without a wall-clock time on each there is no way to prove after the
+      // fact that the boosted attempt came AFTER the Braining trial that granted it, rather than
+      // being applied backwards to a run that was already finished.
+      const entry = { date: today, score: countedScore, real: !isPrac, ts: Date.now() };
+      if (boostSpent) {
+        entry.rawScore = score;
+        entry.boosted = true;
+      }
+      const newSessions = [...d.sessions, entry];
 
       // Untouched by the averaging, deliberately: personal best has always been the best single
       // run, and a day's average being dragged down by a bad replay must not cost a player the
-      // record they actually set.
+      // record they actually set. It reads the counted score, so a boosted run can set a record —
+      // the boosted number is that attempt's score everywhere, not a separate parallel figure.
       const prevBest = d.best;
-      const newBest = score > prevBest ? score : prevBest;
+      const newBest = countedScore > prevBest ? countedScore : prevBest;
 
       const newDb = {
         ...state.db,
@@ -453,9 +516,16 @@ function reducer(state, action) {
       let isNewBest = false;
 
       if (!isPrac) {
-        isNewBest = score > prevBest;
+        isNewBest = countedScore > prevBest;
 
         // checkChallengeMilestones
+        //
+        // Every condition below reads how the run was PLAYED — how many questions were answered,
+        // how many were wrong, which difficulty was chosen. Not one of them reads the score, and
+        // that is deliberate rather than incidental: it is what makes a boosted score unable to
+        // unlock anything a raw score could not. Perfect Run is still ten answers with none
+        // wrong; Medium and Hard are still the tier actually played. Keep it that way — a
+        // milestone that keyed off the score number would start firing on the boost.
         const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
         if (!m.chFirst) {
           m.chFirst = true;
@@ -480,30 +550,30 @@ function reducer(state, action) {
         }
         nextMilestones = m;
 
-        // Streak crediting happens on the day's FIRST play and never again — playing more times
-        // improves (or risks) the score without earning the day twice. applyStreakCredit is
-        // additionally guarded on `streakCreditedForDay`, so switching difficulty mid-day, which
-        // is "first today" for the new tier, still cannot credit the same day a second time.
-        if (isFirstToday) {
-          const credit = applyStreakCredit(state, {
-            chDone: chDoneToday(newDb),
-            brDone: brDoneToday(state.brState),
-            milestones: nextMilestones,
-            lang,
-          });
-          nextMilestones = credit.milestones;
-          unlocked = unlocked.concat(credit.unlocked);
-          nextStreak = credit.streak;
-          nextStreakCreditedForDay = credit.streakCreditedForDay;
-          nextStreakRestoreAvailable = credit.streakRestoreAvailable;
-          nextBestStreakEver = credit.bestStreakEver;
-          nextGuestConvoStarted = credit.guestConvoStarted;
-        }
+        // A single Challenge play now earns the day outright — Braining is no longer needed
+        // alongside it — so this runs on every counting play rather than only the first on this
+        // difficulty. It does not need the `isFirstToday` gate it used to have: applyStreakCredit
+        // is guarded on `streakCreditedForDay`, so the second, fifth and fiftieth play of the day
+        // all find the day already banked and change nothing.
+        const credit = applyStreakCredit(state, {
+          chDone: true, // this session is what makes Challenge done today
+          brDone: brDoneToday(state.brState),
+          milestones: nextMilestones,
+          lang,
+        });
+        nextMilestones = credit.milestones;
+        unlocked = unlocked.concat(credit.unlocked);
+        nextStreak = credit.streak;
+        nextStreakCreditedForDay = credit.streakCreditedForDay;
+        nextStreakRestoreAvailable = credit.streakRestoreAvailable;
+        nextBestStreakEver = credit.bestStreakEver;
+        nextGuestConvoStarted = credit.guestConvoStarted;
       }
 
       return {
         ...state,
         db: newDb,
+        brBoostDay: nextBrBoostDay,
         guestConvoStarted: nextGuestConvoStarted,
         milestones: nextMilestones,
         streak: nextStreak,
@@ -512,7 +582,14 @@ function reducer(state, action) {
         bestStreakEver: nextBestStreakEver,
         _lastSessionResult: {
           reqId: action.reqId,
-          diff, score, correct, wrong, isPrac,
+          diff,
+          // The score this run counted for, which is the boosted number when it was boosted.
+          score: countedScore,
+          // Carried alongside so the result screen can eventually break the number down instead
+          // of presenting it as one unexplained figure. Nothing displays them yet.
+          rawScore: score,
+          boosted: boostSpent,
+          correct, wrong, isPrac,
           origin: action.origin,
           opTimes: action.opTimes,
           isNewBest, unlocked, isFirstToday,
@@ -538,16 +615,32 @@ function reducer(state, action) {
       let nextStreakRestoreAvailable = state.streakRestoreAvailable;
       let nextBestStreakEver = state.bestStreakEver;
       let nextGuestConvoStarted = state.guestConvoStarted;
+      let nextBrBoostDay = state.brBoostDay;
 
       if (!isPrac) {
         isFirst = br.lastDay !== today;
         if (isFirst) {
+          // ── Granting the Challenge boost ────────────────────────────────────────
+          //
+          // Only the day's counting trial grants it. A retry below, and a practice run further
+          // down, both leave this alone — so finishing Braining five times cannot hand out five
+          // boosts, and neither can it hand out a second one after the first has been spent.
+          //
+          // What is stored is the DAY, not a bare `true`. That one decision is what gives the
+          // boost its expiry: whoever spends it compares this against today's date, so a boost
+          // left unspent is dead the moment the date rolls over, with nothing needing to run at
+          // midnight to kill it. Carrying over to tomorrow is not a case that has to be
+          // prevented — it is a case that cannot be expressed.
+          nextBrBoostDay = today;
+
           const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
           if (br.bestTime === null || sec < br.bestTime) isPR = true;
           const bestAge = br.bestAge === null || age < br.bestAge ? age : br.bestAge;
           nextBr = {
             ...br,
-            sessions: [...sessions, { date: today, time: sec, age, real: true }],
+            // `ts` pairs with the one stamped on Challenge attempts: it is what lets a boosted
+            // attempt be shown to have come after the trial that granted the boost.
+            sessions: [...sessions, { date: today, time: sec, age, real: true, ts: Date.now() }],
             todayTime: sec, todayAge: age,
             bestTime, bestAge,
             prevDay: today, lastDay: today,
@@ -563,7 +656,7 @@ function reducer(state, action) {
           }
           nextBr = {
             ...br,
-            sessions: [...sessions, { date: today, time: sec, age, real: false }],
+            sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now() }],
             bestTime, bestAge,
           };
         }
@@ -588,6 +681,8 @@ function reducer(state, action) {
         nextMilestones = m;
 
         if (isFirst) {
+          // Braining alone now earns the day, so this credits the streak whether or not
+          // Challenge has been played — `chDone` no longer has to be true for the day to count.
           const credit = applyStreakCredit(state, {
             chDone: chDoneToday(state.db),
             brDone: true, // this session is what makes Braining done today
@@ -603,12 +698,14 @@ function reducer(state, action) {
           nextGuestConvoStarted = credit.guestConvoStarted;
         }
       } else {
-        // Practice: recorded as non-counting, but may still improve the stored best.
+        // Practice: recorded as non-counting, but may still improve the stored best. It grants
+        // no boost — `nextBrBoostDay` is untouched on this path — because the boost is the
+        // reward for the day's real trial, not for opening the practice mode.
         const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
         const bestAge = br.bestAge === null || age < br.bestAge ? age : br.bestAge;
         nextBr = {
           ...br,
-          sessions: [...sessions, { date: today, time: sec, age, real: false }],
+          sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now() }],
           bestTime, bestAge,
         };
       }
@@ -616,6 +713,7 @@ function reducer(state, action) {
       return {
         ...state,
         brState: nextBr,
+        brBoostDay: nextBrBoostDay,
         guestConvoStarted: nextGuestConvoStarted,
         milestones: nextMilestones,
         streak: nextStreak,

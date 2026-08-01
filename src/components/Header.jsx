@@ -4,6 +4,14 @@ import Avatar from './Avatar.jsx';
 
 // Ported from the reference prototype's header markup + updateStreakPill()/updateRefillPill().
 export default function Header({ db, brState, streak, streakRestoreAvailable, username, avatar, onOpenProfile }) {
+  // Three states, unchanged in code but no longer meaning what they used to. Green used to say
+  // "halfway there"; under the loosened rule one mode is the whole requirement, so it now says
+  // "today is secured". Yellow is no longer the streak being earned — it is the fuller day:
+  // both modes done, which is also the day a Challenge boost was granted.
+  //
+  //   grey   nothing played yet — the streak is what is at risk
+  //   green  one mode done — the day counts
+  //   yellow both done — the day counts and Braining's boost was earned
   const chD = chDoneToday(db);
   const brD = brDoneToday(brState);
   let pillCls = 'streak-pill';

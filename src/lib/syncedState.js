@@ -16,6 +16,10 @@ export const SYNCED_KEYS = [
   'streakLastCheckedDay',
   'pendingRestore',
   'bestStreakEver',
+  // The unspent Braining boost. Synced so finishing Braining on a phone and then playing
+  // Challenge on a laptop still spends it — a boost that only existed on the device that earned
+  // it would make where you played matter, which is exactly what accounts exist to stop.
+  'brBoostDay',
   // Unlocked milestones
   'milestones',
   // Dark mode, font size, language, sound
