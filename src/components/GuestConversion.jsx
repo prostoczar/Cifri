@@ -1,6 +1,6 @@
 import { useI18n } from '../store/useI18n.js';
 
-// The three non-milestone guest-conversion surfaces, ported from the reference prototype.
+// The three non-achievement guest-conversion surfaces, ported from the reference prototype.
 
 // The 5-day fallback: a plain, non-celebratory prompt. Fires once, ever, and only if a streak
 // has never been lit — if one has, the dedicated streak-lit popup already made this ask.
@@ -38,7 +38,7 @@ export function GuestBanner({ visible, onCreateAccount, onDismiss }) {
 }
 
 // The persistent Create Account button on both result screens — shown on every playthrough,
-// independent of milestones or streak, for as long as no account exists.
+// independent of achievements or streak, for as long as no account exists.
 export function ResultAccountButton({ visible, onClick }) {
   const { t } = useI18n();
   return (

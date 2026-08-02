@@ -7,7 +7,7 @@ import { tick, buzz } from '../store/sound.js';
 
 // Ported from the reference prototype's startTrick/loadTQ/tgSubmit. An untimed, unscored drill
 // on a single trick: correct answers advance and bump the solved count, wrong ones reveal the
-// answer and wait. Nothing here is recorded — no streak, no stats, no milestones on completion.
+// answer and wait. Nothing here is recorded — no streak, no stats, no achievements on completion.
 export default function TrickGameScreen({ gi, ti, soundOn, onExit }) {
   const { t, lang } = useI18n();
   const [question, setQuestion] = useState({ text: '--' });

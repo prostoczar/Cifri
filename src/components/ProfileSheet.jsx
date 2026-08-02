@@ -11,7 +11,7 @@ function isRecorded(s) {
 
 // Ported from the reference prototype's profile sheet + openProfile().
 export default function ProfileSheet({
-  open, state, onClose, onEditPrimary, onEditPicture, onOpenMilestones,
+  open, state, onClose, onEditPrimary, onEditPicture, onOpenAchievements,
   onOpenLegal, onSetting, onSetFontSize, onSetLanguage, onLogout, onReset, onDeleteAccount,
 }) {
   const { t, lang } = useI18n();
@@ -79,8 +79,8 @@ export default function ProfileSheet({
             {stat(state.bestStreakEver || 0, t('prof_best_streak'))}
           </div>
 
-          <div className="prof-section-title">{t('prof_sec_milestones')}</div>
-          <div className="prof-ms-row" onClick={onOpenMilestones}>
+          <div className="prof-section-title">{t('prof_sec_achievements')}</div>
+          <div className="prof-ms-row" onClick={onOpenAchievements}>
             <div>
               <div className="prof-ms-pct">{milestonesPercent(milestones)}%</div>
               <div className="prof-ms-pct-label">{t('ms_completed')}</div>

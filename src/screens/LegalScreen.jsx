@@ -22,15 +22,15 @@ export function LegalScreen({ open, which, onClose }) {
   );
 }
 
-// Ported from the reference prototype's full milestones list — achieved entries in gold with a
-// filled icon, unachieved in the normal text colour.
-export function MilestonesListScreen({ open, milestones, onClose }) {
+// Ported from the reference prototype's full achievements list — earned entries in gold with a
+// filled icon, unearned in the normal text colour.
+export function AchievementsListScreen({ open, milestones, onClose }) {
   const { t } = useI18n();
   return (
     <div className={'legal-screen' + (open ? ' on' : '')}>
       <div className="ip-hdr" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button className="prof-edit-btn" onClick={onClose}>{t('back')}</button>
-        <div className="ip-title">{t('prof_sec_milestones')}</div>
+        <div className="ip-title">{t('prof_sec_achievements')}</div>
         <span style={{ width: 40 }}></span>
       </div>
       <div className="ip-body legal-body" style={{ paddingBottom: 40 }}>

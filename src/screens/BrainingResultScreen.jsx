@@ -4,11 +4,11 @@ import { brAgeColor, brFmtSec, BR_SCALE_SHOWN } from '../store/braining.js';
 import { computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
-import MilestonePopup from '../components/MilestonePopup.jsx';
+import AchievementPopup from '../components/AchievementPopup.jsx';
 
 // Ported from the reference prototype's #scr-br-result markup + the display half of brFinish().
 export default function BrainingResultScreen({
-  result, brState, streak, chDone, milestoneQueue, onMilestonesDone,
+  result, brState, streak, chDone, achievementQueue, onAchievementsDone,
   onTryAgain, onBack, onCompleteStreak,
   guestConvoStarted, acctCreated, onCreateAccount,
 }) {
@@ -115,9 +115,9 @@ export default function BrainingResultScreen({
       <button className="br-btn-out" onClick={onBack}>{t('back_to_braining')}</button>
 
       {celebrate && <ConfettiBurst />}
-      <MilestonePopup
-        queue={milestoneQueue}
-        onDone={onMilestonesDone}
+      <AchievementPopup
+        queue={achievementQueue}
+        onDone={onAchievementsDone}
         guestConvoStarted={guestConvoStarted}
         acctCreated={acctCreated}
         onCreateAccount={onCreateAccount}

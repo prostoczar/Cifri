@@ -134,7 +134,7 @@ function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
 
 // Credits the day to the unified streak, as a pure helper shared by both modes.
 // `chDone`/`brDone` must reflect the db/brState as they will be AFTER the session being
-// recorded. Returns the streak-related fields to merge, plus any milestone cards unlocked.
+// recorded. Returns the streak-related fields to merge, plus any achievement cards unlocked.
 //
 // EITHER MODE EARNS THE DAY. This used to require both, and the change to `||` below is the
 // whole of the loosened rule on the earning side. Doing both modes is still the better day —
@@ -166,7 +166,7 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
     justCredited = true;
     // The dedicated first-ever "you've lit a streak" popup — separate from the recurring
     // 7/14/30-day thresholds. This is also the moment guest-conversion nudging begins: from
-    // here every milestone popup carries the CTA until a real account exists. Skipped
+    // here every achievement popup carries the CTA until a real account exists. Skipped
     // entirely when an account already exists, matching the reference's guard.
     if (neverLitBefore && !nextMilestones.firstStreakLit && !state.acctCreated) {
       nextMilestones = {
@@ -275,7 +275,7 @@ function reducer(state, action) {
       return { ...state, anyGuestPromptDismissed: true };
 
     // The 5-day fallback prompt: fires once ever, and counts as the first ask, so later
-    // milestones start carrying the CTA.
+    // achievements start carrying the CTA.
     case 'SAVE_PROMPT_SHOWN':
       return { ...state, savePromptShown: true, guestConvoStarted: true };
 
@@ -312,7 +312,7 @@ function reducer(state, action) {
       return { ...state, brChartType: action.chartType };
 
     // Opening the Trick of the Day card. Only the first open on a given calendar day counts,
-    // which is what makes Trick Explorer a "10 distinct days" milestone rather than 10 taps.
+    // which is what makes Trick Explorer a "10 distinct days" achievement rather than 10 taps.
     case 'VIEW_TRICK_OF_DAY': {
       const today = dayKey();
       if (state.totdLastViewed === today) return { ...state, _lastTrickUnlocked: null };
@@ -410,14 +410,14 @@ function reducer(state, action) {
 
     // Records a completed Challenge session (real trial or practice) and runs every piece of
     // derived state that the reference app's endGame() touches: best score, streak crediting,
-    // and milestone unlocks. Returns the unlocked-milestones list via action.onUnlocked.
+    // and achievement unlocks. Returns the unlocked-achievements list via action.onUnlocked.
     case 'CHALLENGE_SESSION_COMPLETE': {
       const { diff, score, isPrac, correct, wrong, lang } = action;
       const today = dayKey();
 
       // The reference only records into db when there is a difficulty AND a non-zero score
       // (`if(cur.diff&&sc>0)`). The standalone Practice tab has no difficulty, so its runs are
-      // never stored and never touch streaks, bests or milestones — just show a result.
+      // never stored and never touch streaks, bests or achievements — just show a result.
       if (!diff || score <= 0) {
         return {
           ...state,
@@ -518,7 +518,7 @@ function reducer(state, action) {
         // that is deliberate rather than incidental: it is what makes a boosted score unable to
         // unlock anything a raw score could not. Perfect Run is still ten answers with none
         // wrong; Medium and Hard are still the tier actually played. Keep it that way — a
-        // milestone that keyed off the score number would start firing on the boost.
+        // achievement that keyed off the score number would start firing on the boost.
         const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
         if (!m.chFirst) {
           m.chFirst = true;
@@ -596,7 +596,7 @@ function reducer(state, action) {
     }
 
     // Mirrors the reference's brFinish(): records the session, updates best time/age, credits
-    // the unified streak, and collects milestone unlocks.
+    // the unified streak, and collects achievement unlocks.
     case 'BRAINING_SESSION_COMPLETE': {
       const { sec, age, isPrac, lang } = action;
       const today = dayKey();

@@ -21,7 +21,7 @@ import { arrivedFromRecoveryLink, clearRecoveryUrl } from './lib/recoveryLink.js
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import QuitModal from './components/QuitModal.jsx';
-import MilestonePopup from './components/MilestonePopup.jsx';
+import AchievementPopup from './components/AchievementPopup.jsx';
 import ProfileSheet from './components/ProfileSheet.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
@@ -34,7 +34,7 @@ import ResetPasswordScreen from './screens/ResetPasswordScreen.jsx';
 import AccountCreateScreen from './screens/AccountCreateScreen.jsx';
 import EditAccountScreen from './screens/EditAccountScreen.jsx';
 import IconPickerScreen from './screens/IconPickerScreen.jsx';
-import { LegalScreen, MilestonesListScreen } from './screens/LegalScreen.jsx';
+import { LegalScreen, AchievementsListScreen } from './screens/LegalScreen.jsx';
 import BrainingQuitModal from './components/BrainingQuitModal.jsx';
 import ChallengeHomeScreen from './screens/ChallengeHomeScreen.jsx';
 import CountdownScreen from './screens/CountdownScreen.jsx';
@@ -61,13 +61,13 @@ function AppShell() {
   const [brQuitOpen, setBrQuitOpen] = useState(false);
   const [resultData, setResultData] = useState(null);
   const [brResultData, setBrResultData] = useState(null);
-  const [milestoneQueue, setMilestoneQueue] = useState([]);
-  const [brMilestoneQueue, setBrMilestoneQueue] = useState([]);
+  const [achievementQueue, setAchievementQueue] = useState([]);
+  const [brAchievementQueue, setBrAchievementQueue] = useState([]);
   const [tabAnimKey, setTabAnimKey] = useState(0);
   const [slide, setSlide] = useState(null); // {from, to, dir} while a swipe animation runs
   const [trickGame, setTrickGame] = useState(null); // {gi, ti} while drilling one trick
   const [tricksOpenIndex, setTricksOpenIndex] = useState(null); // deep-link from a TotD card
-  const [trickMilestoneQueue, setTrickMilestoneQueue] = useState([]);
+  const [trickAchievementQueue, setTrickAchievementQueue] = useState([]);
   const pendingTrickReqId = useRef(0);
   // Account / onboarding overlay state. The data behind it lives in the store; the network
   // calls behind the buttons live in src/lib/accountApi.js.
@@ -92,7 +92,7 @@ function AppShell() {
   const [pickerReturnTo, setPickerReturnTo] = useState('profile');
   const [profileOpen, setProfileOpen] = useState(false);
   const [legal, setLegal] = useState(null);
-  const [msListOpen, setMsListOpen] = useState(false);
+  const [achListOpen, setAchListOpen] = useState(false);
   const [savePromptOpen, setSavePromptOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   // Practice tab settings. Held here (not in the persisted store) so they survive tab switches
@@ -197,7 +197,7 @@ function AppShell() {
     const r = state._lastSessionResult;
     if (!r || r.reqId !== pendingReqId.current) return;
     setResultData(r);
-    setMilestoneQueue(r.unlocked || []);
+    setAchievementQueue(r.unlocked || []);
     setScreen('result');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state._lastSessionResult]);
@@ -239,7 +239,7 @@ function AppShell() {
     const r = state._lastBrResult;
     if (!r || r.reqId !== pendingBrReqId.current) return;
     setBrResultData(r);
-    setBrMilestoneQueue(r.unlocked || []);
+    setBrAchievementQueue(r.unlocked || []);
     setScreen('br-result');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state._lastBrResult]);
@@ -563,13 +563,13 @@ function AppShell() {
   }
 
   // ── Tricks ──
-  // Both entry points may unlock a milestone, and the reference shows those BEFORE revealing
+  // Both entry points may unlock an achievement, and the reference shows those BEFORE revealing
   // what you tapped (queueAndShowMilestones(unlocked, thenReveal)). This ref holds that reveal.
-  const afterTrickMilestonesRef = useRef(null);
+  const afterTrickAchievementsRef = useRef(null);
 
   function handlePracticeTrick(gi, ti) {
     const reqId = ++pendingTrickReqId.current;
-    afterTrickMilestonesRef.current = () => {
+    afterTrickAchievementsRef.current = () => {
       setTrickGame({ gi, ti });
       setScreen('trickgame');
     };
@@ -579,7 +579,7 @@ function AppShell() {
   function handleOpenTrickOfDay() {
     const idx = trickOfDayIndex();
     const reqId = ++pendingTrickReqId.current;
-    afterTrickMilestonesRef.current = () => {
+    afterTrickAchievementsRef.current = () => {
       handleSelectTab('tricks');
       setTricksOpenIndex(idx);
     };
@@ -589,22 +589,22 @@ function AppShell() {
   useEffect(() => {
     const r = state._lastTrickUnlocked;
     if (!r || r.reqId !== pendingTrickReqId.current) return;
-    const reveal = afterTrickMilestonesRef.current;
-    afterTrickMilestonesRef.current = null;
+    const reveal = afterTrickAchievementsRef.current;
+    afterTrickAchievementsRef.current = null;
     if (r.unlocked && r.unlocked.length) {
       // Queue the cards; the reveal runs once the player dismisses the last one.
-      setTrickMilestoneQueue(r.unlocked);
-      afterTrickMilestonesRef.current = reveal;
+      setTrickAchievementQueue(r.unlocked);
+      afterTrickAchievementsRef.current = reveal;
     } else if (reveal) {
       reveal();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state._lastTrickUnlocked]);
 
-  function handleTrickMilestonesDone() {
-    setTrickMilestoneQueue([]);
-    const reveal = afterTrickMilestonesRef.current;
-    afterTrickMilestonesRef.current = null;
+  function handleTrickAchievementsDone() {
+    setTrickAchievementQueue([]);
+    const reveal = afterTrickAchievementsRef.current;
+    afterTrickAchievementsRef.current = null;
     if (reveal) reveal();
   }
 
@@ -788,11 +788,11 @@ function AppShell() {
             db={state.db}
             streak={state.streak}
             lang={lang}
-            milestoneQueue={milestoneQueue}
-            onMilestonesDone={() => setMilestoneQueue([])}
+            achievementQueue={achievementQueue}
+            onAchievementsDone={() => setAchievementQueue([])}
             guestConvoStarted={state.guestConvoStarted}
             acctCreated={state.acctCreated}
-            onCreateAccount={() => { setMilestoneQueue([]); openAccountCreation(); }}
+            onCreateAccount={() => { setAchievementQueue([]); openAccountCreation(); }}
             onPlayAgain={handlePlayAgain}
             onBack={handleBackHome}
           />
@@ -815,11 +815,11 @@ function AppShell() {
             brState={state.brState}
             streak={state.streak}
             chDone={chDone}
-            milestoneQueue={brMilestoneQueue}
-            onMilestonesDone={() => setBrMilestoneQueue([])}
+            achievementQueue={brAchievementQueue}
+            onAchievementsDone={() => setBrAchievementQueue([])}
             guestConvoStarted={state.guestConvoStarted}
             acctCreated={state.acctCreated}
-            onCreateAccount={() => { setBrMilestoneQueue([]); openAccountCreation(); }}
+            onCreateAccount={() => { setBrAchievementQueue([]); openAccountCreation(); }}
             onTryAgain={handleBrTryAgain}
             onBack={handleBrBack}
             onCompleteStreak={() => handleSelectTab('challenge')}
@@ -828,12 +828,12 @@ function AppShell() {
       </div>
       <BottomNav activeTab={activeTab} onSelectTab={handleSelectTab} chDone={chDone} brDone={brDone} visible={showNav} />
       <QuitModal open={quitOpen} onKeepGoing={() => setQuitOpen(false)} onQuit={handleQuitConfirm} />
-      <MilestonePopup
-        queue={trickMilestoneQueue}
-        onDone={handleTrickMilestonesDone}
+      <AchievementPopup
+        queue={trickAchievementQueue}
+        onDone={handleTrickAchievementsDone}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}
-        onCreateAccount={() => { setTrickMilestoneQueue([]); openAccountCreation(); }}
+        onCreateAccount={() => { setTrickAchievementQueue([]); openAccountCreation(); }}
       />
       <StreakRestoreModal
         pendingRestore={state.pendingRestore}
@@ -850,7 +850,7 @@ function AppShell() {
           if (state.acctCreated) setEditAcctOpen(true); else openAccountCreation();
         }}
         onEditPicture={() => openIconPicker('profile')}
-        onOpenMilestones={() => { setProfileOpen(false); setMsListOpen(true); }}
+        onOpenAchievements={() => { setProfileOpen(false); setAchListOpen(true); }}
         onOpenLegal={(which) => { setProfileOpen(false); setLegal(which); }}
         onSetting={(key, value) => dispatch({ type: 'SET_SETTING', key, value })}
         onSetFontSize={(sz) => dispatch({ type: 'SET_SETTING', key: 'fontSize', value: sz })}
@@ -903,7 +903,7 @@ function AppShell() {
       />
 
       <LegalScreen open={!!legal} which={legal} onClose={() => { setLegal(null); setProfileOpen(true); }} />
-      <MilestonesListScreen open={msListOpen} milestones={state.milestones} onClose={() => { setMsListOpen(false); setProfileOpen(true); }} />
+      <AchievementsListScreen open={achListOpen} milestones={state.milestones} onClose={() => { setAchListOpen(false); setProfileOpen(true); }} />
 
       <SavePromptModal
         open={savePromptOpen}

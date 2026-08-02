@@ -4,13 +4,13 @@ import { opName } from '../store/questionEngine.js';
 import { todayChallengeAvg, computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
-import MilestonePopup from '../components/MilestonePopup.jsx';
+import AchievementPopup from '../components/AchievementPopup.jsx';
 import ScoreBreakdown from '../components/ScoreBreakdown.jsx';
 
 // Ported from the reference prototype's #scr-result markup + the relevant parts of endGame()/
 // triggerResultCelebration().
 export default function ChallengeResultScreen({
-  result, db, streak, lang, milestoneQueue, onMilestonesDone, onPlayAgain, onBack,
+  result, db, streak, lang, achievementQueue, onAchievementsDone, onPlayAgain, onBack,
   guestConvoStarted, acctCreated, onCreateAccount,
 }) {
   const { t } = useI18n();
@@ -73,9 +73,9 @@ export default function ChallengeResultScreen({
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="bbtn" onClick={onBack}>{t('back')}</button>
       {celebrate && <ConfettiBurst />}
-      <MilestonePopup
-        queue={milestoneQueue}
-        onDone={onMilestonesDone}
+      <AchievementPopup
+        queue={achievementQueue}
+        onDone={onAchievementsDone}
         guestConvoStarted={guestConvoStarted}
         acctCreated={acctCreated}
         onCreateAccount={onCreateAccount}

@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { MILESTONE_ICONS } from '../store/milestones.js';
 
-// Ported from the reference prototype's milestone popup (queueAndShowMilestones/renderMilestone/
+// Ported from the reference prototype's achievement popup (queueAndShowMilestones/renderMilestone/
 // dismissMilestone). `queue` is the full list of {icon,nameKey,descKey,vars} cards to show, one
 // at a time, tap-anywhere to advance. Calls onDone() once the queue is empty.
 // The CTA rule is the reference's exactly: "First Challenge" and "First Braining" NEVER carry
 // it — they stay simple celebrations, separate from the dedicated streak-lit popup, which is the
-// one that actually asks. Every other milestone gets it once guest-conversion nudging has begun
+// one that actually asks. Every other achievement gets it once guest-conversion nudging has begun
 // (the first streak-lit moment, or the 5-day fallback prompt), for as long as no account exists.
-export default function MilestonePopup({ queue, onDone, guestConvoStarted, acctCreated, onCreateAccount }) {
+export default function AchievementPopup({ queue, onDone, guestConvoStarted, acctCreated, onCreateAccount }) {
   const { t } = useI18n();
   const [idx, setIdx] = useState(0);
   const [anim, setAnim] = useState(0);
