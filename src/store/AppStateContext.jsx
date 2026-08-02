@@ -367,16 +367,14 @@ function reducer(state, action) {
           const wasCh = chCompletedOnDate(state.db, breakDay);
           const wasBr = brCompletedOnDate(state.brState, breakDay);
           // A day with EITHER mode played keeps the streak alive. Only a day with nothing at all
-          // breaks it — which also means 'both' is now the only reason a break can ever have.
-          // The modal still renders the older single-mode reasons, because a player whose streak
-          // broke under the previous rule may already be carrying one in their saved state.
+          // breaks it, so there is no longer a reason to record: every break has the same cause,
+          // and the modal simply says so. (The field that used to carry it is gone rather than
+          // pinned to a constant — a stored value nobody can vary is a value nobody should read.)
           if (!(wasCh || wasBr)) {
-            const reason = 'both';
             next = {
               ...next,
               pendingRestore: {
                 brokenValue: state.streak,
-                brokenReason: reason,
                 brokenAtMs: dateStrToDate(addDaysStr(breakDay, 1)).getTime(),
                 availableAtBreak: state.streakRestoreAvailable,
               },
@@ -431,18 +429,13 @@ function reducer(state, action) {
             rawScore: score, boosted: false,
             origin: action.origin,
             opTimes: action.opTimes,
-            isNewBest: false, unlocked: [], isFirstToday: false,
+            breakdown: action.breakdown,
+            isNewBest: false, unlocked: [],
           },
         };
       }
 
       const d = state.db[diff];
-
-      // Whether the streak has anything to gain from this run. Note what it is NOT: it is no
-      // longer the test for whether the run counts toward the score. Those two ideas used to be
-      // the same question and are now separate — the day is credited to the streak once, on the
-      // first play, while the score keeps moving with every play after it.
-      const isFirstToday = d.lastDay !== today;
 
       // ── Spending the Braining boost ──────────────────────────────────────────────
       //
@@ -552,9 +545,10 @@ function reducer(state, action) {
 
         // A single Challenge play now earns the day outright — Braining is no longer needed
         // alongside it — so this runs on every counting play rather than only the first on this
-        // difficulty. It does not need the `isFirstToday` gate it used to have: applyStreakCredit
-        // is guarded on `streakCreditedForDay`, so the second, fifth and fiftieth play of the day
-        // all find the day already banked and change nothing.
+        // difficulty. It does not need the first-play-of-the-day gate it used to have — that flag
+        // has since been deleted, nothing being left that read it — because applyStreakCredit is
+        // guarded on `streakCreditedForDay`, so the second, fifth and fiftieth play of the day all
+        // find the day already banked and change nothing.
         const credit = applyStreakCredit(state, {
           chDone: true, // this session is what makes Challenge done today
           brDone: brDoneToday(state.brState),
@@ -592,7 +586,11 @@ function reducer(state, action) {
           correct, wrong, isPrac,
           origin: action.origin,
           opTimes: action.opTimes,
-          isNewBest, unlocked, isFirstToday,
+          // Where the raw score came from, question by question, as tallied while it was earned.
+          // The result screen turns this into the visible breakdown; `rawScore` and `boosted`
+          // above are what let it show the boost as its own line.
+          breakdown: action.breakdown,
+          isNewBest, unlocked,
         },
       };
     }

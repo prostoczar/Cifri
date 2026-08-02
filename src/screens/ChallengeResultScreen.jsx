@@ -5,6 +5,7 @@ import { todayChallengeAvg, computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
 import MilestonePopup from '../components/MilestonePopup.jsx';
+import ScoreBreakdown from '../components/ScoreBreakdown.jsx';
 
 // Ported from the reference prototype's #scr-result markup + the relevant parts of endGame()/
 // triggerResultCelebration().
@@ -55,6 +56,14 @@ export default function ChallengeResultScreen({
         <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{streakText}</div><div className="rcl">{t('streak')}</div></div>
         <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{avgText}</div><div className="rcl">{t('stat_today_score')}</div></div>
       </div>
+      <ScoreBreakdown
+        breakdown={result.breakdown}
+        rawScore={result.rawScore}
+        boosted={result.boosted}
+        score={score}
+        diff={diff}
+        lang={lang}
+      />
       {opSummary && (
         <div className="op-summary-card">
           <span>{t('op_summary', { fastOp: opName(lang, opSummary.fastest.op), fastAvg: opSummary.fastest.avg.toFixed(1), slowOp: opName(lang, opSummary.slowest.op), slowAvg: opSummary.slowest.avg.toFixed(1) })}</span>

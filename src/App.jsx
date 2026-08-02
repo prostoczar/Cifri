@@ -186,6 +186,7 @@ function AppShell() {
         correct: summary.correct,
         wrong: summary.wrong,
         opTimes: summary.opTimes,
+        breakdown: summary.breakdown,
         lang,
       });
     },

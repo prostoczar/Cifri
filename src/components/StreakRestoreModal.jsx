@@ -11,12 +11,10 @@ export default function StreakRestoreModal({ pendingRestore, onRestore, onStartO
   if (!pendingRestore) return null;
 
   const n = pendingRestore.brokenValue;
-  const reason =
-    pendingRestore.brokenReason === 'both'
-      ? t('restore_reason_both')
-      : pendingRestore.brokenReason === 'Challenge'
-      ? t('nav_challenge')
-      : t('nav_braining');
+  // Always the same sentence now: a streak only breaks on a day with neither mode played, so
+  // there is nothing to choose between. It used to switch on a stored reason, back when missing
+  // one mode alone could break a streak.
+  const reason = t('restore_reason_both');
   const available = !!pendingRestore.availableAtBreak;
 
   return (

@@ -97,6 +97,15 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       wrong: c.wrong,
       opTimes: c.opTimes,
       sessionId: c.sessionId,
+      // The tally kept alongside the score as it was earned (see submitAnswer). Reported, never
+      // read back: nothing here feeds the score, it only describes how the score happened.
+      breakdown: {
+        ops: c.opPoints,
+        wrong: c.wrong,
+        penalty: c.penalty,
+        floorAbsorbed: c.floorAbsorbed,
+        dm: c.dm,
+      },
     });
   }, [clearTimer, onGameEnd]);
 
@@ -106,6 +115,19 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       const c = {
         diff, isPrac, pcfg, origin,
         score: 0, correct: 0, wrong: 0, opTimes: {},
+        // ── The score breakdown, tallied as it is earned ────────────────────────────
+        //
+        // These four counters exist so the result screen can show where the score came from
+        // WITHOUT recomputing it. Points are recorded at the moment calcSc awards them, so the
+        // lines on the breakdown are the very numbers that moved the score, not a second
+        // derivation of them that could disagree.
+        //
+        // `opPoints` is per operation: how many questions of that kind were asked, how many were
+        // right, and the points they earned between them. `penalty` is the wrong answers' flat
+        // cost, kept separate because it does not depend on the operation. `floorAbsorbed` is the
+        // part of that cost the score never actually paid, because the running total is clamped at
+        // zero — without it the lines would not add up to the score on a bad opening run.
+        opPoints: {}, penalty: 0, floorAbsorbed: 0,
         answer: null, op: null, qStart: 0,
         // Groups this sitting's answers together in the attempt log.
         sessionId: startSession(),
@@ -120,6 +142,11 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       }
       c.timer = tsec;
       c.ttotal = tsec;
+      // The difficulty multiplier for this whole sitting. It used to be worked out again on every
+      // answer; it is settled here instead because `diff` and `isPrac` are fixed the moment a
+      // session begins and never change inside one. Same value, decided once, so the number the
+      // breakdown names is provably the number the scoring used.
+      c.dm = isPrac ? 1.0 : DIFFS[diff] ? DIFFS[diff].dm : 1.0;
       c.yestScore = diff ? getYestScore(diff) : null;
       // Today's running average, once there is one. Previously only shown while practising,
       // because during the one counting trial there was nothing yet to compare against. Now
@@ -168,9 +195,25 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
     if (isNaN(val)) return;
 
     const elapsed = (Date.now() - c.qStart) / 1000;
-    const dm = c.isPrac ? 1.0 : DIFFS[c.diff] ? DIFFS[c.diff].dm : 1.0;
     const ok = Math.abs(val - c.answer) < 0.055;
-    const pts = calcSc(ok, elapsed, c.op, dm);
+    const pts = calcSc(ok, elapsed, c.op, c.dm);
+
+    // Book this question into the breakdown. Every operation the player met gets an entry, even
+    // one they never answered correctly, so the breakdown can say plainly that it earned nothing
+    // rather than quietly leaving it out.
+    const bo = (c.opPoints[c.op] = c.opPoints[c.op] || { asked: 0, correct: 0, points: 0 });
+    bo.asked++;
+    if (ok) { bo.correct++; bo.points += pts; } else { c.penalty += pts; }
+
+    // Adds this question's points to the running score. The clamp is exactly the line that was
+    // here before — `Math.max(0, …)`, unchanged — with one extra statement recording how much of
+    // the change the clamp swallowed. Both branches go through here so the tally cannot fall out
+    // of step with the clamp it is measuring.
+    const applyPts = () => {
+      const before = c.score;
+      c.score = Math.max(0, c.score + pts);
+      c.floorAbsorbed += c.score - before - pts;
+    };
 
     // Report the answered question. Wrapped so a logging fault can never interrupt play, and
     // placed after the marking above so it only ever describes a decision already made.
@@ -195,7 +238,7 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       (c.opTimes[c.op] = c.opTimes[c.op] || []).push(elapsed);
       alockRef.current = true;
       c.correct++;
-      c.score = Math.max(0, c.score + pts);
+      applyPts();
       tick(soundOn);
       setInputClass('ai ok');
       setFeedback({ text: '+' + pts + ' ' + t(lang, 'pts'), cls: 'fb ok' });
@@ -213,7 +256,7 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       setTimeout(loadQuestion, 250);
     } else {
       c.wrong++;
-      c.score = Math.max(0, c.score + pts);
+      applyPts();
       buzz(soundOn);
       alockRef.current = true;
       setInputClass('ai bad');

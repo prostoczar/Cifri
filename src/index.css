@@ -81,9 +81,6 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .streak-pill.one{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
 /* Both modes done today — yellow */
 .streak-pill.both{background:var(--YL);color:#000;box-shadow:0 2px 0 #c49030}
-/* Light-up animation — fires once, the moment the second mode completes */
-@keyframes streakPillLightUp{0%{transform:scale(1);filter:brightness(1)}40%{transform:scale(1.2);filter:brightness(1.35) drop-shadow(0 0 8px rgba(255,209,102,.85))}100%{transform:scale(1);filter:brightness(1)}}
-.streak-pill.lightup{animation:streakPillLightUp .4s ease}
 /* v15 item 5: refill (streak restore) pill — sits next to the streak pill. Shows "1" with a
    light-green background + shadow when a restore is still available for the current streak;
    shows "0" with a plain beige background and no shadow once it's been used (or before any
@@ -770,3 +767,28 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ob-avail.bad{color:var(--TCB)}
 .ob-avail.checking{color:var(--txt3)}
 .ob-disclaimer{font-size:calc(10px * var(--fs-mult));color:var(--txt3);max-width:300px;margin:0 0 16px;line-height:1.4}
+
+/* ══════════════════ CHAT 3.7 ══════════════════ */
+
+/* ── Score breakdown on the Challenge result screen ──
+   One card, one row per line of the sum. Every row is the same three-column shape — label,
+   detail, value — so the numbers form a single right-hand column that can be read straight
+   down and added up. The rows that only sometimes appear (the boost, the score floor) use no
+   special layout of their own; they are ordinary rows that are simply not rendered when they
+   do not apply, which is why nothing shifts when one is missing. */
+.sb-card{background:var(--card);border-radius:var(--rs);padding:12px 14px;margin:0 0 12px;position:relative;z-index:1}
+.sb-title{font-size:calc(11px * var(--fs-mult));font-weight:800;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.sb-row{display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:calc(12px * var(--fs-mult))}
+.sb-name{font-weight:700;color:var(--txt);flex-shrink:0}
+.sb-detail{font-weight:500;color:var(--txt3);font-size:calc(11px * var(--fs-mult));flex:1;min-width:0}
+.sb-val{font-weight:800;color:var(--txt);margin-left:auto;flex-shrink:0;font-variant-numeric:tabular-nums}
+/* Penalties and the floor read as corrections rather than earnings. */
+.sb-row.neg .sb-name,.sb-row.neg .sb-val{color:var(--TCB)}
+/* The difficulty row states a factor already inside every line above it, so it carries no value
+   in the right-hand column — the detail text runs the full width instead. */
+.sb-row.factor .sb-name{color:var(--txt2)}
+.sb-rule{height:1px;background:var(--border);margin:7px 0}
+/* Subtotal and boost — only rendered on a boosted attempt. */
+.sb-row.boost .sb-name,.sb-row.boost .sb-val{color:var(--G)}
+.sb-row.total{font-size:calc(14px * var(--fs-mult));padding-top:4px}
+.sb-row.total .sb-name,.sb-row.total .sb-val{font-weight:900}
