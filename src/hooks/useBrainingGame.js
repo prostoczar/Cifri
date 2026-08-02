@@ -77,7 +77,7 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     const g = gameRef.current;
     if (!g) return;
     const sec = Math.floor((Date.now() - g.startTime) / 1000);
-    onGameEnd({ isPrac: g.isPrac, sec, opTimes: g.opTimes, sessionId: g.sessionId });
+    onGameEnd({ isPrac: g.isPrac, sec, wrong: g.wrong, opTimes: g.opTimes, sessionId: g.sessionId });
   }, [clearTimer, onGameEnd]);
 
   const begin = useCallback(
@@ -92,6 +92,10 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
         curOp: null,
         qStart: 0,
         opTimes: {},
+        // Braining makes you correct a wrong answer before moving on, so a wrong one costs time
+        // rather than points and never needed counting. Flawless Brain asks for a session with
+        // none at all, so they are counted now — reported at the end, never read by the game.
+        wrong: 0,
         startTime: Date.now(),
         elapsed: 0,
         // Groups this sitting's answers together in the attempt log.
@@ -169,7 +173,9 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
         setTimeout(loadQuestion, 180);
       }
     } else {
-      // Wrong answers are never counted — the player must correct it before moving on.
+      // Still not counted against the player — correcting it is the cost. Tallied only so
+      // Flawless Brain can ask whether this session had any.
+      g.wrong++;
       buzz(soundOn);
       setInputBad(true);
       setQcState('bad');

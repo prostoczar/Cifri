@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { dayKey, yesterday, addDaysStr, dateStrToDate } from './dates.js';
 import { streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
 import { applyBrainingBoost } from './scoring.js';
+import { brainAge20Count, isSharperEveryDay } from './braining.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
 import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
@@ -36,13 +37,19 @@ function defaultState() {
     // granted for, not a bare true/false — see BRAINING_SESSION_COMPLETE for why that difference
     // is what makes the boost expire on its own at midnight.
     brBoostDay: null,
+    // What has been earned, and the running counts a few achievements are measured against.
+    // The per-achievement booleans that used to live here are gone: `achievedLog` already says
+    // whether a thing was earned, and a second copy of that fact could only ever disagree with
+    // it. Saved data from before the change still carries them; nothing reads them any more.
     milestones: {
+      // Streak lengths already celebrated, so a restore cannot replay them.
       streakShown: [],
-      chFirst: false, chPerfect: false, chMedium: false, chHard: false,
-      brFirst: false, brSub4: false, brAge20: false,
-      trickCount: 0, trickShown: false,
-      tricksPracticedSet: [], allTricksShown: false,
+      // Distinct calendar days the Trick of the Day was opened, and which tricks were practiced.
+      trickCount: 0,
+      tricksPracticedSet: [],
+      // Not an achievement — the guard for the one-off "You've lit a streak!" conversion prompt.
       firstStreakLit: false,
+      // The single source of truth: achievement keys, in the order they were earned.
       achievedLog: [],
     },
     settings: { sound: true, dark: null, fontSize: 'medium', lang: null },
@@ -123,6 +130,18 @@ function cardForStreak(threshold) {
   const key = streakAchievementKey(threshold);
   if (key) return { key };
   return { icon: 'flame', nameKey: 'ms_streak_name', descKey: 'ms_streak_desc', vars: { n: threshold } };
+}
+
+// Records one achievement as earned, once. The earned log is the only thing consulted, which is
+// what let the per-achievement booleans this used to keep go away: with 59 of them, a parallel
+// flag for each was 59 more chances for the flag and the log to disagree about the same fact.
+//
+// `m.achievedLog` must already be a copy — every caller clones it before touching it.
+function earn(m, unlocked, key) {
+  if (m.achievedLog.indexOf(key) !== -1) return false;
+  m.achievedLog.push(key);
+  unlocked.push({ key });
+  return true;
 }
 
 function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
@@ -334,11 +353,11 @@ function reducer(state, action) {
       const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
       const unlocked = [];
       m.trickCount = (m.trickCount || 0) + 1;
-      if (m.trickCount >= 10 && !m.trickShown) {
-        m.trickShown = true;
-        m.achievedLog.push('trick_explorer');
-        unlocked.push({ key: 'trick_explorer' });
-      }
+      if (m.trickCount >= 10) earn(m, unlocked, 'trick_explorer');
+      // Curious Mind wants every trick of the day seen at least once. The trick of the day cycles
+      // through the library in order, one per day, so seeing as many distinct days as there are
+      // tricks is the same thing as having seen them all — `action.total` is the library size.
+      if (action.total > 0 && m.trickCount >= action.total) earn(m, unlocked, 'tr_curious');
       return { ...state, totdLastViewed: today, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
     }
 
@@ -351,11 +370,10 @@ function reducer(state, action) {
       if (set.indexOf(key) === -1) set.push(key);
       m.tricksPracticedSet = set;
       const unlocked = [];
-      if (!m.allTricksShown && action.total > 0 && set.length >= action.total) {
-        m.allTricksShown = true;
-        m.achievedLog.push('trick_master');
-        unlocked.push({ key: 'trick_master' });
-      }
+      // The ladder of distinct tricks practiced: the first one, five of them, then all of them.
+      earn(m, unlocked, 'tr_first');
+      if (set.length >= 5) earn(m, unlocked, 'tr_halfway');
+      if (action.total > 0 && set.length >= action.total) earn(m, unlocked, 'trick_master');
       return { ...state, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
     }
 
@@ -532,30 +550,23 @@ function reducer(state, action) {
         // how many were wrong, which difficulty was chosen. Not one of them reads the score, and
         // that is deliberate rather than incidental: it is what makes a boosted score unable to
         // unlock anything a raw score could not. Perfect Run is still ten answers with none
-        // wrong; Medium and Hard are still the tier actually played. Keep it that way — a
+        // wrong; Medium and Hard are still the tier actually played. Keep it that way — an
         // achievement that keyed off the score number would start firing on the boost.
+        //
+        // The three score-based achievements the spreadsheet adds (To the Peak/Sky/Moon) are the
+        // deliberate exception and are NOT wired here yet — they need the raw score, not the
+        // boosted one, or the boost would buy them.
         const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
-        if (!m.chFirst) {
-          m.chFirst = true;
-          m.achievedLog.push('ch_first');
-          unlocked.push({ key: 'ch_first' });
-        }
+        earn(m, unlocked, 'ch_first');
         const total = correct + wrong;
-        if (total >= 10 && wrong === 0 && !m.chPerfect) {
-          m.chPerfect = true;
-          m.achievedLog.push('ch_perfect');
-          unlocked.push({ key: 'ch_perfect' });
-        }
-        if (diff === 'medium' && !m.chMedium) {
-          m.chMedium = true;
-          m.achievedLog.push('ch_medium');
-          unlocked.push({ key: 'ch_medium' });
-        }
-        if (diff === 'hard' && !m.chHard) {
-          m.chHard = true;
-          m.achievedLog.push('ch_hard');
-          unlocked.push({ key: 'ch_hard' });
-        }
+        if (total >= 10 && wrong === 0) earn(m, unlocked, 'ch_perfect');
+        if (diff === 'easy') earn(m, unlocked, 'ch_easy');
+        if (diff === 'medium') earn(m, unlocked, 'ch_medium');
+        if (diff === 'hard') earn(m, unlocked, 'ch_hard');
+        if (diff === 'hard' && total >= 10 && wrong === 0) earn(m, unlocked, 'ch_perfect_hard');
+        // Speed Demon is a plain count of correct answers inside the fixed 60-second Challenge.
+        // It cannot be reached from the Practice tab, which never gets here (`isPrac`).
+        if (correct >= 20) earn(m, unlocked, 'ch_speed_demon');
         nextMilestones = m;
 
         // A single Challenge play now earns the day outright — Braining is no longer needed
@@ -674,23 +685,27 @@ function reducer(state, action) {
           };
         }
 
-        // checkBrainingMilestones
+        // ── The Braining achievements ────────────────────────────────────────
+        //
+        // Every condition here reads how the session was PLAYED — its time, its result, whether
+        // any answer was missed — so a retry earns exactly what a first trial would for the same
+        // performance. That is why these sit outside the `isFirst` branch: the day's counting
+        // trial is what moves the streak and the boost, but a personal best set on a retry is
+        // still a personal best.
         const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
-        if (!m.brFirst) {
-          m.brFirst = true;
-          m.achievedLog.push('br_first');
-          unlocked.push({ key: 'br_first' });
-        }
-        if (sec < 240 && !m.brSub4) {
-          m.brSub4 = true;
-          m.achievedLog.push('br_sub4');
-          unlocked.push({ key: 'br_sub4' });
-        }
-        if (age <= 20 && !m.brAge20) {
-          m.brAge20 = true;
-          m.achievedLog.push('br_age20');
-          unlocked.push({ key: 'br_age20' });
-        }
+        earn(m, unlocked, 'br_first');
+        if (sec < 240) earn(m, unlocked, 'br_sub4');
+        if (sec < 180) earn(m, unlocked, 'br_sub3');
+        if (age <= 20) earn(m, unlocked, 'br_age20');
+        // Braining makes you correct every wrong answer before moving on, so "zero wrong" means
+        // no question was ever missed on the first attempt — not merely that you finished.
+        if (action.wrong === 0) earn(m, unlocked, 'br_flawless');
+        // `br` is the history as it stood BEFORE this session, so the trial that sets the
+        // baseline can never be the one that clears it. See isSharperEveryDay for the tiers.
+        if (isSharperEveryDay(br, age)) earn(m, unlocked, 'br_sharper');
+        // These two read the history WITH this session folded in, because they are about totals.
+        if (brainAge20Count(nextBr) >= 5) earn(m, unlocked, 'br_steady');
+        if ((nextBr.sessions || []).filter(isRecordedSession).length >= 50) earn(m, unlocked, 'br_half_century');
         nextMilestones = m;
 
         if (isFirst) {

@@ -229,6 +229,8 @@ function AppShell() {
         sec: summary.sec,
         age: brAge(summary.sec),
         isPrac: summary.isPrac,
+        // Flawless Brain is the only thing that reads this; the game itself still ignores it.
+        wrong: summary.wrong,
         opTimes: summary.opTimes,
         lang,
       });
@@ -583,7 +585,7 @@ function AppShell() {
       handleSelectTab('tricks');
       setTricksOpenIndex(idx);
     };
-    dispatch({ type: 'VIEW_TRICK_OF_DAY', reqId });
+    dispatch({ type: 'VIEW_TRICK_OF_DAY', reqId, total: TRICKS_FLAT.length });
   }
 
   useEffect(() => {
