@@ -890,6 +890,7 @@ function AppShell() {
         open={pickerOpen}
         avatar={state.avatar}
         username={state.username}
+        milestones={state.milestones}
         onApprove={(draft) => {
           closeIconPicker(draft);
           if (pickerReturnTo === 'account') setAcctOpen(true);

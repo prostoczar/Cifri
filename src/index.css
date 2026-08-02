@@ -792,3 +792,44 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .sb-row.boost .sb-name,.sb-row.boost .sb-val{color:var(--G)}
 .sb-row.total{font-size:calc(14px * var(--fs-mult));padding-top:4px}
 .sb-row.total .sb-name,.sb-row.total .sb-val{font-weight:900}
+
+/* ── Chat 3.8: achievements — locked picker rewards, rarity chips, symbol rendering ────────── */
+
+/* A symbol reward is a glyph, not an SVG, so wherever an icon would be drawn a symbol is centred
+   as text at the same box size instead. Used by the popup, the list screen and the locked card. */
+.ms-symbol{font-weight:900;line-height:1;display:flex;align-items:center;justify-content:center}
+.ms-list-icon.ms-symbol{font-size:calc(15px * var(--fs-mult))}
+.milestone-icon-wrap.ms-symbol{font-size:34px;color:var(--YLT)}
+
+/* Rarity chip beside an achievement's name. Colour carries the tier; the label carries the word,
+   so it still reads correctly to anyone who cannot separate the shades. */
+.ms-rarity{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:20px;font-size:calc(9px * var(--fs-mult));font-weight:800;text-transform:uppercase;letter-spacing:.3px;vertical-align:middle}
+.ms-rarity.r-common{background:var(--border2);color:var(--txt3)}
+.ms-rarity.r-uncommon{background:var(--GL2);color:var(--GDK)}
+.ms-rarity.r-rare{background:#dbeafe;color:#1e5fa8}
+.ms-rarity.r-epic{background:#ede4f7;color:#6b3fa0}
+.ms-rarity.r-legendary{background:var(--YL);color:var(--YLT)}
+body.dark .ms-rarity.r-rare{background:#1e3a5f;color:#9dc4f0}
+body.dark .ms-rarity.r-epic{background:#3a2d52;color:#c9a8f0}
+
+.ms-list-count{font-size:calc(12px * var(--fs-mult));font-weight:800;color:var(--txt3);padding-bottom:10px}
+
+/* ── Locked rewards in the picker ──
+   Grey and shadowless, which is the whole visual difference: an earned reward keeps the drop
+   shadow every other control in the app has, and a locked one is flat. It is still a live button
+   — tapping it opens the card below rather than doing nothing. */
+.ip-icon-btn.locked,.ip-sym-btn.locked{background:var(--card-grey);color:var(--txt3);box-shadow:none;opacity:.55}
+.ip-icon-btn.locked svg{stroke:var(--txt3)}
+.ip-icon-btn.locked:active,.ip-sym-btn.locked:active{transform:none}
+
+/* The "how to unlock" card. */
+.ach-lock-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:120;padding:24px}
+.ach-lock-bg.on{display:flex}
+.ach-lock-card{background:var(--card);border-radius:var(--r);padding:22px 20px;max-width:300px;width:100%;text-align:center;box-shadow:0 6px 0 var(--border2)}
+.ach-lock-icon{width:56px;height:56px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;background:var(--card-grey);color:var(--txt3);font-size:26px}
+.ach-lock-icon svg{width:28px;height:28px}
+.ach-lock-name{font-size:calc(16px * var(--fs-mult));font-weight:900;color:var(--txt);margin-bottom:6px}
+.ach-lock-how{font-size:calc(9.5px * var(--fs-mult));font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--txt3);margin-top:14px}
+.ach-lock-desc{font-size:calc(12px * var(--fs-mult));color:var(--txt);line-height:1.45;margin-top:4px}
+.ach-lock-btn{margin-top:16px;width:100%;padding:11px;border:none;border-radius:var(--rs);background:var(--G);color:#fff;font-family:inherit;font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 2px 0 var(--GD)}
+.ach-lock-btn:active{transform:translateY(1px);box-shadow:none}

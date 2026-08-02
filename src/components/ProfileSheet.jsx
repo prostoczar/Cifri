@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { avatarSpecFor } from '../store/avatar.js';
 import { brFmtSec } from '../store/braining.js';
-import { milestonesPercent, latestAchievedMilestone } from '../store/milestoneCatalog.js';
+import { achName, achievementsPercent, latestEarnedAchievement } from '../store/achievements.js';
 import Avatar from './Avatar.jsx';
 
 function isRecorded(s) {
@@ -36,7 +36,7 @@ export default function ProfileSheet({
   const chTotal = ['easy', 'medium', 'hard']
     .reduce((sum, d) => sum + (db[d].sessions || []).filter(isRecorded).length, 0);
   const brTotal = (brState.sessions || []).filter(isRecorded).length;
-  const latest = latestAchievedMilestone(milestones);
+  const latest = latestEarnedAchievement(milestones);
 
   const stat = (n, l) => (
     <div className="prof-stat">
@@ -82,12 +82,12 @@ export default function ProfileSheet({
           <div className="prof-section-title">{t('prof_sec_achievements')}</div>
           <div className="prof-ms-row" onClick={onOpenAchievements}>
             <div>
-              <div className="prof-ms-pct">{milestonesPercent(milestones)}%</div>
+              <div className="prof-ms-pct">{achievementsPercent(milestones)}%</div>
               <div className="prof-ms-pct-label">{t('ms_completed')}</div>
             </div>
             <div className="prof-ms-latest-wrap">
               <div className="prof-ms-latest-label">{t('ms_latest')}</div>
-              <div className="prof-ms-latest-name">{latest ? t(latest.nameKey, latest.vars) : '—'}</div>
+              <div className="prof-ms-latest-name">{latest ? achName(lang, latest) : '—'}</div>
             </div>
           </div>
 

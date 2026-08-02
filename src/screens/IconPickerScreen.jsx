@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { AVATAR_COLORS, AVATAR_ICONS, AVATAR_SYMBOLS, avatarSpecFor } from '../store/avatar.js';
+import { achDesc, achName, achievementForReward, isRewardUnlocked } from '../store/achievements.js';
 import Avatar from '../components/Avatar.jsx';
 
 // Ported from the reference prototype's icon picker. Letters / symbols / icons × 4 colours,
@@ -9,10 +10,22 @@ import Avatar from '../components/Avatar.jsx';
 // The draft is a working copy: Approve commits it, Back throws it away, so nothing is ever
 // half-saved. The preview renders through the same Avatar component as the header and profile,
 // which is what guarantees the colour-matched shadow looks identical everywhere.
-export default function IconPickerScreen({ open, avatar, username, onApprove, onBack }) {
-  const { t } = useI18n();
+//
+// ── Locking ──
+// Almost every icon and symbol here is the reward for an achievement. One that has not been
+// earned is drawn grey and flat and cannot be chosen; tapping it says which achievement it
+// belongs to and what that achievement asks for, so the grid doubles as a map of what is left
+// to go after rather than a wall of things that simply do not respond.
+//
+// Free from day one and never locked: letters, all four colours, + − × ÷, and the `person` icon.
+// The reserved icons and symbols are not handled here at all — they are not in AVATAR_ICONS or
+// AVATAR_SYMBOLS, so there is nothing in this file that could render them.
+export default function IconPickerScreen({ open, avatar, username, milestones, onApprove, onBack }) {
+  const { t, lang } = useI18n();
   const [draft, setDraft] = useState({ type: 'letters', value: '', color: 'green', size: 55 });
   const [tab, setTab] = useState('letters');
+  // The reward whose "how to unlock" card is showing, as {type, value}, or null.
+  const [locked, setLocked] = useState(null);
 
   // Opening picks up wherever the current avatar left off.
   useEffect(() => {
@@ -20,9 +33,19 @@ export default function IconPickerScreen({ open, avatar, username, onApprove, on
     const current = avatarSpecFor(avatar, username);
     setDraft({ type: current.type, value: current.value, color: current.color, size: current.size || 55 });
     setTab(current.type === 'letters' ? 'letters' : current.type === 'symbol' ? 'symbol' : 'icon');
+    setLocked(null);
   }, [open, avatar, username]);
 
   const iconNames = Object.keys(AVATAR_ICONS);
+  const unlocked = (type, value) => isRewardUnlocked(milestones, type, value);
+
+  // Selecting is only ever possible for something already earned; everything else explains itself.
+  const choose = (type, value) => {
+    if (unlocked(type, value)) setDraft((d) => ({ ...d, type, value }));
+    else setLocked({ type, value });
+  };
+
+  const lockedAch = locked ? achievementForReward(locked.type, locked.value) : null;
 
   return (
     <div className={'icon-picker-screen' + (open ? ' on' : '')}>
@@ -67,8 +90,12 @@ export default function IconPickerScreen({ open, avatar, username, onApprove, on
               {AVATAR_SYMBOLS.map((sym) => (
                 <button
                   key={sym}
-                  className={'ip-sym-btn' + (draft.type === 'symbol' && draft.value === sym ? ' on' : '')}
-                  onClick={() => setDraft((d) => ({ ...d, type: 'symbol', value: sym }))}
+                  className={
+                    'ip-sym-btn' +
+                    (draft.type === 'symbol' && draft.value === sym ? ' on' : '') +
+                    (unlocked('symbol', sym) ? '' : ' locked')
+                  }
+                  onClick={() => choose('symbol', sym)}
                 >
                   {sym}
                 </button>
@@ -81,8 +108,12 @@ export default function IconPickerScreen({ open, avatar, username, onApprove, on
               {iconNames.map((name) => (
                 <button
                   key={name}
-                  className={'ip-icon-btn' + (draft.type === 'icon' && draft.value === name ? ' on' : '')}
-                  onClick={() => setDraft((d) => ({ ...d, type: 'icon', value: name }))}
+                  className={
+                    'ip-icon-btn' +
+                    (draft.type === 'icon' && draft.value === name ? ' on' : '') +
+                    (unlocked('icon', name) ? '' : ' locked')
+                  }
+                  onClick={() => choose('icon', name)}
                   dangerouslySetInnerHTML={{ __html: AVATAR_ICONS[name] }}
                 />
               ))}
@@ -109,6 +140,23 @@ export default function IconPickerScreen({ open, avatar, username, onApprove, on
         <button className="ip-btn back" onClick={onBack}>{t('back')}</button>
         <button className="ip-btn approve" onClick={() => onApprove(draft)}>{t('approve')}</button>
       </div>
+
+      {lockedAch && (
+        <div className="ach-lock-bg on" onClick={() => setLocked(null)}>
+          <div className="ach-lock-card" onClick={(e) => e.stopPropagation()}>
+            {locked.type === 'symbol' ? (
+              <div className="ach-lock-icon ms-symbol">{locked.value}</div>
+            ) : (
+              <div className="ach-lock-icon" dangerouslySetInnerHTML={{ __html: AVATAR_ICONS[locked.value] || '' }} />
+            )}
+            <div className="ach-lock-name">{achName(lang, lockedAch)}</div>
+            <span className={'ms-rarity r-' + lockedAch.rarity}>{t('rarity_' + lockedAch.rarity)}</span>
+            <div className="ach-lock-how">{t('ach_locked_how')}</div>
+            <div className="ach-lock-desc">{achDesc(lang, lockedAch)}</div>
+            <button className="ach-lock-btn" onClick={() => setLocked(null)}>{t('close')}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useI18n } from '../store/useI18n.js';
-import { MILESTONE_CATALOG, isAchieved } from '../store/milestoneCatalog.js';
-import { MILESTONE_ICONS } from '../store/milestones.js';
+import { ACHIEVEMENTS, achDesc, achName, earnedCount, isEarned } from '../store/achievements.js';
+import { AVATAR_ICONS } from '../store/avatar.js';
 
 // Ported from the reference prototype's legal screen — static Terms / Privacy pages.
 export function LegalScreen({ open, which, onClose }) {
@@ -25,7 +25,7 @@ export function LegalScreen({ open, which, onClose }) {
 // Ported from the reference prototype's full achievements list — earned entries in gold with a
 // filled icon, unearned in the normal text colour.
 export function AchievementsListScreen({ open, milestones, onClose }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   return (
     <div className={'legal-screen' + (open ? ' on' : '')}>
       <div className="ip-hdr" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -34,14 +34,24 @@ export function AchievementsListScreen({ open, milestones, onClose }) {
         <span style={{ width: 40 }}></span>
       </div>
       <div className="ip-body legal-body" style={{ paddingBottom: 40 }}>
-        {MILESTONE_CATALOG.map((m) => {
-          const done = isAchieved(milestones, m.key);
+        <div className="ms-list-count">
+          {earnedCount(milestones)} / {ACHIEVEMENTS.length}
+        </div>
+        {ACHIEVEMENTS.map((a) => {
+          const done = isEarned(milestones, a.key);
           return (
-            <div key={m.key} className={'ms-list-item' + (done ? ' achieved' : '')}>
-              <div className="ms-list-icon" dangerouslySetInnerHTML={{ __html: MILESTONE_ICONS[m.icon] || '' }} />
+            <div key={a.key} className={'ms-list-item' + (done ? ' achieved' : '')}>
+              {a.reward.type === 'symbol' ? (
+                <div className="ms-list-icon ms-symbol">{a.reward.value}</div>
+              ) : (
+                <div className="ms-list-icon" dangerouslySetInnerHTML={{ __html: AVATAR_ICONS[a.reward.value] || '' }} />
+              )}
               <div>
-                <div className="ms-list-name">{t(m.nameKey, m.vars)}</div>
-                <div className="ms-list-desc">{t(m.descKey, m.vars)}</div>
+                <div className="ms-list-name">
+                  {achName(lang, a)}
+                  <span className={'ms-rarity r-' + a.rarity}>{t('rarity_' + a.rarity)}</span>
+                </div>
+                <div className="ms-list-desc">{achDesc(lang, a)}</div>
               </div>
             </div>
           );

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { dayKey, yesterday, addDaysStr, dateStrToDate } from './dates.js';
-import { streakMilestoneThreshold } from './milestones.js';
+import { streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
 import { applyBrainingBoost } from './scoring.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
 import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
@@ -114,6 +114,17 @@ function brCompletedOnDate(brState, dateStr) {
   return (brState.sessions || []).some((s) => s.date === dateStr && isRecordedSession(s));
 }
 
+// A reached streak length either has a catalogue entry — 7, 14, 30, 60, 90, 180, 365 — or it does
+// not, and the two cases produce different cards. The ladder ends at 365 because that is where the
+// reward icons end, but the streak itself keeps hitting a threshold every 30 days forever, and
+// those later ones still deserve their moment. They get an ad-hoc card carrying the day count
+// instead of a catalogue key, so they celebrate without claiming to unlock anything.
+function cardForStreak(threshold) {
+  const key = streakAchievementKey(threshold);
+  if (key) return { key };
+  return { icon: 'flame', nameKey: 'ms_streak_name', descKey: 'ms_streak_desc', vars: { n: threshold } };
+}
+
 function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
   const unlocked = [];
   const nextMilestones = { ...milestones, streakShown: [...milestones.streakShown], achievedLog: [...milestones.achievedLog] };
@@ -122,10 +133,14 @@ function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
       const thr = streakMilestoneThreshold(n);
       if (thr && nextMilestones.streakShown.indexOf(thr) === -1) {
         nextMilestones.streakShown.push(thr);
-        if (thr <= 90 && nextMilestones.achievedLog.indexOf('streak_' + thr) === -1) {
-          nextMilestones.achievedLog.push('streak_' + thr);
+        // Only thresholds the catalogue knows about are recorded as earned. Asking the catalogue
+        // rather than testing `thr <= 90` is what let the ladder grow to 365 without this line
+        // needing to know it had.
+        const key = streakAchievementKey(thr);
+        if (key && nextMilestones.achievedLog.indexOf(key) === -1) {
+          nextMilestones.achievedLog.push(key);
         }
-        unlocked.push({ icon: 'flame', nameKey: 'ms_streak_name', descKey: 'ms_streak_desc', vars: { n: thr } });
+        unlocked.push(cardForStreak(thr));
       }
     }
   }
@@ -322,7 +337,7 @@ function reducer(state, action) {
       if (m.trickCount >= 10 && !m.trickShown) {
         m.trickShown = true;
         m.achievedLog.push('trick_explorer');
-        unlocked.push({ icon: 'trick', nameKey: 'ms_trickexplorer_name', descKey: 'ms_trickexplorer_desc' });
+        unlocked.push({ key: 'trick_explorer' });
       }
       return { ...state, totdLastViewed: today, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
     }
@@ -339,7 +354,7 @@ function reducer(state, action) {
       if (!m.allTricksShown && action.total > 0 && set.length >= action.total) {
         m.allTricksShown = true;
         m.achievedLog.push('trick_master');
-        unlocked.push({ icon: 'trick', nameKey: 'ms_trickmaster_name', descKey: 'ms_trickmaster_desc' });
+        unlocked.push({ key: 'trick_master' });
       }
       return { ...state, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
     }
@@ -523,23 +538,23 @@ function reducer(state, action) {
         if (!m.chFirst) {
           m.chFirst = true;
           m.achievedLog.push('ch_first');
-          unlocked.push({ icon: 'star', nameKey: 'ms_ch_first_name', descKey: 'ms_ch_first_desc' });
+          unlocked.push({ key: 'ch_first' });
         }
         const total = correct + wrong;
         if (total >= 10 && wrong === 0 && !m.chPerfect) {
           m.chPerfect = true;
           m.achievedLog.push('ch_perfect');
-          unlocked.push({ icon: 'star', nameKey: 'ms_perfect_name', descKey: 'ms_perfect_desc' });
+          unlocked.push({ key: 'ch_perfect' });
         }
         if (diff === 'medium' && !m.chMedium) {
           m.chMedium = true;
           m.achievedLog.push('ch_medium');
-          unlocked.push({ icon: 'star', nameKey: 'ms_medium_name', descKey: 'ms_medium_desc' });
+          unlocked.push({ key: 'ch_medium' });
         }
         if (diff === 'hard' && !m.chHard) {
           m.chHard = true;
           m.achievedLog.push('ch_hard');
-          unlocked.push({ icon: 'star', nameKey: 'ms_hard_name', descKey: 'ms_hard_desc' });
+          unlocked.push({ key: 'ch_hard' });
         }
         nextMilestones = m;
 
@@ -664,17 +679,17 @@ function reducer(state, action) {
         if (!m.brFirst) {
           m.brFirst = true;
           m.achievedLog.push('br_first');
-          unlocked.push({ icon: 'brain', nameKey: 'ms_br_first_name', descKey: 'ms_br_first_desc' });
+          unlocked.push({ key: 'br_first' });
         }
         if (sec < 240 && !m.brSub4) {
           m.brSub4 = true;
           m.achievedLog.push('br_sub4');
-          unlocked.push({ icon: 'brain', nameKey: 'ms_sub4_name', descKey: 'ms_sub4_desc' });
+          unlocked.push({ key: 'br_sub4' });
         }
         if (age <= 20 && !m.brAge20) {
           m.brAge20 = true;
           m.achievedLog.push('br_age20');
-          unlocked.push({ icon: 'brain', nameKey: 'ms_age20_name', descKey: 'ms_age20_desc' });
+          unlocked.push({ key: 'br_age20' });
         }
         nextMilestones = m;
 
