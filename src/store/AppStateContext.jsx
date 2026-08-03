@@ -23,7 +23,7 @@ function freshDb() {
   };
 }
 
-function defaultState() {
+export function defaultState() {
   return {
     db: freshDb(),
     brState: { sessions: [], lastDay: null, bestTime: null, bestAge: null },
@@ -110,6 +110,33 @@ function isRecordedSession(s) {
   return s.real === true || typeof s.real === 'undefined';
 }
 
+// Is there anything here worth protecting?
+//
+// Used by the download path below to tell "this device has a player's work on it" apart from
+// "this device is blank". The distinction has to be made honestly in BOTH directions: a blank
+// device must never trip the protection, because there is nothing on it to protect and refusing
+// to adopt an account onto it would break picking up your history on a new phone — the whole
+// reason accounts exist.
+//
+// It counts every kind of work, not only the kind that scores. A practice run, a trick drilled,
+// an achievement earned and a streak lit are all things a person spent time on, and losing any of
+// them is losing progress. Only view preferences and settings are ignored, because those are
+// conveniences rather than progress.
+export function hasMeaningfulProgress(s) {
+  if (!s) return false;
+  for (const d of ['easy', 'medium', 'hard']) {
+    if (((s.db && s.db[d] && s.db[d].sessions) || []).length) return true;
+  }
+  if (((s.brState && s.brState.sessions) || []).length) return true;
+  if (((s.milestones && s.milestones.achievedLog) || []).length) return true;
+  const ts = s.trickStats || {};
+  if (Object.keys(ts.practiceDone || {}).length) return true;
+  if (Object.keys(ts.testDone || {}).length) return true;
+  if ((ts.testPassed || []).length) return true;
+  if ((s.streak || 0) > 0 || (s.bestStreakEver || 0) > 0) return true;
+  return false;
+}
+
 function chDoneToday(db) {
   const t = dayKey();
   return ['easy', 'medium', 'hard'].some((d) => db[d].lastDay === t);
@@ -150,6 +177,20 @@ function earn(m, unlocked, key) {
   m.achievedLog.push(key);
   unlocked.push({ key });
   return true;
+}
+
+// Records that a trick has genuinely been practiced, and runs the ladder that hangs off that:
+// the first trick, five of them, then every one in the library.
+//
+// Shared by the two ways of earning it — finishing a practice drill and passing the Test — so the
+// two can never drift into disagreeing about what counts. `m` must already be a copy.
+function creditTrickPracticed(m, unlocked, key, totalTricks) {
+  const set = [...(m.tricksPracticedSet || [])];
+  if (set.indexOf(key) === -1) set.push(key);
+  m.tricksPracticedSet = set;
+  earn(m, unlocked, 'tr_first');
+  if (set.length >= 5) earn(m, unlocked, 'tr_halfway');
+  if (totalTricks > 0 && set.length >= totalTricks) earn(m, unlocked, 'trick_master');
 }
 
 function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
@@ -237,7 +278,10 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
   };
 }
 
-function reducer(state, action) {
+// Exported for the verification scripts in scripts/. Nothing in the app imports it — the provider
+// below is the only caller — but a reducer that can be driven directly is a reducer whose rules
+// can be checked by running them rather than by reading them.
+export function reducer(state, action) {
   switch (action.type) {
     case 'HYDRATE':
       return { ...state, ...action.payload };
@@ -369,21 +413,17 @@ function reducer(state, action) {
       return { ...state, totdLastViewed: today, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
     }
 
-    // Opening a trick via "Practice this trick" counts it as practiced. Once every trick in the
-    // library has been practiced at least once, Trick Master unlocks.
-    case 'PRACTICE_TRICK': {
-      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
-      const set = [...(m.tricksPracticedSet || [])];
-      const key = action.gi + '-' + action.ti;
-      if (set.indexOf(key) === -1) set.push(key);
-      m.tricksPracticedSet = set;
-      const unlocked = [];
-      // The ladder of distinct tricks practiced: the first one, five of them, then all of them.
-      earn(m, unlocked, 'tr_first');
-      if (set.length >= 5) earn(m, unlocked, 'tr_halfway');
-      if (action.total > 0 && set.length >= action.total) earn(m, unlocked, 'trick_master');
-      return { ...state, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
-    }
+    // ── What "practiced a trick" means ───────────────────────────────────────────
+    //
+    // It used to mean opening one. `PRACTICE_TRICK` fired the moment the button was tapped, before
+    // a single question had been asked, and First Trick popped up over a drill the player had not
+    // started — congratulating them for arriving. Halfway There and Trick Master sat on the same
+    // list, so five taps and forty-seven taps earned those too.
+    //
+    // Now the credit is given where the work is: finishing a practice drill, or passing the Test.
+    // The list itself is the thing that moved, so all three read true rather than only the one
+    // that was noticed. See TRICK_PRACTICE_COMPLETE and TRICK_TEST_COMPLETE below, which are the
+    // only two places it can grow.
 
     // A finished 20-question practice drill on one trick. Counted on COMPLETION, not on opening
     // the screen — starting something is not an attempt at it, and counting starts would make the
@@ -394,6 +434,7 @@ function reducer(state, action) {
       const unlocked = [];
       const stats = state.trickStats || { practiceDone: {}, testDone: {}, testPassed: [] };
       const practiceDone = { ...stats.practiceDone, [key]: (stats.practiceDone[key] || 0) + 1 };
+      creditTrickPracticed(m, unlocked, key, action.totalTricks);
       // Clean Sweep: every question in the drill answered right first time.
       if (action.total > 0 && action.firstTryCorrect >= action.total) earn(m, unlocked, 'tr_clean_sweep');
       return {
@@ -404,8 +445,17 @@ function reducer(state, action) {
       };
     }
 
-    // A finished Test. Passing is 16 of 20 answered right first time; the pass is recorded once
-    // and never taken away, so a worse retake cannot un-graduate a trick.
+    // A Test that is over, however it ended.
+    //
+    // Passing is now all 20 answered right at the first attempt, and a single mistake ends the
+    // run there and then — so a Test that reaches its twentieth question IS a pass, and every
+    // other ending is a fail. The pass is recorded once and never taken away, so a worse retake
+    // cannot un-graduate a trick.
+    //
+    // The attempt counts either way. That is a deliberate consequence of the run being able to
+    // stop at question three: `testDone` answers "how many times have you sat this?", and a test
+    // walked out of at the first wrong answer was still sat. Only `testPassed` is about the
+    // result, and it is the only thing a failed attempt leaves untouched.
     case 'TRICK_TEST_COMPLETE': {
       const key = action.gi + '-' + action.ti;
       const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
@@ -415,8 +465,12 @@ function reducer(state, action) {
       const testPassed = [...(stats.testPassed || [])];
       if (action.passed && testPassed.indexOf(key) === -1) testPassed.push(key);
       if (action.passed) {
+        // Passing the Test is the other way of proving you know a trick, so it credits the
+        // practiced ladder too — someone who sat down and passed cold has plainly done the work,
+        // and making them also grind a practice drill to earn First Trick would be pedantry.
+        creditTrickPracticed(m, unlocked, key, action.totalTricks);
         earn(m, unlocked, 'tr_first_exam');
-        if (action.total > 0 && testPassed.length >= action.totalTricks) {
+        if (action.totalTricks > 0 && testPassed.length >= action.totalTricks) {
           earn(m, unlocked, 'tr_graduation');
         }
       }
@@ -434,17 +488,39 @@ function reducer(state, action) {
     case 'SET_SETTINGS':
       return { ...state, settings: { ...state.settings, ...action.settings } };
 
+    // Has the streak died since we last looked?
+    //
+    // This used to open with `if (state.streakLastCheckedDay === today) return state;` — run once
+    // a day, skip the rest. That guard was wrong, and wrong in the worst available direction: it
+    // could decide the day was already settled BEFORE the state it was settling had arrived.
+    //
+    // The app checks on mount, against whatever this device happens to be holding, and again the
+    // moment an account finishes downloading. The second check is the one that matters, because
+    // the first ran before the account's real dates were known. But the first had already stamped
+    // today as checked — so if the download did not itself carry a `streakLastCheckedDay` to
+    // overwrite that stamp, the second check returned immediately and a streak dead for a month
+    // sailed through untouched, then carried on counting from where it left off.
+    //
+    // So there is no gate now. The answer is a pure function of the dates and the history, it is
+    // cheap, and it gives the same answer however many times it is asked — which is exactly what
+    // makes running it twice on load safe rather than merely tolerable. `streakLastCheckedDay` is
+    // still recorded, and still synced, but nothing branches on it any more: it says when we last
+    // looked, and deliberately no longer claims that looking again would be a waste of time.
     case 'CHECK_STREAK_BREAK': {
       const today = dayKey();
-      if (state.streakLastCheckedDay === today) return state;
-      let next = { ...state, streakLastCheckedDay: today };
 
-      // First check of a new day, so any boost still sitting here belongs to a day that is over.
-      // Clearing it is housekeeping, not the safety mechanism: what actually stops a stale boost
-      // being spent is that it is compared against today's date at the moment it would be used,
-      // which holds even if the app is left open across midnight and this never runs.
-      if (state.brBoostDay && state.brBoostDay !== today) next.brBoostDay = null;
+      // Any boost still sitting here from a day that is over. Clearing it is housekeeping, not
+      // the safety mechanism: what actually stops a stale boost being spent is that it is compared
+      // against today's date at the moment it would be used, which holds even if the app is left
+      // open across midnight and this never runs.
+      const brBoostDay = state.brBoostDay && state.brBoostDay !== today ? null : state.brBoostDay;
 
+      let streak = state.streak;
+      let pendingRestore = state.pendingRestore;
+
+      // Only a live streak can break, which is also what makes this safe to re-run: once it has
+      // broken, `streak` is 0 and the branch cannot be entered again to overwrite the restore
+      // offer it just created.
       if (state.streak > 0 && state.streakCreditedForDay) {
         const breakDay = addDaysStr(state.streakCreditedForDay, 1);
         if (today > breakDay) {
@@ -455,19 +531,28 @@ function reducer(state, action) {
           // and the modal simply says so. (The field that used to carry it is gone rather than
           // pinned to a constant — a stored value nobody can vary is a value nobody should read.)
           if (!(wasCh || wasBr)) {
-            next = {
-              ...next,
-              pendingRestore: {
-                brokenValue: state.streak,
-                brokenAtMs: dateStrToDate(addDaysStr(breakDay, 1)).getTime(),
-                availableAtBreak: state.streakRestoreAvailable,
-              },
-              streak: 0,
+            pendingRestore = {
+              brokenValue: state.streak,
+              brokenAtMs: dateStrToDate(addDaysStr(breakDay, 1)).getTime(),
+              availableAtBreak: state.streakRestoreAvailable,
             };
+            streak = 0;
           }
         }
       }
-      return next;
+
+      // Nothing moved and today is already recorded, so hand back the identical object. Without
+      // this the two checks on load would each produce a fresh state, and the sync effect would
+      // dutifully upload a change that was not one.
+      if (
+        streak === state.streak &&
+        pendingRestore === state.pendingRestore &&
+        brBoostDay === state.brBoostDay &&
+        state.streakLastCheckedDay === today
+      ) {
+        return state;
+      }
+      return { ...state, streak, pendingRestore, brBoostDay, streakLastCheckedDay: today };
     }
 
     case 'STREAK_RESTORE': {
@@ -883,9 +968,31 @@ export function AppStateProvider({ children }) {
       // Only true when this device has synced with THIS account before AND the local state has
       // moved on since. On a phone logging in for the first time there is no baseline, so the
       // server still wins and picking up an account on a new device works exactly as it did.
+      const local = stateRef.current;
       const baseline = uid ? readBaseline(uid) : null;
       const deviceIsAhead =
-        baseline !== null && fingerprint(toSyncPayload(stateRef.current)) !== baseline;
+        baseline !== null && fingerprint(toSyncPayload(local)) !== baseline;
+
+      // The second net, independent of the baseline above and answering a different question.
+      //
+      // The baseline asks "has this device already sent the server what it is holding?" and is
+      // silent when there is no baseline at all — and with no baseline the server simply wins.
+      // That is right for a phone picking up an account for the first time, and catastrophic
+      // when a session turns up that the app was not expecting: a guest in the middle of signing
+      // up watches their history replaced by somebody else's.
+      //
+      // So this asks a narrower question: is the app being handed an account it did not believe
+      // it was signed in to, while this device is carrying a player's real work that no server
+      // has ever seen? Only then is adopting a destructive act, and only then is it refused.
+      //
+      // `acctCreated` is what keeps ordinary cross-device sync untouched. Once the app knows it
+      // is signed in, a download is the account catching this device up and is expected to win.
+      // And a blank device fails hasMeaningfulProgress outright, so first-login on a new phone
+      // works exactly as it always did — there is nothing there to defend.
+      const wouldDestroyUnsyncedWork =
+        baseline === null && !local.acctCreated && hasMeaningfulProgress(local);
+
+      const keepLocal = deviceIsAhead || wouldDestroyUnsyncedWork;
 
       dispatch({
         type: 'ACCOUNT_LOADED',
@@ -894,13 +1001,13 @@ export function AppStateProvider({ children }) {
         fullName: res.profile.full_name || '',
         avatar: res.profile.avatar,
         // The profile above (name, avatar) is always taken from the server. Only the PROGRESS is
-        // withheld when this device is ahead — an empty patch leaves the local history intact.
-        synced: deviceIsAhead ? {} : res.syncedState,
+        // withheld when this device holds work the server has not got — an empty patch leaves the
+        // local history intact.
+        synced: keepLocal ? {} : res.syncedState,
       });
       // The downloaded state may have last been checked on an earlier day, on another device.
-      // Re-running the break check is a no-op if it has already run today.
       dispatch({ type: 'CHECK_STREAK_BREAK' });
-      if (deviceIsAhead) {
+      if (keepLocal) {
         // Nothing on the server matches what is on this device, so treat everything here as
         // unsent. The sync effect below then uploads it, which is how the offline session gets
         // to the account instead of being rolled back.

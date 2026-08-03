@@ -53,6 +53,9 @@ export default function OnboardingScreen({ initialUsername, onFinish, onOpenLogi
         onChange={(e) => setValue(stripSpaces(e.target.value))}
       />
       <div className={'ob-avail ' + avail.cls}>{avail.text}</div>
+      {/* Sits directly under "✓ Available" because that is the line it qualifies. Available and
+          reserved are not the same thing, and only one of them was being said out loud. */}
+      <div className="ob-disclaimer pair">{t('ob_not_reserved')}</div>
       <div className="ob-disclaimer">{t('ob_disclaimer')}</div>
       <div className="ob-hint">{t('ob_hint')}</div>
       <button

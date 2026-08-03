@@ -545,6 +545,14 @@ function AppShell() {
   const guestBannerVisible =
     !state.acctCreated && state.anyGuestPromptDismissed && state.guestBannerLastShownDay !== dayKey();
 
+  // The picker covers the whole screen at a higher layer than everything that opens it, so a
+  // screen underneath it is hidden just as completely as one that has been closed — and can be
+  // left mounted. That difference is the whole fix for a real bug: closing the account screen
+  // unmounted nothing but DID make it "reopen" on the way back, and reopening is what refills its
+  // fields from the store. Someone who typed an email, a password and a name and then went to
+  // pick a picture came back to three empty boxes. Only the profile sheet is genuinely dismissed,
+  // because it is a bottom sheet that would otherwise sit half over the picker, and it holds
+  // nothing a player could lose.
   function openIconPicker(returnTo) {
     setPickerReturnTo(returnTo);
     setProfileOpen(false);
@@ -570,17 +578,14 @@ function AppShell() {
   // what you tapped (queueAndShowMilestones(unlocked, thenReveal)). This ref holds that reveal.
   const afterTrickAchievementsRef = useRef(null);
 
+  // Opening a practice drill unlocks nothing, so this just opens it. It used to dispatch
+  // PRACTICE_TRICK first, which awarded First Trick before the player had answered anything —
+  // see the note above TRICK_PRACTICE_COMPLETE for where that credit lives now.
   function handlePracticeTrick(gi, ti) {
-    const reqId = ++pendingTrickReqId.current;
-    afterTrickAchievementsRef.current = () => {
-      setTrickGame({ gi, ti, mode: 'practice' });
-      setScreen('trickgame');
-    };
-    dispatch({ type: 'PRACTICE_TRICK', reqId, gi, ti, total: TRICKS_FLAT.length });
+    setTrickGame({ gi, ti, mode: 'practice' });
+    setScreen('trickgame');
   }
 
-  // The Test does NOT dispatch PRACTICE_TRICK on the way in: sitting the exam is not the same as
-  // practising the trick, and Trick Master asks for the latter. It opens straight into the drill.
   function handleTestTrick(gi, ti) {
     setTrickGame({ gi, ti, mode: 'test' });
     setScreen('trickgame');
@@ -602,7 +607,7 @@ function AppShell() {
     } else {
       dispatch({
         type: 'TRICK_PRACTICE_COMPLETE', reqId, gi, ti,
-        firstTryCorrect: result.correct, total: PRACTICE_LENGTH,
+        firstTryCorrect: result.correct, total: PRACTICE_LENGTH, totalTricks: TRICKS_FLAT.length,
       });
     }
   }, [trickGame, dispatch]);
@@ -913,7 +918,7 @@ function AppShell() {
         avatar={state.avatar}
         busy={acctBusy}
         error={acctError}
-        onEditPicture={() => { setAcctOpen(false); openIconPicker('account'); }}
+        onEditPicture={() => openIconPicker('account')}
         onClose={closeAccountCreation}
         onSubmit={handleSignup}
       />
@@ -926,7 +931,7 @@ function AppShell() {
         busy={editBusy}
         error={editError}
         emailPending={emailPending}
-        onEditPicture={() => { setEditAcctOpen(false); openIconPicker('editaccount'); }}
+        onEditPicture={() => openIconPicker('editaccount')}
         onClose={() => { setEditAcctOpen(false); setEditError(''); setEmailPending(false); }}
         onSubmit={handleEditAccount}
         onSubmitPassword={handleChangePassword}
@@ -937,16 +942,10 @@ function AppShell() {
         avatar={state.avatar}
         username={state.username}
         milestones={state.milestones}
-        onApprove={(draft) => {
-          closeIconPicker(draft);
-          if (pickerReturnTo === 'account') setAcctOpen(true);
-          if (pickerReturnTo === 'editaccount') setEditAcctOpen(true);
-        }}
-        onBack={() => {
-          closeIconPicker(null);
-          if (pickerReturnTo === 'account') setAcctOpen(true);
-          if (pickerReturnTo === 'editaccount') setEditAcctOpen(true);
-        }}
+        // Neither button reopens anything: whichever screen sent us here never closed, so it is
+        // still sitting underneath with every field exactly as it was left.
+        onApprove={(draft) => closeIconPicker(draft)}
+        onBack={() => closeIconPicker(null)}
       />
 
       <LegalScreen open={!!legal} which={legal} onClose={() => { setLegal(null); setProfileOpen(true); }} />

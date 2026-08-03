@@ -37,6 +37,10 @@ export function AchievementsListScreen({ open, milestones, onClose }) {
         <div className="ms-list-count">
           {earnedCount(milestones)} / {ACHIEVEMENTS.length}
         </div>
+        {/* Most of this list cannot be earned yet. A player counting the ones they have no route
+            to would reasonably conclude the app is broken, so the list says so itself rather than
+            leaving them to work it out. */}
+        <div className="ms-list-note">{t('ms_disclaimer')}</div>
         {ACHIEVEMENTS.map((a) => {
           const done = isEarned(milestones, a.key);
           return (

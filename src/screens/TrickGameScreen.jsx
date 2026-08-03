@@ -8,15 +8,21 @@ import { tick, buzz } from '../store/sound.js';
 
 // A drill on a single trick, in one of two modes.
 //
-//   practice  20 freshly generated questions. Repeatable without limit.
-//   test      the 20 hardest questions that trick can ask, the same 20 every time, and a pass
-//             mark. See store/trickTest.js for how "hardest" is decided.
+//   practice  20 freshly generated questions. Repeatable without limit. A wrong answer reveals
+//             the right one and waits; the drill always runs its full twenty and finishing it is
+//             never in doubt, however many were missed. Practice is for working at something.
+//   test      the 20 hardest questions that trick can ask, the same 20 every time. One mistake
+//             ends it. See store/trickTest.js for how "hardest" is decided.
 //
-// Both run the same loop, and in both a wrong answer reveals the correct one and waits rather
-// than moving on — you always leave having seen the right answer. What separates them is what is
-// recorded: `firstTryCorrect` counts questions answered correctly at the FIRST attempt, which is
-// what Clean Sweep reads in practice and what the Test is marked out of. Correcting a mistake
-// still advances you, it just does not earn the mark.
+// The two used to differ only in their questions and a pass mark. Now they differ in what a wrong
+// answer MEANS, which is the honest version of the distinction: a Test is a claim to know the
+// trick, and a claim is not something you get four of. Both still show the correct answer before
+// moving on — nobody should leave a question without seeing it — the Test simply has nowhere left
+// to move on to.
+//
+// `firstTryCorrect` counts questions answered correctly at the FIRST attempt. In practice it is
+// what Clean Sweep reads; in a Test it is the score, and it can only reach 20 by never having
+// been wrong.
 export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onAgain, onExit }) {
   const { t, lang } = useI18n();
   const isTest = mode === 'test';
@@ -130,6 +136,19 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
       buzz(soundOn);
       setInputClass('ai bad');
       setFeedback({ text: t('answer_colon') + ' ' + fn(answerRef.current), cls: 'fb bad' });
+
+      if (isTest) {
+        // The Test is over. Locking the pad matters as much as ending the run: without it the
+        // player can keep typing at a question whose result is already settled.
+        alockRef.current = true;
+        const correct = firstTryRef.current;
+        // Recorded now, for the same reason a finished run is: this attempt happened, and closing
+        // the app on the end card must not be a way to un-sit a Test.
+        onComplete({ correct, passed: false });
+        // Longer than the 320ms a completed run waits, because there is something to read here —
+        // the answer they missed. The end card explains why it stopped.
+        setTimeout(() => setDone({ correct, passed: false, endedEarly: true }), 1100);
+      }
     }
   }, [loadQuestion, soundOn, t, total, isTest, onComplete]);
 
@@ -150,9 +169,14 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
           <div className="tg-done-score">{done.correct}<span>/{total}</span></div>
           <div className="tg-done-label">
             {isTest
-              ? (passed ? t('trick_test_passed') : t('trick_test_failed', { n: TEST_PASS_MARK }))
+              ? (passed ? t('trick_test_passed') : t('trick_test_failed', { n: TEST_LENGTH }))
               : t('trick_practice_done')}
           </div>
+          {/* Only on a Test, and only when it ended early: the score alone reads as "you ran out
+              of questions", which is not what happened. This says the run stopped, and why. */}
+          {isTest && done.endedEarly && (
+            <div className="tg-done-note">{t('trick_test_ended_early')}</div>
+          )}
           <button className="tg-done-btn primary" onClick={onAgain}>
             {isTest && !passed ? t('trick_test_retake') : t('play_again')}
           </button>

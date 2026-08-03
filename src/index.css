@@ -767,6 +767,9 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ob-avail.bad{color:var(--TCB)}
 .ob-avail.checking{color:var(--txt3)}
 .ob-disclaimer{font-size:calc(10px * var(--fs-mult));color:var(--txt3);max-width:300px;margin:0 0 16px;line-height:1.4}
+/* Two disclaimers that belong together read as one note when they sit close, and as two
+   unrelated warnings when they sit apart. The first gets the tighter gap. */
+.ob-disclaimer.pair{margin-bottom:7px}
 
 /* ══════════════════ CHAT 3.7 ══════════════════ */
 
@@ -813,6 +816,9 @@ body.dark .ms-rarity.r-rare{background:#1e3a5f;color:#9dc4f0}
 body.dark .ms-rarity.r-epic{background:#3a2d52;color:#c9a8f0}
 
 .ms-list-count{font-size:calc(12px * var(--fs-mult));font-weight:800;color:var(--txt3);padding-bottom:10px}
+/* Sits under the counter it qualifies, and stays quieter than the list itself — it is a caveat,
+   not one of the achievements. */
+.ms-list-note{font-size:calc(11px * var(--fs-mult));color:var(--txt3);line-height:1.45;padding-bottom:16px;border-bottom:1px solid var(--border2);margin-bottom:6px}
 
 /* ── Locked rewards in the picker ──
    Grey and shadowless, which is the whole visual difference: an earned reward keeps the drop
@@ -864,6 +870,7 @@ body.dark .ms-rarity.r-epic{background:#3a2d52;color:#c9a8f0}
 .tg-done.pass .tg-done-score{color:var(--G)}
 .tg-done.fail .tg-done-score{color:var(--TC)}
 .tg-done-label{font-size:calc(13px * var(--fs-mult));font-weight:700;color:var(--txt3);margin-top:8px}
+.tg-done-note{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-top:8px;line-height:1.45;max-width:280px;margin-left:auto;margin-right:auto}
 .tg-done-btn{margin-top:12px;width:100%;padding:12px;border:none;border-radius:var(--rs);background:var(--card-grey);color:var(--txt);font-family:inherit;font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 2px 0 var(--border2)}
 .tg-done-btn.primary{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
 .tg-done-btn:active{transform:translateY(1px);box-shadow:none}

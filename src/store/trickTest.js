@@ -22,8 +22,11 @@ import { TRICKS, setTricksLang } from './tricksData.js';
 
 export const TEST_LENGTH = 20;
 export const PRACTICE_LENGTH = 20;
-// 16 of 20 — a question missed on the first attempt counts as missed.
-export const TEST_PASS_MARK = 16;
+// All 20, each right at the first attempt. The Test is a claim that you know the trick, and one
+// wrong answer ends the attempt on the spot rather than letting it be absorbed by a margin — so
+// reaching question twenty and passing are the same event. (This replaced a 16-of-20 pass mark;
+// the constant kept its name because that is what the mark IS, not what it happens to equal.)
+export const TEST_PASS_MARK = TEST_LENGTH;
 
 // How many candidates to draw before ranking. Large enough that the top 20 are genuinely the tail
 // of the distribution rather than whatever turned up, small enough to build in a few milliseconds.

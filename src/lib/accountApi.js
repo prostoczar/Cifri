@@ -6,7 +6,7 @@
 // CODE is one of the strings below, which the UI maps to the i18n message it already shows.
 // Nothing here ever throws for an expected failure — only genuinely unexpected ones bubble up.
 
-import { supabase } from './supabaseClient.js';
+import { supabase, probeClient } from './supabaseClient.js';
 import { toSyncPayload, fromSyncPayload } from './syncedState.js';
 
 export const ERR = {
@@ -128,21 +128,41 @@ export async function signUpWithProfile({ email, password, username, fullName, a
       //
       // Safe because it requires BOTH the correct password AND the absence of a profile. A
       // finished account belonging to someone else fails the first check, and if it somehow
-      // passes it, it fails the second — either way we sign straight back out and report the
-      // address as taken, exactly as before.
-      const { data: retry, error: retryError } = await supabase.auth.signInWithPassword({
+      // passes it, it fails the second — either way the address is reported as taken.
+      //
+      // Every step of that runs on the PROBE client, not the app's. This is asking a question
+      // about an address, not signing anybody in, and on the app's own client the two are the
+      // same event: a successful sign-in there stores a session and announces SIGNED_IN, which
+      // the store answers by adopting that account's saved progress over whatever the player has
+      // built up locally. That is how the guest's own history used to be destroyed by a signup
+      // that then FAILED. On the probe client nothing is stored and nothing is announced.
+      const p = probeClient();
+      const { data: retry, error: retryError } = await p.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (retryError || !retry.session) return { ok: false, error: ERR.EMAIL_IN_USE };
 
-      const { data: existingProfile } = await supabase
+      const { data: existingProfile } = await p
         .from('profiles').select('id').eq('id', retry.session.user.id).maybeSingle();
+
+      // A finished account. Nothing has touched the app's client, so there is nothing to undo —
+      // the player is still exactly the guest they were a moment ago, with their progress intact.
       if (existingProfile) {
-        await supabase.auth.signOut();
+        await p.auth.signOut();
         return { ok: false, error: ERR.EMAIL_IN_USE };
       }
-      session = retry.session;
+
+      // A half-finished account, and the password proves it belongs to whoever is typing. NOW
+      // signing in is the right thing to do, so the verified session is handed to the real client
+      // deliberately — the one place in this flow where a login is actually intended.
+      await p.auth.signOut();
+      const { data: adopted, error: adoptError } = await supabase.auth.setSession({
+        access_token: retry.session.access_token,
+        refresh_token: retry.session.refresh_token,
+      });
+      if (adoptError || !adopted.session) return { ok: false, error: ERR.EMAIL_IN_USE };
+      session = adopted.session;
     } else {
       // With email confirmation switched off, signUp returns a usable session immediately. If it
       // does not, confirmation has been turned back on in the Supabase dashboard and the rest of

@@ -69,7 +69,10 @@ export default function ChallengeResultScreen({
           <span>{t('op_summary', { fastOp: opName(lang, opSummary.fastest.op), fastAvg: opSummary.fastest.avg.toFixed(1), slowOp: opName(lang, opSummary.slowest.op), slowAvg: opSummary.slowest.avg.toFixed(1) })}</span>
         </div>
       )}
-      <button className="abtn" onClick={onPlayAgain}>{t('play_again')}</button>
+      {/* The same offer the home screen makes, so it is worded the same way. Both buttons start
+          another counting run that moves today's average, and a plain "Play again" here made the
+          one place where the risk is freshest sound like the safer of the two. */}
+      <button className="abtn" onClick={onPlayAgain}>{t('ch_play_again')}</button>
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="bbtn" onClick={onBack}>{t('back')}</button>
       {celebrate && <ConfettiBurst />}
