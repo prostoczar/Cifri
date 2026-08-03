@@ -400,6 +400,15 @@ verify_jwt = true
 [functions.login-with-username]
 verify_jwt = true
 
+# The two anti-cheat functions. Both require a real player token — not merely the anon key —
+# because both derive the account they act on from getUser() rather than from the request body.
+# A caller without a valid session cannot be issued a set and cannot submit one.
+[functions.issue-question-set]
+verify_jwt = true
+
+[functions.submit-attempt]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

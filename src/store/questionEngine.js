@@ -1,13 +1,38 @@
-// Question generation engine — ported verbatim (logic unchanged) from the reference prototype.
-import { t } from '../i18n_data.js';
+// The app's view of the question engine.
+//
+// The generator itself no longer lives here — it moved to supabase/functions/_shared/generator.js
+// so the server and the app could run literally the same code rather than two ports of it. What
+// stays behind is everything that is about DISPLAY, which is the app's business and not the
+// server's: number formatting in the device's locale, operation and difficulty names in the
+// player's language, and the wrappers that hand those two things to the shared generator.
+//
+// Every export this file had before, it still has, with the same signature. Nothing that imports
+// it had to change.
 
+import { t } from '../i18n_data.js';
+import {
+  createEngine,
+  digitsInQuestion,
+  termsInQuestion,
+  maxD,
+  minD,
+  DIFF_MULT,
+  DIFFS_ENG,
+  ALL_OPS,
+} from '../../supabase/functions/_shared/generator.js';
+import { OMULT, calcSc } from '../../supabase/functions/_shared/scoring.js';
+
+export { digitsInQuestion, termsInQuestion, maxD, minD, DIFFS_ENG, OMULT, calcSc };
+
+// `dm` is read straight off the shared table rather than restated here. It is the number the
+// server multiplies by, and a second copy of it in the app would be a second opinion about what
+// a Hard question is worth.
 export const DIFFS = {
-  easy: { label: 'Easy', ops: ['addition', 'subtraction', 'multiplication', 'division', 'percentage'], digits: [1, 2], terms: [2], neg: false, dec: false, dm: 1.0, _diff: 'easy' },
-  medium: { label: 'Medium', ops: ['addition', 'subtraction', 'multiplication', 'division', 'percentage'], digits: [1, 2], terms: [2], neg: false, dec: false, dm: 1.3, _diff: 'medium' },
-  hard: { label: 'Hard', ops: ['addition', 'subtraction', 'multiplication', 'division', 'percentage'], digits: [2, 3], terms: [2, 3], neg: true, dec: true, dm: 1.6, _diff: 'hard' },
+  easy: { label: 'Easy', ops: ALL_OPS, digits: [1, 2], terms: [2], neg: false, dec: false, dm: DIFF_MULT.easy, _diff: 'easy' },
+  medium: { label: 'Medium', ops: ALL_OPS, digits: [1, 2], terms: [2], neg: false, dec: false, dm: DIFF_MULT.medium, _diff: 'medium' },
+  hard: { label: 'Hard', ops: ALL_OPS, digits: [2, 3], terms: [2, 3], neg: true, dec: true, dm: DIFF_MULT.hard, _diff: 'hard' },
 };
 
-export const OMULT = { addition: 1.0, subtraction: 1.0, multiplication: 1.3, division: 1.3, percentage: 1.5 };
 export const ONAME = { addition: 'Addition', subtraction: 'Subtraction', multiplication: 'Multiplication', division: 'Division', percentage: 'Percentage' };
 
 export function diffLabel(lang, d) {
@@ -20,68 +45,24 @@ export function opName(lang, op) {
   return t(lang, 'opname_' + op) || ONAME[op] || op;
 }
 
-export const DIFFS_ENG = {
-  easy: {
-    digits_addsub: [1, 2], min_addsub: 2,
-    digits_other: [1, 2],
-    terms: [2], neg: false, dec: false,
-    ans_max: 999, mul_ans_max: 200, pct_min_base: 20,
-  },
-  medium: {
-    digits_addsub: [2, 3], min_addsub: 10,
-    digits_other: [1, 2],
-    terms: [2, 3], neg: true, dec: false,
-    ans_max: 9999, mul_ans_max: 500, pct_min_base: 10,
-  },
-  hard: {
-    digits_addsub: [2, 3], min_addsub: 10,
-    digits_other: [2, 3],
-    terms: [2, 3, 4], neg: true, dec: true,
-    ans_max: 9999, mul_ans_max: 5000, pct_min_base: 10,
-  },
-};
-
+// Ordinary randomness, for the parts of the app that are not server-verified and do not need to
+// be reproducible: the Practice tab and the Tricks generators. Challenge and Braining go through
+// a seeded generator instead, so that what they asked can be proved.
 export function rn(a, b) {
   return Math.floor(Math.random() * (b - a + 1)) + a;
 }
+
+// Number formatting in the DEVICE's locale, which is why it stayed here. A Russian phone renders
+// a decimal as "12,5" and an English one as "12.5", and the server has no business deciding
+// which of those a player sees — so the server sends a seed, and the number is formatted at the
+// point it is drawn. See rng.js for the whole argument.
 export function fn(n) {
   if (typeof n !== 'number' || isNaN(n)) return String(n);
   const r = Math.round(n * 10) / 10;
   if (Number.isInteger(r)) return r.toLocaleString();
   return r.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
-// ── Question metadata, for the attempt log only ────────────────────────────────
-//
-// The generators below already know how big a question is and how many terms it has, but
-// until now they threw that away and returned only {q, ans, op}. Every change in this file
-// is the same shape: build the question string into a variable, then report `digits` and
-// `terms` alongside it. Nothing that decides what a question IS, or what it scores, is
-// touched — remove the two extra keys from every return and the file is byte-identical in
-// behaviour.
-//
-// `digits` is the digit count of the largest number the player is shown. Commas are stripped
-// first (fn() groups thousands), and only the whole part of a decimal counts, so "1,234.5"
-// reads as 4 digits.
-export function digitsInQuestion(q) {
-  const runs = String(q).replace(/,/g, '').match(/\d+/g);
-  if (!runs) return 1;
-  return runs.reduce((m, r) => Math.max(m, r.length), 1);
-}
 
-// How many values the player has to combine. Counts whole numbers, so "12.5 + 3" is two terms
-// rather than three, and "47 + (8 × 6) − 12" is four. Used by the Practice generator, which
-// picks its term count deep inside a chain builder rather than at a single point.
-export function termsInQuestion(q) {
-  const nums = String(q).replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
-  return nums ? nums.length : 1;
-}
-
-export function maxD(d) {
-  return Math.pow(10, d) - 1;
-}
-export function minD(d) {
-  return d === 1 ? 1 : Math.pow(10, d - 1);
-}
 export function negDisp(n) {
   return '(−' + fn(Math.abs(n)) + ')';
 }
@@ -89,263 +70,24 @@ export function makeInt(d) {
   return rn(minD(d), maxD(d));
 }
 
-function _makePctQ(lang, ec) {
-  const mxD = ec.digits_other[ec.digits_other.length - 1], mxB = maxD(mxD), mnB = ec.pct_min_base || 10;
-  if (!ec.dec) {
-    const defs = [{ p: 5, m: 20 }, { p: 10, m: 10 }, { p: 20, m: 5 }, { p: 25, m: 4 }, { p: 50, m: 2 }, { p: 75, m: 4 }];
-    let att = 0, def, n, base, ans;
-    do {
-      def = defs[rn(0, defs.length - 1)];
-      const mnN = Math.ceil(mnB / def.m), mxN = Math.floor(mxB / def.m);
-      if (mxN < mnN) { att++; continue; }
-      n = rn(mnN, mxN); base = n * def.m; ans = Math.round(base * def.p / 100); att++;
-    } while ((base < mnB || ans <= 0) && att < 50);
-    // digits comes from the base, not from digitsInQuestion: the percentage literal is also a
-    // number in the string, and "5% of 20" is a 2-digit question, not a 1-digit one.
-    return { q: def.p + '% ' + t(lang, 'word_of') + ' ' + base + ' = ?', ans, op: 'percentage', digits: String(base).length, terms: 2 };
-  } else {
-    const pct = rn(1, 99), b2 = rn(Math.max(mnB, minD(mxD > 1 ? mxD - 1 : 1)), mxB);
-    return { q: pct + '% ' + t(lang, 'word_of') + ' ' + b2 + ' = ?', ans: parseFloat((b2 * pct / 100).toFixed(1)), op: 'percentage', digits: String(b2).length, terms: 2 };
-  }
+// An engine wired to this device: locale-aware formatting, the player's word for "of", and
+// whichever source of randomness the caller wants.
+//
+// `seed` is what a server-issued set passes, and it is the whole point — given the same seed the
+// server used, this produces the same questions the server recorded the answers to. Omit it and
+// you get ordinary randomness, which is the offline and practice path.
+export function engineFor(lang, seed) {
+  return createEngine({ seed, fmt: fn, wordOf: t(lang, 'word_of') });
 }
 
-function _makeDivQ(ec) {
-  const mxD = ec.digits_other[ec.digits_other.length - 1], mxDiv = maxD(mxD), mnDiv = minD(mxD > 1 ? mxD - 1 : 1);
-  let att = 0, div, quo, dvd;
-  do {
-    if (mxD <= 2) {
-      div = rn(2, 12);
-      const mq = Math.floor(mxDiv / div);
-      if (mq < 2) { att++; continue; }
-      quo = rn(2, Math.min(mq, 20));
-    } else {
-      div = rn(11, 30);
-      const mq2 = Math.floor(mxDiv / div);
-      if (mq2 < 11) { att++; continue; }
-      quo = rn(11, Math.min(mq2, 50));
-    }
-    dvd = div * quo; att++;
-  } while ((dvd > mxDiv || dvd < mnDiv) && att < 50);
-  if (ec.dec && Math.random() > 0.55 && div > 1) {
-    const rem = rn(1, div - 1), dd = dvd + rem;
-    if (dd <= mxDiv) {
-      const q = dd + ' ÷ ' + div + ' = ?';
-      return { q, ans: parseFloat((dd / div).toFixed(1)), op: 'division', digits: digitsInQuestion(q), terms: 2 };
-    }
-  }
-  const q = fn(dvd) + ' ÷ ' + fn(div) + ' = ?';
-  return { q, ans: quo, op: 'division', digits: digitsInQuestion(q), terms: 2 };
-}
-
-function _makeAddQ(ec, tc) {
-  const digits = ec.digits_addsub, neg = ec.neg, dec = ec.dec, mnV = ec.min_addsub || 1;
-  let terms = [], qp = [], att = 0, ans;
-  do {
-    att++; terms = []; qp = [];
-    const vals = [];
-    for (let i = 0; i < tc; i++) {
-      const d = digits[rn(0, digits.length - 1)];
-      let v = makeInt(d);
-      while (v < mnV) v = makeInt(d);
-      if (dec && Math.random() > 0.5) v = parseFloat((v + rn(1, 9) / 10).toFixed(1));
-      vals.push(v);
-    }
-    if (!neg && digits[0] === 1 && !vals.some((x) => Math.abs(x) >= 10)) vals[0] = rn(10, 99);
-    terms.push(vals[0]); qp.push(fn(vals[0]));
-    for (let j = 1; j < tc; j++) {
-      const v2 = vals[j];
-      if (neg && Math.random() > 0.6) { terms.push(-v2); qp.push('+ ' + negDisp(v2)); }
-      else { terms.push(v2); qp.push('+ ' + fn(v2)); }
-    }
-    ans = terms.reduce((a, b) => a + b, 0);
-    ans = dec ? parseFloat(ans.toFixed(1)) : Math.round(ans);
-  } while (ans === 0 && att < 20);
-  const q = qp.join(' ') + ' = ?';
-  return { q, ans, op: 'addition', digits: digitsInQuestion(q), terms: tc };
-}
-
-function _makeSubQ(ec, tc) {
-  const digits = ec.digits_addsub, neg = ec.neg, dec = ec.dec, mnV = ec.min_addsub || 1;
-  let att = 0, terms, qp, ans;
-  do {
-    att++; terms = []; qp = [];
-    const d0 = digits[rn(0, digits.length - 1)];
-    let v0 = makeInt(d0);
-    while (v0 < mnV) v0 = makeInt(d0);
-    if (!neg && v0 < 10) v0 = rn(10, maxD(digits[digits.length - 1]));
-    if (dec && Math.random() > 0.5) v0 = parseFloat((v0 + rn(1, 9) / 10).toFixed(1));
-    terms.push(v0); qp.push(fn(v0));
-    for (let i = 1; i < tc; i++) {
-      const d = digits[rn(0, digits.length - 1)];
-      let v = makeInt(d);
-      while (v < mnV) v = makeInt(d);
-      if (!neg) {
-        const m = Math.max(5, Math.floor(Math.abs(v0) * 0.1));
-        while (v < m) v = rn(m, Math.max(m + 1, maxD(digits[digits.length - 1])));
-      }
-      if (dec && Math.random() > 0.5) v = parseFloat((v + rn(1, 9) / 10).toFixed(1));
-      terms.push(-v); qp.push('− ' + fn(v));
-    }
-    ans = terms.reduce((a, b) => a + b, 0);
-    ans = dec ? parseFloat(ans.toFixed(1)) : Math.round(ans);
-  } while (((!neg && ans <= 0) || ans === 0) && att < 50);
-  if (!neg && ans <= 0) {
-    const a = rn(20, maxD(digits[digits.length - 1])), b = rn(Math.max(5, Math.floor(a * 0.1)), a - 1);
-    const qf = fn(a) + ' − ' + fn(b) + ' = ?';
-    return { q: qf, ans: a - b, op: 'subtraction', digits: digitsInQuestion(qf), terms: 2 };
-  }
-  const q = qp.join(' ') + ' = ?';
-  return { q, ans, op: 'subtraction', digits: digitsInQuestion(q), terms: tc };
-}
-
-function _makeMulQ(ec, tc) {
-  const digits = ec.digits_other, neg = ec.neg, dec = ec.dec, mxA = ec.mul_ans_max;
-  let att = 0, terms, qp, ans;
-  do {
-    att++; terms = []; qp = []; ans = 1;
-    for (let i = 0; i < tc; i++) {
-      const d = digits[rn(0, digits.length - 1)], dC = Math.min(d, 2);
-      let v = rn(Math.max(2, minD(dC)), Math.min(maxD(dC), 20));
-      if (neg && i > 0 && Math.random() > 0.75) v = -v;
-      terms.push(v);
-      const disp = v < 0 ? negDisp(v) : fn(v);
-      qp.push(i === 0 ? disp : '× ' + disp);
-      ans *= v;
-    }
-    if (dec && Math.random() > 0.7 && tc === 2) {
-      const idx = rn(0, terms.length - 1), orig = Math.abs(terms[idx]);
-      const dv = parseFloat((orig + rn(1, 9) / 10).toFixed(1)) * (terms[idx] < 0 ? -1 : 1);
-      terms[idx] = dv;
-      qp[idx] = (idx === 0 ? '' : '× ') + (dv < 0 ? negDisp(dv) : fn(dv));
-      ans = parseFloat(terms.reduce((a, b) => a * b, 1).toFixed(1));
-    }
-    if (!dec) ans = Math.round(ans);
-  } while (Math.abs(ans) > mxA && att < 40);
-  if (Math.abs(ans) > mxA) {
-    const a2 = rn(11, 19), b2 = rn(2, 9);
-    const qf = fn(a2) + ' × ' + fn(b2) + ' = ?';
-    return { q: qf, ans: a2 * b2, op: 'multiplication', digits: digitsInQuestion(qf), terms: 2 };
-  }
-  const q = qp.join(' ') + ' = ?';
-  return { q, ans, op: 'multiplication', digits: digitsInQuestion(q), terms: tc };
-}
-
-// Mixed multi-term: 0 = pure +/- chain; 1 = A OP (B x C) [OP D]; 2 = A OP (B / C) [OP D]
-function _makeMixedQ(ec, tc) {
-  const dec = ec.dec, asD = ec.digits_addsub, otD = ec.digits_other, neg = ec.neg, mnV = ec.min_addsub || 1;
-  function pickAS(ad) {
-    const d = asD[rn(0, asD.length - 1)];
-    let v = makeInt(d);
-    while (v < mnV) v = makeInt(d);
-    if (ad && Math.random() > 0.5) v = parseFloat((v + rn(1, 9) / 10).toFixed(1));
-    return v;
-  }
-  function pickFac() {
-    const d = otD[rn(0, otD.length - 1)], dC = Math.min(d, 2);
-    return rn(Math.max(2, minD(dC)), Math.min(maxD(dC), 20));
-  }
-  function pickExtra(ad) {
-    const v = pickAS(ad);
-    if (neg && Math.random() > 0.6) return { val: -v, opStr: '+' };
-    if (Math.random() > 0.5) return { val: v, opStr: '+' };
-    return { val: -v, opStr: '−' };
-  }
-  const st = rn(0, 2);
-
-  if (st === 0) {
-    let att = 0, ans0, t0 = [], qp0 = [];
-    do {
-      att++; t0 = []; qp0 = [];
-      const v0 = pickAS(dec);
-      t0.push(v0); qp0.push(fn(v0));
-      for (let i = 1; i < tc; i++) {
-        const ex = pickExtra(dec);
-        t0.push(ex.val);
-        qp0.push(ex.opStr === '+' ? (ex.val < 0 ? '+ ' + negDisp(Math.abs(ex.val)) : '+ ' + fn(ex.val)) : '− ' + fn(Math.abs(ex.val)));
-      }
-      ans0 = t0.reduce((a, b) => a + b, 0);
-      ans0 = dec ? parseFloat(ans0.toFixed(1)) : Math.round(ans0);
-    } while ((ans0 === 0 || Math.abs(ans0) > ec.ans_max) && att < 30);
-    if (ans0 === 0 || Math.abs(ans0) > ec.ans_max) return _makeAddQ(ec, 2);
-    const q0 = qp0.join(' ') + ' = ?';
-    return {
-      q: q0, ans: ans0,
-      op: t0.slice(1).some((x) => x > 0) ? 'addition' : 'subtraction',
-      digits: digitsInQuestion(q0), terms: tc,
-    };
-  }
-  if (st === 1) {
-    let att1 = 0, res1, qs1;
-    do {
-      att1++;
-      const A1 = pickAS(dec), B1 = pickFac(), C1 = pickFac();
-      let bV1 = B1 * C1;
-      if (Math.abs(bV1) > ec.mul_ans_max) continue;
-      const bN1 = neg && Math.random() > 0.75;
-      if (bN1) bV1 = -bV1;
-      const bD1 = bN1 ? '(−' + fn(B1) + ' × ' + fn(C1) + ')' : '(' + fn(B1) + ' × ' + fn(C1) + ')';
-      const op1 = Math.random() > 0.5 ? '+' : '−', sg1 = op1 === '+' ? 1 : -1;
-      let run1 = A1 + sg1 * bV1, xD1 = '';
-      if (tc >= 4) {
-        const ex1 = pickExtra(dec);
-        run1 += ex1.val;
-        xD1 = ex1.opStr === '+' ? (ex1.val < 0 ? ' + ' + negDisp(Math.abs(ex1.val)) : '  + ' + fn(ex1.val)) : ' − ' + fn(Math.abs(ex1.val));
-      }
-      res1 = dec ? parseFloat(run1.toFixed(1)) : Math.round(run1);
-      qs1 = fn(A1) + ' ' + op1 + ' ' + bD1 + xD1 + ' = ?';
-    } while ((res1 === 0 || Math.abs(res1) > ec.ans_max) && att1 < 30);
-    if (res1 === 0 || Math.abs(res1) > ec.ans_max) return _makeAddQ(ec, 2);
-    return { q: qs1, ans: res1, op: 'multiplication', digits: digitsInQuestion(qs1), terms: tc };
-  }
-  let att2 = 0, res2, qs2;
-  do {
-    att2++;
-    const A2 = pickAS(dec), mDD = otD[otD.length - 1];
-    let dv2, qo2;
-    if (mDD <= 2) { dv2 = rn(2, 12); qo2 = rn(2, Math.min(Math.floor(maxD(mDD) / dv2), 20)); }
-    else { dv2 = rn(11, 25); qo2 = rn(2, Math.min(Math.floor(maxD(mDD) / dv2), 30)); }
-    const dd2 = dv2 * qo2;
-    const bD2 = '(' + fn(dd2) + ' ÷ ' + fn(dv2) + ')', bV2 = qo2;
-    const op2 = Math.random() > 0.5 ? '+' : '−', sg2 = op2 === '+' ? 1 : -1;
-    let run2 = A2 + sg2 * bV2, xD2 = '';
-    if (tc >= 4) {
-      const ex2 = pickExtra(dec);
-      run2 += ex2.val;
-      xD2 = ex2.opStr === '+' ? (ex2.val < 0 ? ' + ' + negDisp(Math.abs(ex2.val)) : '  + ' + fn(ex2.val)) : ' − ' + fn(Math.abs(ex2.val));
-    }
-    res2 = dec ? parseFloat(run2.toFixed(1)) : Math.round(run2);
-    qs2 = fn(A2) + ' ' + op2 + ' ' + bD2 + xD2 + ' = ?';
-  } while ((res2 === 0 || Math.abs(res2) > ec.ans_max) && att2 < 30);
-  if (res2 === 0 || Math.abs(res2) > ec.ans_max) return _makeAddQ(ec, 2);
-  return { q: qs2, ans: res2, op: 'division', digits: digitsInQuestion(qs2), terms: tc };
-}
-
-// makeQ — bridges the old game flow (passes DIFFS[diff] cfg) to the engine above.
-// Returns {q, ans, op}. cfg needs a `_diff` key ('easy'|'medium'|'hard').
+// One locally-generated question. Unchanged signature: the game hooks still call
+// makeQ(lang, DIFFS[diff]) and get back {q, ans, op, digits, terms}.
+//
+// This is now the FALLBACK path rather than the only path — it runs for practice runs, which
+// count for nothing and never needed verifying, and for a counting run that could not reach the
+// server. A run played this way is recorded locally exactly as before and simply is not
+// leaderboard-eligible. The alternative, refusing to deal a question until the network answers,
+// would make a game rule depend on a request succeeding, which this app does not do.
 export function makeQ(lang, cfg) {
-  const diff = cfg._diff || 'easy';
-  const ec = DIFFS_ENG[diff] || DIFFS_ENG.easy;
-  let tc = ec.terms[rn(0, ec.terms.length - 1)];
-  const ops = ['addition', 'subtraction', 'multiplication', 'division', 'percentage'];
-  const op = ops[rn(0, ops.length - 1)];
-  if (tc > 2) {
-    if (op === 'percentage') {
-      tc = 2;
-    } else {
-      return _makeMixedQ(ec, tc);
-    }
-  }
-  let res;
-  if (op === 'percentage') res = _makePctQ(lang, ec);
-  else if (op === 'division') res = _makeDivQ(ec);
-  else if (op === 'multiplication') res = _makeMulQ(ec, 2);
-  else if (op === 'addition') res = _makeAddQ(ec, 2);
-  else res = _makeSubQ(ec, 2);
-  return res;
-}
-
-export function calcSc(ok, elapsed, op, dm) {
-  if (!ok) return -2;
-  const speed = Math.max(1, Math.round(10 - Math.max(0, ((elapsed - 2) / 10) * 9)));
-  return Math.round(speed * (OMULT[op] || 1) * dm);
+  return engineFor(lang).challengeQ(cfg._diff || 'easy');
 }

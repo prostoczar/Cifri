@@ -27,6 +27,8 @@ logic rather than a copy of it.
 
 | Script | What it would catch |
 |---|---|
+| `check:parity` | the server and the phone drawing different questions from the same seed |
+| `check:anticheat` | a forged score, a fabricated boost or tampered timing getting recorded |
 | `check:projection` | a day's score projected to the server differently from the screen |
 | `check:streak` | a streak that survives a gap, or dies without one |
 | `check:tricks` | a trick Test that credits a fail, or un-credits a pass |
@@ -48,6 +50,23 @@ When a task says to use a spec's own wording, transcribe it and then **diff it b
 source with a script**. Sixty rows is well past what a careful read can confirm.
 
 ## Things that will bite you
+
+**The question generator and the scoring maths live under `supabase/functions/_shared/`, not in
+`src/`.** They moved there because the server has to run them too, and Deno will only reliably
+bundle what sits beneath `supabase/functions/`. `src/store/questionEngine.js`, `scoring.js` and
+`braining.js` are now thin re-exports. Edit the shared copy, never re-add a local one — a second
+copy of the scoring maths means the server rejecting honest players' scores.
+
+**The server sends a seed, not questions.** Number formatting is locale-dependent ("12.5" vs
+"12,5"), so the server generating the question TEXT would decide what Russian players see. Both
+sides run the same seeded generator instead. Everything in the generator must therefore stay
+deterministic — one stray `Math.random()` desynchronises the two sides silently, which is what
+`check:parity` is watching for.
+
+**`daily_results` is the player's own mirror; `verified_daily_results` is the competitive record.**
+The first is client-writable and must stay that way (it is what works offline). The second is
+written only by the Edge Function and is what a leaderboard reads. Never rank the first, and never
+grant the client write access to the second.
 
 **State is one reducer.** `src/store/AppStateContext.jsx` holds every game rule. It exports
 `reducer` and `defaultState` purely so the check scripts can drive it directly — nothing in the app
