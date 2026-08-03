@@ -148,8 +148,9 @@ Deno.serve(async (req) => {
       p_suspect: verdict.suspect,
     });
     if (recErr) {
-      console.error('[submit-attempt] braining record failed:', recErr.message);
-      return json({ ok: false, code: 'record_failed', recorded: false }, 500);
+      // Same split as issue-question-set: the SQLSTATE travels, the message stays in the log.
+      console.error('[submit-attempt] braining record failed:', recErr.code, recErr.message);
+      return json({ ok: false, code: 'record_failed', sqlstate: recErr.code ?? null, recorded: false }, 500);
     }
 
     // The day's counting trial grants the Challenge boost. `do nothing` on conflict is what
@@ -209,8 +210,8 @@ Deno.serve(async (req) => {
     p_score: finalScore, p_suspect: verdict.suspect,
   });
   if (recErr) {
-    console.error('[submit-attempt] challenge record failed:', recErr.message);
-    return json({ ok: false, code: 'record_failed', recorded: false }, 500);
+    console.error('[submit-attempt] challenge record failed:', recErr.code, recErr.message);
+    return json({ ok: false, code: 'record_failed', sqlstate: recErr.code ?? null, recorded: false }, 500);
   }
 
   return json(await remember({

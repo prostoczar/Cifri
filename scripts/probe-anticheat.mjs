@@ -92,6 +92,19 @@ function honestAnswers(questions, n, { correctEvery = 5, msEach = 2400 } = {}) {
   }));
 }
 
+// Getting a set is the precondition for almost every attack below. When it fails — as it did on
+// the first live run, where service_role had no grant on question_sets — the old code went on to
+// index into an undefined array and took the entire probe down with a TypeError, so nothing after
+// the first failure was tested. It reports and returns null now.
+async function issueOrNull(label, difficulty = 'hard', mode = 'challenge') {
+  const { status, body } = await issue(difficulty, mode);
+  if (status !== 200 || !body?.setId) {
+    fail(`${label} — no question set (HTTP ${status}${body?.code ? `, sqlstate ${body.code}` : ''}: ${JSON.stringify(body)})`);
+    return null;
+  }
+  return body;
+}
+
 const expectReject = async (label, body, code) => {
   const r = await submit(body);
   if (r.status === 200 && r.body?.ok !== false) return fail(`${label} — ACCEPTED by the live server (HTTP ${r.status})`);
@@ -112,7 +125,7 @@ console.log('\nAn honest run');
 let honestSetId = null;
 {
   const { status, body } = await issue('hard');
-  if (status !== 200 || !body?.setId) { fail(`could not get a question set (HTTP ${status}: ${JSON.stringify(body)})`); }
+  if (status !== 200 || !body?.setId) { fail(`could not get a question set (HTTP ${status}${body?.code ? `, sqlstate ${body.code}` : ''}: ${JSON.stringify(body)})`); }
   else {
     honestSetId = body.setId;
     ok(`a set was issued: seed ${body.seed}, ${body.setSize} questions`);
@@ -160,35 +173,43 @@ if (honestSetId) {
 // ═══ 4. Tampered timing ══════════════════════════════════════════════════════
 console.log('\nAttack: tampered timing, against the live server');
 {
-  const { body } = await issue('hard');
-  const questions = questionsFor(body.seed, 'hard', body.setSize);
-  // Claim a full minute of play, submitted immediately. The server saw both timestamps.
-  const answers = Array.from({ length: 25 }, (_, i) => ({ i, value: questions[i].ans, ms: 2400 }));
-  await expectReject('a minute of play submitted instantly', { setId: body.setId, answers }, 'play_time_exceeds_wall_clock');
+  const body = await issueOrNull('a minute of play submitted instantly');
+  if (body) {
+    const questions = questionsFor(body.seed, 'hard', body.setSize);
+    // Claim a full minute of play, submitted immediately. The server saw both timestamps.
+    const answers = Array.from({ length: 25 }, (_, i) => ({ i, value: questions[i].ans, ms: 2400 }));
+    await expectReject('a minute of play submitted instantly', { setId: body.setId, answers }, 'play_time_exceeds_wall_clock');
+  }
 }
 {
-  const { body } = await issue('hard');
-  const questions = questionsFor(body.seed, 'hard', body.setSize);
-  const answers = Array.from({ length: 60 }, (_, i) => ({ i, value: questions[i].ans, ms: 1 }));
-  await expectReject('60 perfect answers in an instant', { setId: body.setId, answers }, 'answers_impossible_in_window');
+  const body = await issueOrNull('60 perfect answers in an instant');
+  if (body) {
+    const questions = questionsFor(body.seed, 'hard', body.setSize);
+    const answers = Array.from({ length: 60 }, (_, i) => ({ i, value: questions[i].ans, ms: 1 }));
+    await expectReject('60 perfect answers in an instant', { setId: body.setId, answers }, 'answers_impossible_in_window');
+  }
 }
 {
-  const { body } = await issue('hard');
-  const questions = questionsFor(body.seed, 'hard', body.setSize);
-  const answers = Array.from({ length: 70 }, (_, i) => ({ i, value: questions[i].ans, ms: 2000 }));
-  await new Promise((r) => setTimeout(r, 2000));
-  await expectReject('70 questions in a 60-second mode', { setId: body.setId, answers }, 'play_time_exceeds_mode');
+  const body = await issueOrNull('70 questions in a 60-second mode');
+  if (body) {
+    const questions = questionsFor(body.seed, 'hard', body.setSize);
+    const answers = Array.from({ length: 70 }, (_, i) => ({ i, value: questions[i].ans, ms: 2000 }));
+    await new Promise((r) => setTimeout(r, 2000));
+    await expectReject('70 questions in a 60-second mode', { setId: body.setId, answers }, 'play_time_exceeds_mode');
+  }
 }
 
 // ═══ 5. Cherry-picking ═══════════════════════════════════════════════════════
 console.log('\nAttack: answer only the questions worth most');
 {
-  const { body } = await issue('hard');
-  const questions = questionsFor(body.seed, 'hard', body.setSize);
-  const pct = questions.map((q, i) => (q.op === 'percentage' ? i : -1)).filter((i) => i >= 0).slice(0, 10);
-  const answers = pct.map((i) => ({ i, value: questions[i].ans, ms: 2500 }));
-  await new Promise((r) => setTimeout(r, 2000));
-  await expectReject('answering only the percentage questions', { setId: body.setId, answers }, 'answers_out_of_sequence');
+  const body = await issueOrNull('answering only the percentage questions');
+  if (body) {
+    const questions = questionsFor(body.seed, 'hard', body.setSize);
+    const pct = questions.map((q, i) => (q.op === 'percentage' ? i : -1)).filter((i) => i >= 0).slice(0, 10);
+    const answers = pct.map((i) => ({ i, value: questions[i].ans, ms: 2500 }));
+    await new Promise((r) => setTimeout(r, 2000));
+    await expectReject('answering only the percentage questions', { setId: body.setId, answers }, 'answers_out_of_sequence');
+  }
 }
 
 // ═══ 6. Somebody else's set ══════════════════════════════════════════════════
@@ -228,14 +249,16 @@ console.log('\nAttack: a boost that was never earned');
   if (!insErr && ins && ins.length) fail('a player GRANTED THEMSELVES A BOOST');
   else ok(`a player granting themselves a boost is refused (${insErr?.code || 'no rows'})`);
 
-  const { body } = await issue('easy');
-  const questions = questionsFor(body.seed, 'easy', body.setSize);
-  const answers = honestAnswers(questions, 12);
-  await new Promise((r) => setTimeout(r, 3000));
+  const body = await issueOrNull('a run carrying a forged boost claim', 'easy');
+  const questions = body ? questionsFor(body.seed, 'easy', body.setSize) : [];
+  const answers = body ? honestAnswers(questions, 12) : [];
+  if (body) await new Promise((r) => setTimeout(r, 3000));
   // Note there is no boost field to send. The only question is what the server decides.
-  const res = await submit({ setId: body.setId, answers, boosted: true, boost: 1.5, score: 99999 });
-  if (!res.body?.ok) fail(`an honest Easy run was rejected: ${JSON.stringify(res.body)}`);
-  else {
+  const res = body
+    ? await submit({ setId: body.setId, answers, boosted: true, boost: 1.5, score: 99999 })
+    : { body: null };
+  if (body && !res.body?.ok) fail(`an honest Easy run was rejected: ${JSON.stringify(res.body)}`);
+  else if (body) {
     if (res.body.boosted && !hadBoost) fail('the server paid a boost that was never earned');
     else ok(`extra fields in the payload (boosted, boost, score: 99999) changed nothing — server says score ${res.body.score}`);
     const local = scoreAttempt({ questions, answers, difficulty: 'easy' });

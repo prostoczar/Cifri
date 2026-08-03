@@ -132,11 +132,18 @@ Deno.serve(async (req) => {
     .single();
 
   if (insertError || !inserted) {
-    // Deliberately not detailed. The client's response to any failure here is the same — play a
-    // locally generated set and accept that this run will not be verified — so there is nothing
-    // for it to do with a reason, and a database error message is not something to hand out.
-    console.error('[issue-question-set] insert failed:', insertError?.message);
-    return json({ error: 'issue_failed' }, 500);
+    console.error('[issue-question-set] insert failed:', insertError?.code, insertError?.message);
+    // The five-character SQLSTATE goes back to the caller; the message does not.
+    //
+    // That split is deliberate and was learned the hard way. The first version returned a bare
+    // "issue_failed", and when every request started failing there was nothing to go on — the
+    // cause turned out to be a missing service_role grant, which the code 42501 would have named
+    // outright. A SQLSTATE is a fixed five-character class of error and carries no data about
+    // anybody; a message can quote row contents and constraint bodies, so it stays in the log.
+    //
+    // The client does nothing with either. Its response to any failure here is the same: play a
+    // locally generated set and accept that this run will not be verified.
+    return json({ error: 'issue_failed', code: insertError?.code ?? null }, 500);
   }
 
   return json({

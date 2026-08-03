@@ -49,6 +49,19 @@ create temp table rls_0009 (
   verdict    text
 );
 
+-- The report table has to be writable by the roles this file impersonates.
+--
+-- Audit 0008 solved the same problem differently: it did `set local role authenticated`, ran one
+-- attack, `reset role`, and only then wrote its result row. That works, but it means every one of
+-- forty-odd attacks is wrapped in a set/reset pair, and a single forgotten `reset role` would
+-- silently run the NEXT attack as the wrong role — recording a pass that was never tested. This
+-- file keeps the role on across each attack and its report line instead, and pays for that with
+-- one grant here.
+--
+-- It grants nothing that matters: rls_0009 lives in pg_temp and disappears with the session. No
+-- table under test is affected.
+grant insert, select on rls_0009 to public;
+
 do $$
 declare
   uid_a    uuid;
