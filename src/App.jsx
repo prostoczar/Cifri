@@ -70,6 +70,11 @@ function AppShell() {
   const [tricksOpenIndex, setTricksOpenIndex] = useState(null); // deep-link from a TotD card
   const [trickAchievementQueue, setTrickAchievementQueue] = useState([]);
   const pendingTrickReqId = useRef(0);
+  // Achievements earned outside a game: One Year Strong, which is time passing rather than
+  // anything played, and Rebirth, which is earned by tapping Restore on the streak modal. Every
+  // other card rides home on a finished session's result; these two have no session to ride.
+  const [ambientAchievementQueue, setAmbientAchievementQueue] = useState([]);
+  const pendingAmbientReqId = useRef(0);
   // Account / onboarding overlay state. The data behind it lives in the store; the network
   // calls behind the buttons live in src/lib/accountApi.js.
   const [acctBusy, setAcctBusy] = useState(false);
@@ -140,10 +145,26 @@ function AppShell() {
       if (now !== last) {
         last = now;
         dispatch({ type: 'CHECK_STREAK_BREAK' });
+        dispatch({ type: 'AMBIENT_ACHIEVEMENTS_CHECK', reqId: ++pendingAmbientReqId.current });
       }
     }, 1000);
     return () => clearInterval(iv);
   }, [dispatch]);
+
+  // The same check on open. One Year Strong becomes true while the app is closed, so the moment
+  // it is opened again is the only moment it can be noticed.
+  useEffect(() => {
+    dispatch({ type: 'AMBIENT_ACHIEVEMENTS_CHECK', reqId: ++pendingAmbientReqId.current });
+  }, [dispatch]);
+
+  // Cards from either of those, and from the streak restore. Same reqId handshake the session and
+  // trick queues use, so a stale result can never be shown twice.
+  useEffect(() => {
+    const r = state._lastAmbientUnlocked;
+    if (!r || r.reqId !== pendingAmbientReqId.current) return;
+    if (r.unlocked && r.unlocked.length) setAmbientAchievementQueue(r.unlocked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state._lastAmbientUnlocked]);
 
   const game = useChallengeGame({
     lang,
@@ -232,6 +253,8 @@ function AppShell() {
         isPrac: summary.isPrac,
         // Flawless Brain is the only thing that reads this; the game itself still ignores it.
         wrong: summary.wrong,
+        // How many questions this sitting asked, for the cumulative question count.
+        total: summary.total,
         opTimes: summary.opTimes,
         lang,
       });
@@ -602,7 +625,10 @@ function AppShell() {
     if (mode === 'test') {
       dispatch({
         type: 'TRICK_TEST_COMPLETE', reqId, gi, ti,
-        passed: result.passed, total: TEST_LENGTH, totalTricks: TRICKS_FLAT.length,
+        // `correct` is how far a failed Test got before the wrong answer ended it, which is what
+        // the cumulative question count needs — a Test that stopped at question three asked three
+        // questions, not twenty.
+        passed: result.passed, correct: result.correct, total: TEST_LENGTH, totalTricks: TRICKS_FLAT.length,
       });
     } else {
       dispatch({
@@ -886,9 +912,17 @@ function AppShell() {
         acctCreated={state.acctCreated}
         onCreateAccount={() => { setTrickAchievementQueue([]); openAccountCreation(); }}
       />
+      <AchievementPopup
+        queue={ambientAchievementQueue}
+        onDone={() => setAmbientAchievementQueue([])}
+        guestConvoStarted={state.guestConvoStarted}
+        acctCreated={state.acctCreated}
+        onCreateAccount={() => { setAmbientAchievementQueue([]); openAccountCreation(); }}
+      />
       <StreakRestoreModal
         pendingRestore={state.pendingRestore}
-        onRestore={() => dispatch({ type: 'STREAK_RESTORE' })}
+        // Restoring earns Rebirth, so it carries a reqId like every other card-producing action.
+        onRestore={() => dispatch({ type: 'STREAK_RESTORE', reqId: ++pendingAmbientReqId.current })}
         onStartOver={() => dispatch({ type: 'STREAK_START_OVER' })}
       />
 

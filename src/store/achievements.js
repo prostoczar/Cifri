@@ -139,9 +139,13 @@ export const ACHIEVEMENTS = [
   { key: 'rp_plus50', rarity: 'rare', mode: 'replay', reward: { type: 'icon', value: 'gift' },
     en: { name: 'Paid Off', desc: 'A replay raised your daily average by 50 points or more.' },
     ru: { name: 'Окупилось', desc: 'Повторная игра подняла ваш дневной средний балл на 50 очков и более.' } },
+  // The spreadsheet asks for five replays. Under the averaging model a replay is a cheap thing to
+  // do — every Challenge play counts, so five extra runs is one determined evening — and five put
+  // this well below the Rare tier it sits in. Raised to seven, with the wording moved to match:
+  // the number a player is told is the number they have to reach.
   { key: 'rp_five', rarity: 'rare', mode: 'replay', reward: { type: 'icon', value: 'dice' },
-    en: { name: 'High Roller', desc: 'You replayed Challenge five or more times in a single day.' },
-    ru: { name: 'Азартный игрок', desc: 'Вы сыграли Challenge повторно пять и более раз за один день.' } },
+    en: { name: 'High Roller', desc: 'You replayed Challenge seven or more times in a single day.' },
+    ru: { name: 'Азартный игрок', desc: 'Вы сыграли Challenge повторно семь и более раз за один день.' } },
   { key: 'rp_consistent', rarity: 'epic', mode: 'replay', reward: { type: 'icon', value: 'moon' },
     en: { name: 'Locked In', desc: 'Three replays in a row landed within a few points of each other.' },
     ru: { name: 'В своей колее', desc: 'Три повторные попытки подряд оказались в пределах нескольких очков друг от друга.' } },
@@ -223,6 +227,30 @@ export const ACHIEVEMENT_BY_KEY = ACHIEVEMENTS.reduce((acc, a) => {
   acc[a.key] = a;
   return acc;
 }, {});
+
+// ── Display order ─────────────────────────────────────────────────────────────
+//
+// The list above is in the SPREADSHEET's order, and stays that way: it is what lets a row here be
+// read straight across against Cifri_Milestones_v4.xlsx and checked, which is the only practical
+// way to keep 59 rows honest to a file nobody wants to re-read.
+//
+// The screen wants a different order — easiest first, so a new player sees things they might
+// actually get before things they almost certainly will not. So the order is a VIEW over the
+// catalogue rather than a reshuffle of it, and the two cannot fall out of step: `byRarity()` is
+// built from ACHIEVEMENTS every time, so a row can never be in one and missing from the other.
+//
+// Family is the tiebreak inside a tier, in the spreadsheet's own grouping order, so a tier reads
+// as a few short runs of related things rather than a jumble.
+const MODE_ORDER = ['braining', 'challenge', 'cross', 'cumulative', 'replay', 'practice', 'streak', 'tricks'];
+
+export function achievementsByRarity() {
+  const rank = (a) => RARITIES.indexOf(a.rarity) * 100 + MODE_ORDER.indexOf(a.mode);
+  // Index is carried into the comparison so entries alike in both rarity and family keep the
+  // catalogue's own order between them, rather than depending on the sort being stable.
+  return ACHIEVEMENTS.map((a, i) => ({ a, i }))
+    .sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i)
+    .map((x) => x.a);
+}
 
 // The copy for the active language, falling back to English if a row somehow lacks a translation.
 export function achName(lang, a) {

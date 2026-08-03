@@ -77,7 +77,10 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     const g = gameRef.current;
     if (!g) return;
     const sec = Math.floor((Date.now() - g.startTime) / 1000);
-    onGameEnd({ isPrac: g.isPrac, sec, wrong: g.wrong, opTimes: g.opTimes, sessionId: g.sessionId });
+    // `total` is how many questions this sitting asked — 50 or 20. Reported for the cumulative
+    // question count, which has no other way to know: Braining stores a time and a brain age on
+    // each session, never a question count.
+    onGameEnd({ isPrac: g.isPrac, sec, total: g.total, wrong: g.wrong, opTimes: g.opTimes, sessionId: g.sessionId });
   }, [clearTimer, onGameEnd]);
 
   const begin = useCallback(

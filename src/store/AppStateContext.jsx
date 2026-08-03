@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { dayKey, yesterday, addDaysStr, dateStrToDate } from './dates.js';
-import { streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
+import { dayKey, yesterday, addDaysStr, dateStrToDate, daysBetweenKeys } from './dates.js';
+import { ACHIEVEMENTS, streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
 import { applyBrainingBoost } from './scoring.js';
 import { brainAge20Count, isSharperEveryDay } from './braining.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
@@ -51,6 +51,37 @@ export function defaultState() {
       firstStreakLit: false,
       // The single source of truth: achievement keys, in the order they were earned.
       achievedLog: [],
+
+      // ── The counters below exist because nothing else in the app records these facts ──
+      //
+      // Everything above this line is derived from history the app already keeps. These are not:
+      // a Challenge session stores a score but never how many questions produced it, a Practice
+      // session is not stored at all, and the per-question log is an outbox whose rows are deleted
+      // from the device once they reach the server. So the totals have to be counted as they
+      // happen or they cannot be known at all.
+      //
+      // They live inside `milestones` rather than beside it because this whole object is already
+      // in SYNCED_KEYS — which means they follow the player between devices for free, and a total
+      // counted on a phone is not a different total from the one counted on a laptop.
+      //
+      // EVERY READER MUST TOLERATE THESE BEING ABSENT. Saved data written before today has a
+      // `milestones` object without them, and loading replaces the default object wholesale rather
+      // than merging into it, so `undefined` is a shape that really turns up.
+
+      // Questions answered across every mode combined, and percentage questions answered
+      // correctly. Both start from zero: play from before they existed cannot be recovered.
+      qTotal: 0,
+      pctCorrect: 0,
+      // Operation types tried in Practice, ever. Same idea as tricksPracticedSet.
+      pracOpsSeen: [],
+      // Last calendar day a Practice session, and a trick drill or test, was COMPLETED. Challenge
+      // and Braining already carry their own `lastDay`; these two modes had nowhere to say when.
+      pracLastDay: null,
+      trickLastDay: null,
+      // Has a streak ever actually been lost? A break is otherwise a passing event — it creates a
+      // restore offer and then clears it — and New Record has to know it happened. Cleared again
+      // if the break is restored, because a restored break did not stand.
+      everBrokeStreak: false,
     },
     // Per-trick progress, keyed "gi-ti". Practice and Test are counted separately because they
     // are different claims: practice says how much work went in, the Test says the trick is done.
@@ -193,6 +224,106 @@ function creditTrickPracticed(m, unlocked, key, totalTricks) {
   if (totalTricks > 0 && set.length >= totalTricks) earn(m, unlocked, 'trick_master');
 }
 
+// The five operation types a question can be. Braining is the one mode that does not use all of
+// them — it has no percentage questions — which is why nothing there feeds Percentage Pro.
+const ALL_OPS = ['addition', 'subtraction', 'multiplication', 'division', 'percentage'];
+
+// ── Reading a finished run's operations ───────────────────────────────────────
+//
+// `breakdown.ops` is the per-operation tally useChallengeGame keeps AS THE SCORE IS EARNED: for
+// each operation the player met, how many were asked and how many were right. It was built for the
+// result screen's score breakdown; these three read the same tally rather than recounting from
+// anything, so what an achievement says happened is what the score screen says happened.
+//
+// It can legitimately be missing — the verification scripts drive the reducer directly and pass
+// none — so all three answer "nothing" rather than throwing.
+function opsAsked(breakdown) {
+  const ops = (breakdown && breakdown.ops) || {};
+  return ALL_OPS.filter((o) => ops[o] && ops[o].asked > 0);
+}
+function opsAnsweredRight(breakdown) {
+  const ops = (breakdown && breakdown.ops) || {};
+  return ALL_OPS.filter((o) => ops[o] && ops[o].correct > 0);
+}
+function pctAnsweredRight(breakdown) {
+  const ops = (breakdown && breakdown.ops) || {};
+  return (ops.percentage && ops.percentage.correct) || 0;
+}
+
+// Adds one finished sitting to the running totals, and runs the ladder hanging off them.
+//
+// `answered` is questions, not attempts. Braining makes a player correct a wrong answer before
+// moving on, so one question there can take several tries; it still asked one question.
+//
+// `m` must already be a copy.
+function creditQuestionsAnswered(m, unlocked, answered, pctRight) {
+  m.qTotal = (m.qTotal || 0) + (answered || 0);
+  m.pctCorrect = (m.pctCorrect || 0) + (pctRight || 0);
+  // Written out one line per tier rather than looped over a table, so the keys stay literal —
+  // scripts/check-achievements.mjs reads which achievements are wired out of this file's source,
+  // and a key assembled at runtime is a key it cannot see.
+  if (m.qTotal >= 100) earn(m, unlocked, 'q_100');
+  if (m.qTotal >= 500) earn(m, unlocked, 'q_500');
+  if (m.qTotal >= 1000) earn(m, unlocked, 'q_1000');
+  if (m.qTotal >= 2500) earn(m, unlocked, 'q_2500');
+  if (m.qTotal >= 5000) earn(m, unlocked, 'q_5000');
+  if (m.pctCorrect >= 70) earn(m, unlocked, 'q_pct_pro');
+}
+
+// Everything that asks a question about the player as a whole rather than about the run that just
+// happened. Called at the END of every path that can earn anything, so no route into the app can
+// leave these four permanently unreachable.
+//
+// `db` and `brState` must be the versions INCLUDING whatever was just recorded — the run that
+// completes the set has to be visible to the check that the set is complete.
+function creditCrossMode(m, unlocked, { db, brState, firstOpenDate }) {
+  const today = dayKey();
+
+  const everChallenge = ['easy', 'medium', 'hard'].some((d) => (((db && db[d]) || {}).sessions || []).length > 0);
+  const everBraining = (((brState || {}).sessions) || []).length > 0;
+  const everPractice = !!m.pracLastDay;
+  const everTrick = ((m.tricksPracticedSet) || []).length > 0;
+  if (everChallenge && everBraining && everPractice && everTrick) earn(m, unlocked, 'x_explorer');
+
+  // The same four modes, but all on one day. Challenge and Braining are asked through the app's
+  // own "did this mode today" helpers, so Well-Rounded agrees with the header pill rather than
+  // having a private opinion about what counts as having played.
+  if (chDoneToday(db) && brDoneToday(brState) && m.pracLastDay === today && m.trickLastDay === today) {
+    earn(m, unlocked, 'x_well_rounded');
+  }
+
+  if (firstOpenDate && daysBetweenKeys(firstOpenDate, today) >= 365) earn(m, unlocked, 'x_one_year');
+
+  // Last, always: it is the only achievement whose condition can be satisfied BY the lines above,
+  // so it has to be asked after them or a player would earn their fifty-ninth and be told about
+  // it a session later.
+  earnCollector(m, unlocked);
+}
+
+// "Get all achievements" cannot include itself — a bar you can only clear by having already
+// cleared it is not a bar — so it asks for all the OTHERS.
+function earnCollector(m, unlocked) {
+  for (const a of ACHIEVEMENTS) {
+    if (a.key === 'x_collector') continue;
+    if (m.achievedLog.indexOf(a.key) === -1) return;
+  }
+  earn(m, unlocked, 'x_collector');
+}
+
+// A day's counting Challenge runs for one difficulty, oldest first — the same set the visible
+// daily average is computed from (see dayAverage in store/selectors.js).
+function countingSessionsOn(bucket, dateStr) {
+  return ((bucket && bucket.sessions) || []).filter((s) => s.date === dateStr && isRecordedSession(s));
+}
+
+// The average of a list of sessions, rounded exactly as selectors.dayAverage rounds it. The replay
+// achievements are about a number the player watched move, so they have to read the number the
+// player was actually shown — including the boost, on the one attempt a day that carries it.
+function averageScore(sessions) {
+  if (!sessions.length) return 0;
+  return Math.round(sessions.reduce((a, s) => a + s.score, 0) / sessions.length);
+}
+
 function checkStreakMilestonesPure(lang, milestones, prevStreak, newStreak) {
   const unlocked = [];
   const nextMilestones = { ...milestones, streakShown: [...milestones.streakShown], achievedLog: [...milestones.achievedLog] };
@@ -265,6 +396,19 @@ function applyStreakCredit(state, { chDone, brDone, milestones, lang }) {
   const streakResult = checkStreakMilestonesPure(lang, nextMilestones, prevStreak, nextStreak);
   nextMilestones = streakResult.milestones;
   unlocked = unlocked.concat(streakResult.unlocked);
+
+  // New Record: past your own longest streak, having lost one before.
+  //
+  // The second half is the whole point of it — a first streak passes its own record every single
+  // day, so without "you have lost one before" this would fire on day one and mean nothing. It is
+  // compared against `state.bestStreakEver`, the value from BEFORE this day was credited, because
+  // nextBestStreakEver has already been raised to match the streak it is supposed to be beaten by.
+  //
+  // `nextMilestones` is safe to write to here: checkStreakMilestonesPure above always hands back
+  // a fresh object with a copied log, whatever it did or did not find.
+  if (justCredited && nextMilestones.everBrokeStreak && nextStreak > (state.bestStreakEver || 0)) {
+    earn(nextMilestones, unlocked, 'streak_record');
+  }
 
   return {
     milestones: nextMilestones,
@@ -410,6 +554,9 @@ export function reducer(state, action) {
       // through the library in order, one per day, so seeing as many distinct days as there are
       // tricks is the same thing as having seen them all — `action.total` is the library size.
       if (action.total > 0 && m.trickCount >= action.total) earn(m, unlocked, 'tr_curious');
+      // No questions were answered by opening a card, so nothing is counted — but something WAS
+      // earned here, and the fifty-ninth achievement is allowed to be one of these two.
+      creditCrossMode(m, unlocked, { db: state.db, brState: state.brState, firstOpenDate: state.firstOpenDate });
       return { ...state, totdLastViewed: today, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
     }
 
@@ -437,6 +584,11 @@ export function reducer(state, action) {
       creditTrickPracticed(m, unlocked, key, action.totalTricks);
       // Clean Sweep: every question in the drill answered right first time.
       if (action.total > 0 && action.firstTryCorrect >= action.total) earn(m, unlocked, 'tr_clean_sweep');
+      // A completed drill is the full twenty questions — it does not stop early the way a Test
+      // does — so its length is what was answered.
+      m.trickLastDay = dayKey();
+      creditQuestionsAnswered(m, unlocked, action.total || 0, 0);
+      creditCrossMode(m, unlocked, { db: state.db, brState: state.brState, firstOpenDate: state.firstOpenDate });
       return {
         ...state,
         milestones: m,
@@ -474,6 +626,11 @@ export function reducer(state, action) {
           earn(m, unlocked, 'tr_graduation');
         }
       }
+      // A Test stops dead at the first wrong answer, so a failed one asked as many questions as
+      // were answered right, plus the one that ended it. A pass is the full set.
+      m.trickLastDay = dayKey();
+      creditQuestionsAnswered(m, unlocked, action.passed ? (action.total || 0) : (action.correct || 0) + 1, 0);
+      creditCrossMode(m, unlocked, { db: state.db, brState: state.brState, firstOpenDate: state.firstOpenDate });
       return {
         ...state,
         milestones: m,
@@ -517,6 +674,7 @@ export function reducer(state, action) {
 
       let streak = state.streak;
       let pendingRestore = state.pendingRestore;
+      let milestones = state.milestones;
 
       // Only a live streak can break, which is also what makes this safe to re-run: once it has
       // broken, `streak` is 0 and the branch cannot be entered again to overwrite the restore
@@ -537,6 +695,11 @@ export function reducer(state, action) {
               availableAtBreak: state.streakRestoreAvailable,
             };
             streak = 0;
+            // The one durable trace a break leaves. Everything else about it is temporary —
+            // `pendingRestore` is cleared whether the offer is taken, refused or left to expire —
+            // and New Record needs to know, possibly months later, that this happened. Recorded
+            // here at the break itself and undone by STREAK_RESTORE if the break does not stand.
+            milestones = { ...milestones, everBrokeStreak: true };
           }
         }
       }
@@ -548,16 +711,36 @@ export function reducer(state, action) {
         streak === state.streak &&
         pendingRestore === state.pendingRestore &&
         brBoostDay === state.brBoostDay &&
+        milestones === state.milestones &&
         state.streakLastCheckedDay === today
       ) {
         return state;
       }
-      return { ...state, streak, pendingRestore, brBoostDay, streakLastCheckedDay: today };
+      return { ...state, streak, pendingRestore, brBoostDay, milestones, streakLastCheckedDay: today };
+    }
+
+    // Achievements that nothing a player DOES can trigger, checked when the app opens and again
+    // when the date rolls over underneath it. One Year Strong is time passing rather than anything
+    // earned, and the collector is swept here too so a player who finished their fifty-eighth on
+    // one device is told about the fifty-ninth on the next.
+    case 'AMBIENT_ACHIEVEMENTS_CHECK': {
+      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+      const unlocked = [];
+      creditCrossMode(m, unlocked, { db: state.db, brState: state.brState, firstOpenDate: state.firstOpenDate });
+      if (!unlocked.length) return state;
+      return { ...state, milestones: m, _lastAmbientUnlocked: { reqId: action.reqId, unlocked } };
     }
 
     case 'STREAK_RESTORE': {
       if (!state.pendingRestore || !state.pendingRestore.availableAtBreak) return state;
       const streak = state.pendingRestore.brokenValue;
+      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+      const unlocked = [];
+      earn(m, unlocked, 'streak_rebirth');
+      // The break has been undone, so it must stop counting as one. Leaving this set would let a
+      // player who has never actually lost a streak earn New Record on their very next best day.
+      m.everBrokeStreak = false;
+      creditCrossMode(m, unlocked, { db: state.db, brState: state.brState, firstOpenDate: state.firstOpenDate });
       return {
         ...state,
         streak,
@@ -565,6 +748,8 @@ export function reducer(state, action) {
         streakRestoreAvailable: false,
         bestStreakEver: Math.max(state.bestStreakEver, streak),
         pendingRestore: null,
+        milestones: m,
+        _lastAmbientUnlocked: { reqId: action.reqId, unlocked },
       };
     }
 
@@ -586,10 +771,47 @@ export function reducer(state, action) {
 
       // The reference only records into db when there is a difficulty AND a non-zero score
       // (`if(cur.diff&&sc>0)`). The standalone Practice tab has no difficulty, so its runs are
-      // never stored and never touch streaks, bests or achievements — just show a result.
+      // never stored and never touch streaks or bests.
+      //
+      // They do now earn things, though, which is the change here. Nothing about the day's SCORE
+      // moves — no session is stored, no streak is credited, no best is touched — but a run that
+      // is not worth recording is still work that was done, and the five Practice achievements and
+      // the running question count are what say so. A Challenge run that scored nothing lands here
+      // too, and its questions are counted for the same reason: they were answered.
       if (!diff || score <= 0) {
+        const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+        const unlocked = [];
+        const answered = correct + wrong;
+        creditQuestionsAnswered(m, unlocked, answered, pctAnsweredRight(action.breakdown));
+
+        // The Practice tab specifically. `origin` is what distinguishes it from a Challenge run
+        // that happened to score zero — the two arrive here by different routes and only one of
+        // them is Practice.
+        if (action.origin === 'practice') {
+          m.pracLastDay = today;
+          // Reaching this point IS completing a session: a run abandoned part-way is discarded by
+          // the game and never gets here at all.
+          earn(m, unlocked, 'pr_first');
+          if (wrong === 0 && correct >= 20) earn(m, unlocked, 'pr_sharpshooter');
+          if (answered >= 100) earn(m, unlocked, 'pr_marathon');
+
+          // Asked, not answered correctly — "used every operation type" and "tried every operation
+          // type" are both about what the session contained, not about how it went. (Four for Four
+          // in Challenge is the one that asks for them RIGHT, and reads a different tally.)
+          const asked = opsAsked(action.breakdown);
+          if (ALL_OPS.every((o) => asked.indexOf(o) !== -1)) earn(m, unlocked, 'pr_all_mixed');
+
+          const seen = [...(m.pracOpsSeen || [])];
+          for (const o of asked) if (seen.indexOf(o) === -1) seen.push(o);
+          m.pracOpsSeen = seen;
+          if (ALL_OPS.every((o) => seen.indexOf(o) !== -1)) earn(m, unlocked, 'pr_mix_master');
+        }
+
+        creditCrossMode(m, unlocked, { db: state.db, brState: state.brState, firstOpenDate: state.firstOpenDate });
+
         return {
           ...state,
+          milestones: m,
           _lastSessionResult: {
             reqId: action.reqId,
             diff, score, correct, wrong, isPrac,
@@ -599,7 +821,7 @@ export function reducer(state, action) {
             origin: action.origin,
             opTimes: action.opTimes,
             breakdown: action.breakdown,
-            isNewBest: false, unlocked: [],
+            isNewBest: false, unlocked,
           },
         };
       }
@@ -641,12 +863,20 @@ export function reducer(state, action) {
       // separate lists, so without a wall-clock time on each there is no way to prove after the
       // fact that the boosted attempt came AFTER the Braining trial that granted it, rather than
       // being applied backwards to a run that was already finished.
-      const entry = { date: today, score: countedScore, real: !isPrac, ts: Date.now() };
+      // `correct` joins the entry for Challenger and Triple Crown, which ask for "at least N
+      // correct answers in each" of the three difficulties on one day. That question is about
+      // OTHER difficulties' runs as well as this one, so it cannot be answered from the action
+      // alone — the count has to survive on the session, next to the score it produced.
+      const entry = { date: today, score: countedScore, correct, real: !isPrac, ts: Date.now() };
       if (boostSpent) {
         entry.rawScore = score;
         entry.boosted = true;
       }
       const newSessions = [...d.sessions, entry];
+
+      // Today's counting runs on this difficulty as they stood BEFORE this one, which is the whole
+      // basis of the replay family: a run is a replay when there was already something to replay.
+      const priorToday = countingSessionsOn(d, today);
 
       // Untouched by the averaging, deliberately: personal best has always been the best single
       // run, and a day's average being dragged down by a bad replay must not cost a player the
@@ -689,9 +919,9 @@ export function reducer(state, action) {
         // wrong; Medium and Hard are still the tier actually played. Keep it that way — an
         // achievement that keyed off the score number would start firing on the boost.
         //
-        // The three score-based achievements the spreadsheet adds (To the Peak/Sky/Moon) are the
-        // deliberate exception and are NOT wired here yet — they need the raw score, not the
-        // boosted one, or the boost would buy them.
+        // The four score-based achievements the spreadsheet adds are the deliberate exception, and
+        // they are wired below against `score` — the RAW number this run earned — never against
+        // `countedScore`. That one word is what stops a Braining boost from buying them.
         const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
         earn(m, unlocked, 'ch_first');
         const total = correct + wrong;
@@ -703,6 +933,66 @@ export function reducer(state, action) {
         // Speed Demon is a plain count of correct answers inside the fixed 60-second Challenge.
         // It cannot be reached from the Practice tab, which never gets here (`isPrac`).
         if (correct >= 20) earn(m, unlocked, 'ch_speed_demon');
+
+        // ── The score ladder ────────────────────────────────────────────────────
+        // Raw, for the reason above. Nice! is an exact 69 rather than a threshold, so on a boosted
+        // run it is the number the player watched themselves earn, not the inflated one.
+        if (score >= 100) earn(m, unlocked, 'ch_peak');
+        if (score >= 150) earn(m, unlocked, 'ch_sky');
+        if (score >= 200) earn(m, unlocked, 'ch_moon');
+        if (score === 69) earn(m, unlocked, 'ch_nice');
+
+        // Four for Four: every operation type answered correctly in this one session. Challenge
+        // asks all FIVE types, percentage included, and the trigger says "every operation type" —
+        // so all five it is, whatever the name's 4x4 pun suggests.
+        const rightOps = opsAnsweredRight(action.breakdown);
+        if (ALL_OPS.every((o) => rightOps.indexOf(o) !== -1)) earn(m, unlocked, 'ch_four_for_four');
+
+        // ── Challenger and Triple Crown ─────────────────────────────────────────
+        // All three difficulties today, each with a run of at least N correct answers. Read off
+        // newDb so the run that completes the set is included; the best run on each difficulty
+        // stands for it, because "5 correct in each" is a bar one sitting has to clear, not a
+        // total to accumulate over the day.
+        const bestCorrectToday = (dd) =>
+          countingSessionsOn(newDb[dd], today).reduce((b, s) => Math.max(b, s.correct || 0), 0);
+        const eachDiff = ['easy', 'medium', 'hard'].map(bestCorrectToday);
+        if (eachDiff.every((n) => n >= 5)) earn(m, unlocked, 'ch_challenger');
+        if (eachDiff.every((n) => n >= 20)) earn(m, unlocked, 'ch_triple_crown');
+
+        // ── The replay family ───────────────────────────────────────────────────
+        //
+        // Every Challenge play counts towards the day's average now, so a replay is not a special
+        // mode — it is simply a run made when today already had one. That is what these five are
+        // about: the nerve to put a good average back on the table.
+        //
+        // Unlike everything above, the two that talk about the average read the COUNTED score,
+        // boost and all. The trigger describes a number the player watched move on their own
+        // screen, and the boosted average is the average they were actually shown.
+        if (priorToday.length >= 1) {
+          earn(m, unlocked, 'rp_first');
+
+          const avgBefore = averageScore(priorToday);
+          const avgAfter = averageScore([...priorToday, entry]);
+          if (avgAfter > avgBefore) earn(m, unlocked, 'rp_up');
+          if (avgAfter - avgBefore >= 50) earn(m, unlocked, 'rp_plus50');
+
+          // High Roller counts the day's replays across all three difficulties — the trigger says
+          // "replayed Challenge", not "replayed Hard". Each difficulty's first run of the day is
+          // not a replay, hence the minus one.
+          const replaysToday = ['easy', 'medium', 'hard']
+            .reduce((n, dd) => n + Math.max(0, countingSessionsOn(newDb[dd], today).length - 1), 0);
+          if (replaysToday >= 7) earn(m, unlocked, 'rp_five');
+
+          // Locked In: three replays in a row within a few points of each other. Three REPLAYS
+          // means the day's second, third and fourth runs at the earliest, so four runs are needed
+          // before it can be true — which is why the length test is 4 and not 3.
+          const todayList = countingSessionsOn(newDb[diff], today);
+          if (todayList.length >= 4) {
+            const last3 = todayList.slice(-3).map((s) => s.score);
+            if (Math.max(...last3) - Math.min(...last3) <= 5) earn(m, unlocked, 'rp_consistent');
+          }
+        }
+
         nextMilestones = m;
 
         // A single Challenge play now earns the day outright — Braining is no longer needed
@@ -724,6 +1014,19 @@ export function reducer(state, action) {
         nextStreakRestoreAvailable = credit.streakRestoreAvailable;
         nextBestStreakEver = credit.bestStreakEver;
         nextGuestConvoStarted = credit.guestConvoStarted;
+      }
+
+      // Counted for every recorded run, and last, so the cross-mode sweep sees everything this
+      // session earned before deciding whether the collection is complete. The copy-if-needed
+      // dance is because `nextMilestones` is only guaranteed to be a fresh object on the paths
+      // above that made one — writing to the state's own object would mutate live state.
+      {
+        const mCount = nextMilestones === state.milestones
+          ? { ...state.milestones, achievedLog: [...state.milestones.achievedLog] }
+          : nextMilestones;
+        creditQuestionsAnswered(mCount, unlocked, correct + wrong, pctAnsweredRight(action.breakdown));
+        creditCrossMode(mCount, unlocked, { db: newDb, brState: state.brState, firstOpenDate: state.firstOpenDate });
+        nextMilestones = mCount;
       }
 
       return {
@@ -872,6 +1175,23 @@ export function reducer(state, action) {
           sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now() }],
           bestTime, bestAge,
         };
+      }
+
+      // Questions answered. A Braining session is a fixed length — 50 for the day's trial, 20 for
+      // a practice run — and that length is what gets counted, not the number of attempts: the
+      // mode makes a wrong answer be corrected before moving on, so one question can take several
+      // tries and is still one question. `action.total` is that length as the game itself reports
+      // it, with the constants as a fallback for callers that do not send it.
+      //
+      // Nothing here feeds Percentage Pro: Braining asks addition, subtraction, multiplication and
+      // division only.
+      {
+        const mCount = nextMilestones === state.milestones
+          ? { ...state.milestones, achievedLog: [...state.milestones.achievedLog] }
+          : nextMilestones;
+        creditQuestionsAnswered(mCount, unlocked, action.total || (isPrac ? 20 : 50), 0);
+        creditCrossMode(mCount, unlocked, { db: state.db, brState: nextBr, firstOpenDate: state.firstOpenDate });
+        nextMilestones = mCount;
       }
 
       return {

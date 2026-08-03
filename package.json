@@ -13,8 +13,9 @@
     "check:tricks": "node scripts/check-trick-rules.mjs",
     "check:braining": "node scripts/check-braining-rules.mjs",
     "check:achievements": "node scripts/check-achievements.mjs",
+    "check:triggers": "node scripts/check-achievement-triggers.mjs",
     "check:invariant": "node scripts/check-score-invariant.mjs",
-    "check": "npm run check:projection && npm run check:streak && npm run check:tricks && npm run check:braining && npm run check:achievements && npm run check:invariant"
+    "check": "npm run check:projection && npm run check:streak && npm run check:tricks && npm run check:braining && npm run check:achievements && npm run check:triggers && npm run check:invariant"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
