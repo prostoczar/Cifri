@@ -126,7 +126,9 @@ const expectReject = async (label, body, code) => {
   const r = await submit(body);
   if (r.status === 200 && r.body?.ok !== false) return fail(`${label} — ACCEPTED by the live server (HTTP ${r.status})`);
   if (code && r.body?.code !== code) return fail(`${label} — rejected as ${r.body?.code}, expected ${code}`);
-  ok(`${label} → ${r.body?.code} (HTTP ${r.status})`);
+  // A rejection carries `code`; a 404 for a set that is not yours carries `error` instead, since
+  // it never got as far as being validated. Reported either way rather than printing "undefined".
+  ok(`${label} → ${r.body?.code ?? r.body?.error ?? 'refused'} (HTTP ${r.status})`);
 };
 
 // ═══ 1. The answer key is unreachable ════════════════════════════════════════
