@@ -84,12 +84,29 @@ const questionsFor = (seed, difficulty, count) =>
   createEngine({ seed }).challengeSet(difficulty, count);
 
 // A run that looks like somebody played it.
-function honestAnswers(questions, n, { correctEvery = 5, msEach = 2400 } = {}) {
+function honestAnswers(questions, n, { correctEvery = 5, msEach = 1600 } = {}) {
   return Array.from({ length: n }, (_, i) => ({
     i,
     value: i % correctEvery === 0 ? questions[i].ans + 3 : questions[i].ans,
+    // Jittered, or `uniform_timing` fires and the honest baseline arrives pre-flagged.
     ms: msEach + ((i * 211) % 1100) - 550,
   }));
+}
+
+// Actually wait out the play being claimed, instead of claiming it and submitting at once.
+//
+// The first live run got this wrong and was rejected as tampered — correctly. It built answers
+// totalling forty-three seconds and then slept for three, which is indistinguishable from a
+// client that rewrote its clock, because it IS that. The server holds both ends of the window
+// and is entitled to notice.
+//
+// A real player is never in this position: the set is issued as the 3-2-1 countdown starts and
+// submitted a minute later, so the claimed play always sits comfortably inside the window. To
+// behave like one, this has to spend the time.
+async function playOut(answers) {
+  const ms = answers.reduce((a, x) => a + x.ms, 0);
+  await new Promise((r) => setTimeout(r, ms + 500));
+  return ms;
 }
 
 // Getting a set is the precondition for almost every attack below. When it fails — as it did on
@@ -131,12 +148,12 @@ let honestSetId = null;
     ok(`a set was issued: seed ${body.seed}, ${body.setSize} questions`);
 
     const questions = questionsFor(body.seed, 'hard', body.setSize);
-    const answers = honestAnswers(questions, 18);
+    const answers = honestAnswers(questions, 12);
     // What the phone would put on screen, computed locally from the seed.
     const local = scoreAttempt({ questions, answers, difficulty: 'hard' });
 
-    // Pause so the wall clock plausibly contains the play being claimed.
-    await new Promise((r) => setTimeout(r, 3000));
+    const spent = await playOut(answers);
+    console.log(`      (played out ${(spent / 1000).toFixed(1)}s, as a real run would)`);
     const res = await submit({ setId: body.setId, answers });
 
     if (res.status !== 200 || !res.body?.ok) {
@@ -251,8 +268,8 @@ console.log('\nAttack: a boost that was never earned');
 
   const body = await issueOrNull('a run carrying a forged boost claim', 'easy');
   const questions = body ? questionsFor(body.seed, 'easy', body.setSize) : [];
-  const answers = body ? honestAnswers(questions, 12) : [];
-  if (body) await new Promise((r) => setTimeout(r, 3000));
+  const answers = body ? honestAnswers(questions, 10) : [];
+  if (body) await playOut(answers);
   // Note there is no boost field to send. The only question is what the server decides.
   const res = body
     ? await submit({ setId: body.setId, answers, boosted: true, boost: 1.5, score: 99999 })

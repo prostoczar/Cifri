@@ -66,6 +66,24 @@ export const ABSOLUTE_FLOOR_MS = 100;
 export const UNIFORM_MIN_ANSWERS = 8;
 export const UNIFORM_STDEV_MS = 60;
 
+// The point past which taking longer stops changing anything.
+//
+// calcSc's speed curve is `max(1, round(10 - ((elapsed - 2) / 10) * 9))`, which reaches its floor
+// of 1 at about twelve seconds. An answer that took twelve seconds and one that took five minutes
+// earn exactly the same points, so time beyond this cannot be part of any attack — it is
+// self-punishing, and a cheater's whole interest is in claiming times that are SHORTER.
+//
+// It matters because of a case that would otherwise reject honest players: a phone that suspends
+// JavaScript during a call. The game's own clock stops with it, but the question's timer is read
+// from Date.now(), so the interrupted question comes back reporting five minutes. Summed raw,
+// that sails past the sixty-second mode limit and a real run is thrown away.
+//
+// So the mode-limit sum below counts each answer at no more than this. A genuine run never comes
+// near the cap; an interrupted one contributes twelve seconds instead of three hundred; and the
+// attack the limit exists for — claiming more questions than a minute can hold — is untouched,
+// because forty questions still cost forty times their capped value.
+export const SCORING_FLOOR_MS = 12000;
+
 // Braining is untimed and its whole result IS the elapsed time, so the server can bracket it
 // far more tightly than a Challenge run: the claimed time has to account for very nearly the
 // entire window between the set being issued and the answers arriving.
@@ -126,8 +144,13 @@ export function validateChallengeSubmission({ answers, setSize, issuedAt, submit
 
   // The mode's own limit. Forty questions at three seconds each is two minutes of play, and the
   // game ends after one — no amount of skill produces that, only a rewritten clock.
-  if (playMs > CHALLENGE_DURATION_SEC * 1000 + WALL_SLACK_MS) {
-    return reject('play_time_exceeds_mode', playMs);
+  //
+  // Measured against the CAPPED sum, for the reason set out at SCORING_FLOOR_MS: a single answer
+  // interrupted by a phone call reports minutes, earns the same one point it would have earned at
+  // twelve seconds, and must not cost an honest player their run.
+  const cappedPlayMs = answers.reduce((a, x) => a + Math.min(x.ms, SCORING_FLOOR_MS), 0);
+  if (cappedPlayMs > CHALLENGE_DURATION_SEC * 1000 + WALL_SLACK_MS) {
+    return reject('play_time_exceeds_mode', cappedPlayMs);
   }
 
   // The server's own clock, which the client does not hold either end of. Claiming a minute of

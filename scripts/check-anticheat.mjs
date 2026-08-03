@@ -30,6 +30,7 @@ import {
   WALL_SLACK_MS,
   BRAINING_WALL_SLACK_MS,
   ABSOLUTE_FLOOR_MS,
+  SCORING_FLOOR_MS,
 } from '../supabase/functions/_shared/validate.js';
 import { scoreAttempt, applyBrainingBoost, CHALLENGE_DURATION_SEC } from '../supabase/functions/_shared/scoring.js';
 import { generateChallengeSet, generateBrainingSet, CHALLENGE_SET_SIZE } from '../supabase/functions/_shared/generator.js';
@@ -251,14 +252,36 @@ console.log('\nAttack: rewrite the clock');
   } else ok(`an answer at exactly ${FAST_ANSWER_FLOOR_MS}ms is accepted unflagged`);
   flagged(`an answer at ${FAST_ANSWER_FLOOR_MS - 1}ms`, validateChallengeSubmission({ answers: belowFloor, ...args }), 'inhuman_answer_speed');
 
-  // The mode limit's boundary, allowing for the documented slack.
-  const exactly = [{ i: 0, value: chQuestions[0].ans, ms: CHALLENGE_DURATION_SEC * 1000 + WALL_SLACK_MS }];
-  const justOver = [{ i: 0, value: chQuestions[0].ans, ms: CHALLENGE_DURATION_SEC * 1000 + WALL_SLACK_MS + 1 }];
-  allowed('one answer taking the whole minute plus the slack', validateChallengeSubmission({
-    answers: exactly, setSize: CHALLENGE_SET_SIZE, issuedAt: ISSUED, submittedAt: ISSUED + 70000,
+  // The mode limit's boundary. Measured in CAPPED time — each answer counts for at most
+  // SCORING_FLOOR_MS — so the boundary is a number of answers rather than one long one.
+  const atLimit = Array.from({ length: 5 }, (_, i) => ({ i, value: chQuestions[i].ans, ms: SCORING_FLOOR_MS }));
+  const overLimit = Array.from({ length: 6 }, (_, i) => ({ i, value: chQuestions[i].ans, ms: SCORING_FLOOR_MS }));
+  allowed('5 answers at the scoring floor — 60s of capped play', validateChallengeSubmission({
+    answers: atLimit, setSize: CHALLENGE_SET_SIZE, issuedAt: ISSUED, submittedAt: ISSUED + 70000,
   }));
-  caught('one millisecond past it', validateChallengeSubmission({
-    answers: justOver, setSize: CHALLENGE_SET_SIZE, issuedAt: ISSUED, submittedAt: ISSUED + 70000,
+  caught('6 of them — 72s, past what a 60-second game can hold', validateChallengeSubmission({
+    answers: overLimit, setSize: CHALLENGE_SET_SIZE, issuedAt: ISSUED, submittedAt: ISSUED + 80000,
+  }), 'play_time_exceeds_mode');
+
+  // ── The phone call ──────────────────────────────────────────────────────────
+  //
+  // The false positive that prompted the cap. A phone suspends JavaScript during a call; the
+  // game's clock stops with it, but the interrupted question's timer is read from Date.now() and
+  // comes back reporting minutes. Summed raw it exceeds the mode limit and an honest run is
+  // thrown away — the worst failure this system can have, because it punishes only real players.
+  const interrupted = honestRun(chQuestions, { n: 12, msEach: 2500 });
+  interrupted[4].ms = 180000; // took a call on question 5
+  const interruptedPlay = interrupted.reduce((a, x) => a + x.ms, 0);
+  allowed('a run interrupted by a three-minute phone call', validateChallengeSubmission({
+    answers: interrupted, setSize: CHALLENGE_SET_SIZE,
+    issuedAt: ISSUED, submittedAt: ISSUED + interruptedPlay + 4000,
+  }));
+
+  // And the cap must not become a way through. Forty questions at three seconds each is under the
+  // cap on every single answer, so capping changes nothing about the attack it exists to stop.
+  const stillCaught = Array.from({ length: 40 }, (_, i) => ({ i, value: chQuestions[i].ans, ms: 3000 }));
+  caught('40 answers at 3s each, none of them near the cap', validateChallengeSubmission({
+    answers: stillCaught, setSize: CHALLENGE_SET_SIZE, issuedAt: ISSUED, submittedAt: ISSUED + 130000,
   }), 'play_time_exceeds_mode');
 }
 
