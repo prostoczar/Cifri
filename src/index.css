@@ -833,3 +833,37 @@ body.dark .ms-rarity.r-epic{background:#3a2d52;color:#c9a8f0}
 .ach-lock-desc{font-size:calc(12px * var(--fs-mult));color:var(--txt);line-height:1.45;margin-top:4px}
 .ach-lock-btn{margin-top:16px;width:100%;padding:11px;border:none;border-radius:var(--rs);background:var(--G);color:#fff;font-family:inherit;font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 2px 0 var(--GD)}
 .ach-lock-btn:active{transform:translateY(1px);box-shadow:none}
+
+/* ── Chat 3.8: trick Test mode ─────────────────────────────────────────────────────────────── */
+
+/* Until a trick's Test is passed its card is light red with a shadow, and both its buttons are
+   terracotta. Once passed it reverts to the plain card the library has always used — so the
+   library reads at a glance as "what is still outstanding" rather than as a flat list. */
+.ti.untested{background:var(--TCL);box-shadow:0 2px 0 #d4b0a4}
+.ti.untested .tpb{background:var(--TC);box-shadow:0 2px 0 #a63f24}
+.ti.untested .tpb:active{box-shadow:none}
+/* Trick of the day keeps the last word on the card, exactly as before. It is declared after
+   .untested so it wins on the background, and it deliberately does not touch the buttons: being
+   today's trick should not disguise a Test you have not passed. */
+.ti.totd{background:var(--YL);box-shadow:0 2px 0 #c49030}
+
+.tbtn-row{display:flex;gap:10px;align-items:flex-start}
+.tbtn-col{display:flex;flex-direction:column;align-items:center;gap:4px}
+.tbtn-count{font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:600;white-space:nowrap}
+.ti.untested .tbtn-count{color:#a05a42}
+.tpb.ttb.done{background:var(--G);box-shadow:0 2px 0 var(--GD)}
+
+/* In-run header for a Test, so there is never any doubt which mode is being played. */
+.tg-mode-pill{margin:0 auto 10px;width:max-content;background:var(--TCL);color:var(--TC);font-size:calc(10px * var(--fs-mult));font-weight:800;letter-spacing:.4px;padding:4px 12px;border-radius:20px}
+.tg-solved-of{font-size:calc(13px * var(--fs-mult));color:var(--txt3);font-weight:700}
+
+/* The end card, shown once all 20 are behind you. */
+.tg-done{text-align:center;padding:28px 20px;background:var(--card);border-radius:var(--r);margin-top:20px}
+.tg-done-score{font-size:calc(40px * var(--fs-mult));font-weight:900;color:var(--txt);line-height:1}
+.tg-done-score span{font-size:calc(20px * var(--fs-mult));color:var(--txt3)}
+.tg-done.pass .tg-done-score{color:var(--G)}
+.tg-done.fail .tg-done-score{color:var(--TC)}
+.tg-done-label{font-size:calc(13px * var(--fs-mult));font-weight:700;color:var(--txt3);margin-top:8px}
+.tg-done-btn{margin-top:12px;width:100%;padding:12px;border:none;border-radius:var(--rs);background:var(--card-grey);color:var(--txt);font-family:inherit;font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 2px 0 var(--border2)}
+.tg-done-btn.primary{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
+.tg-done-btn:active{transform:translateY(1px);box-shadow:none}

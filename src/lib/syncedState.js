@@ -20,8 +20,11 @@ export const SYNCED_KEYS = [
   // Challenge on a laptop still spends it — a boost that only existed on the device that earned
   // it would make where you played matter, which is exactly what accounts exist to stop.
   'brBoostDay',
-  // Unlocked milestones
+  // Unlocked achievements (still called `milestones` in saved data — see store/achievements.js)
   'milestones',
+  // Per-trick practice counts, test counts and which tests have been passed. Synced because
+  // Graduation is earned across all 47 tricks and a player may work through them on two devices.
+  'trickStats',
   // Dark mode, font size, language, sound
   'settings',
   // Small view preferences — cheap to carry and annoying to lose

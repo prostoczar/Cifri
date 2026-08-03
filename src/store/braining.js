@@ -176,11 +176,31 @@ export function firstBrainingAge(brState) {
   return null;
 }
 
+// Every age the scale can actually award, ascending. Derived from BR_SCALE rather than written
+// out again, so the two can never drift: [20, 22, 25, 28, 32, 36, 40, 46, 53, 62, 72, 80].
+export const BR_AGES = BR_SCALE.map((r) => r.age)
+  .filter((a, i, all) => all.indexOf(a) === i)
+  .sort((a, b) => a - b);
+
+// The smallest reachable age at or above `age`. "20 years younger than 80" is 60, and there is no
+// 60 on the scale — the ages either side are 53 and 62. Snapping UP to 62 keeps the bar no harder
+// than the rule literally states; snapping down to 53 would quietly demand a 27-year improvement
+// from a rule that promised 20.
+function snapUpToScale(age) {
+  for (let i = 0; i < BR_AGES.length; i++) {
+    if (BR_AGES[i] >= age) return BR_AGES[i];
+  }
+  return BR_AGES[BR_AGES.length - 1];
+}
+
 // The age this player has to reach, given the result they started from.
 export function sharperEveryDayTarget(firstAge) {
   if (typeof firstAge !== 'number') return null;
   if (firstAge < 25) return 20;
-  return Math.max(firstAge - 20, 24);
+  // Only the 20-years-younger arm is snapped. The other arm is the number 24, which is not an
+  // approximation of anything — it IS "below 25", already exact on a scale whose only values
+  // under 25 are 22 and 20. Snapping it up to 25 would turn "below 25" into "25 or better".
+  return Math.max(snapUpToScale(firstAge - 20), 24);
 }
 
 // Whether a result of `age` earns it. `brState` must be the history as it stood BEFORE this

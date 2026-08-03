@@ -5,8 +5,11 @@ import { TRICKS_FLAT, trGroupName, trTrick, trickOfDayIndex } from '../store/tri
 
 // Ported from the reference prototype's buildTricks(). The library is a set of collapsible
 // items grouped by operation; today's featured trick carries the .totd highlight.
-export default function TricksScreen({ openIndex, onOpenedIndexConsumed, onPractice }) {
+export default function TricksScreen({ openIndex, onOpenedIndexConsumed, onPractice, onTest, trickStats }) {
   const { t, lang } = useI18n();
+  const stats = trickStats || { practiceDone: {}, testDone: {}, testPassed: [] };
+  // "1 attempts" reads as a bug even though it is only a plural, so one is spelled out.
+  const attemptLabel = (n) => (n === 1 ? t('trick_attempt_one') : t('trick_attempts', { n }));
   const [open, setOpen] = useState({}); // keyed by flat index
   const itemRefs = useRef({});
   const todIdx = trickOfDayIndex();
@@ -37,8 +40,16 @@ export default function TricksScreen({ openIndex, onOpenedIndexConsumed, onPract
             flatIdx++;
             const idx = flatIdx;
             const tr = trTrick(lang, trick, g.group);
+            const key = gi + '-' + ti;
+            const tested = (stats.testPassed || []).indexOf(key) !== -1;
+            const practiceCount = (stats.practiceDone || {})[key] || 0;
+            const testCount = (stats.testDone || {})[key] || 0;
+            // Three states layered in this order: untested (light red) is the base, the trick of
+            // the day's yellow sits on top of it, and `on` just means the card is expanded. A
+            // trick can be both today's trick and untested; the yellow wins on the card, and the
+            // buttons stay terracotta either way, so "not yet passed" is never hidden by it.
             const cls =
-              'ti' + (open[idx] ? ' on' : '') + (idx === todIdx ? ' totd' : '');
+              'ti' + (open[idx] ? ' on' : '') + (tested ? '' : ' untested') + (idx === todIdx ? ' totd' : '');
             return (
               <div className={cls} key={g.group + '::' + trick.name} ref={(el) => (itemRefs.current[idx] = el)}>
                 <div className="tn2" onClick={() => setOpen((prev) => ({ ...prev, [idx]: !prev[idx] }))}>
@@ -61,7 +72,20 @@ export default function TricksScreen({ openIndex, onOpenedIndexConsumed, onPract
                       })}
                     </div>
                   </div>
-                  <button className="tpb" onClick={() => onPractice(gi, ti)}>{t('practice_this_trick')}</button>
+                  <div className="tbtn-row">
+                    <div className="tbtn-col">
+                      <button className="tpb" onClick={() => onPractice(gi, ti)}>{t('practice_this_trick')}</button>
+                      <div className="tbtn-count">{attemptLabel(practiceCount)}</div>
+                    </div>
+                    <div className="tbtn-col">
+                      <button className={'tpb ttb' + (tested ? ' done' : '')} onClick={() => onTest(gi, ti)}>
+                        {tested ? t('trick_test_retake_short') : t('trick_test')}
+                      </button>
+                      <div className="tbtn-count">
+                        {tested ? t('trick_test_passed_short') : attemptLabel(testCount)}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             );

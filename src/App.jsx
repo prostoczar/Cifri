@@ -8,6 +8,7 @@ import { diffLabel } from './store/questionEngine.js';
 import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors.js';
 import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
+import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
 import { dayKey, dateStrToDate } from './store/dates.js';
 import {
@@ -572,11 +573,45 @@ function AppShell() {
   function handlePracticeTrick(gi, ti) {
     const reqId = ++pendingTrickReqId.current;
     afterTrickAchievementsRef.current = () => {
-      setTrickGame({ gi, ti });
+      setTrickGame({ gi, ti, mode: 'practice' });
       setScreen('trickgame');
     };
     dispatch({ type: 'PRACTICE_TRICK', reqId, gi, ti, total: TRICKS_FLAT.length });
   }
+
+  // The Test does NOT dispatch PRACTICE_TRICK on the way in: sitting the exam is not the same as
+  // practising the trick, and Trick Master asks for the latter. It opens straight into the drill.
+  function handleTestTrick(gi, ti) {
+    setTrickGame({ gi, ti, mode: 'test' });
+    setScreen('trickgame');
+  }
+
+  // A drill that ran all the way to its twentieth question. Called at the moment the run ends,
+  // before the end card is even shown, so a result can never be lost by closing the app on it.
+  // Any achievement earned pops over the end card; dismissing it leaves the player right there.
+  const handleTrickRunComplete = useCallback((result) => {
+    if (!trickGame) return;
+    const { gi, ti, mode } = trickGame;
+    const reqId = ++pendingTrickReqId.current;
+    afterTrickAchievementsRef.current = null;
+    if (mode === 'test') {
+      dispatch({
+        type: 'TRICK_TEST_COMPLETE', reqId, gi, ti,
+        passed: result.passed, total: TEST_LENGTH, totalTricks: TRICKS_FLAT.length,
+      });
+    } else {
+      dispatch({
+        type: 'TRICK_PRACTICE_COMPLETE', reqId, gi, ti,
+        firstTryCorrect: result.correct, total: PRACTICE_LENGTH,
+      });
+    }
+  }, [trickGame, dispatch]);
+
+  // "Play again" from the end card. Re-mounting resets the drill: a Test replays the same fixed
+  // twenty, practice draws twenty fresh ones.
+  const handleTrickAgain = useCallback(() => {
+    setTrickGame((g) => (g ? { ...g, run: Date.now() } : g));
+  }, []);
 
   function handleOpenTrickOfDay() {
     const idx = trickOfDayIndex();
@@ -743,6 +778,8 @@ function AppShell() {
           openIndex={tricksOpenIndex}
           onOpenedIndexConsumed={() => setTricksOpenIndex(null)}
           onPractice={handlePracticeTrick}
+          onTest={handleTestTrick}
+          trickStats={state.trickStats}
         />
       );
     }
@@ -809,7 +846,14 @@ function AppShell() {
         )}
         {screen === 'br-game' && <BrainingGameScreen game={brGame} onShowQuit={() => setBrQuitOpen(true)} />}
         {screen === 'trickgame' && trickGame && (
-          <TrickGameScreen gi={trickGame.gi} ti={trickGame.ti} soundOn={soundOn} onExit={handleExitTrick} />
+          <TrickGameScreen
+            key={trickGame.gi + '-' + trickGame.ti + '-' + trickGame.mode + '-' + (trickGame.run || 0)}
+            gi={trickGame.gi} ti={trickGame.ti} mode={trickGame.mode}
+            soundOn={soundOn}
+            onComplete={handleTrickRunComplete}
+            onAgain={handleTrickAgain}
+            onExit={handleExitTrick}
+          />
         )}
         {screen === 'br-result' && brResultData && (
           <BrainingResultScreen

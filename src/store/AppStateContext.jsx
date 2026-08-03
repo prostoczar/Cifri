@@ -52,6 +52,14 @@ function defaultState() {
       // The single source of truth: achievement keys, in the order they were earned.
       achievedLog: [],
     },
+    // Per-trick progress, keyed "gi-ti". Practice and Test are counted separately because they
+    // are different claims: practice says how much work went in, the Test says the trick is done.
+    // Only COMPLETED sessions count — walking out after three questions is not an attempt.
+    trickStats: {
+      practiceDone: {},
+      testDone: {},
+      testPassed: [],
+    },
     settings: { sound: true, dark: null, fontSize: 'medium', lang: null },
     selDiff: 'easy',
     chRange: 7,
@@ -375,6 +383,49 @@ function reducer(state, action) {
       if (set.length >= 5) earn(m, unlocked, 'tr_halfway');
       if (action.total > 0 && set.length >= action.total) earn(m, unlocked, 'trick_master');
       return { ...state, milestones: m, _lastTrickUnlocked: { reqId: action.reqId, unlocked } };
+    }
+
+    // A finished 20-question practice drill on one trick. Counted on COMPLETION, not on opening
+    // the screen — starting something is not an attempt at it, and counting starts would make the
+    // number next to the button a measure of curiosity rather than of work.
+    case 'TRICK_PRACTICE_COMPLETE': {
+      const key = action.gi + '-' + action.ti;
+      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+      const unlocked = [];
+      const stats = state.trickStats || { practiceDone: {}, testDone: {}, testPassed: [] };
+      const practiceDone = { ...stats.practiceDone, [key]: (stats.practiceDone[key] || 0) + 1 };
+      // Clean Sweep: every question in the drill answered right first time.
+      if (action.total > 0 && action.firstTryCorrect >= action.total) earn(m, unlocked, 'tr_clean_sweep');
+      return {
+        ...state,
+        milestones: m,
+        trickStats: { ...stats, practiceDone },
+        _lastTrickUnlocked: { reqId: action.reqId, unlocked },
+      };
+    }
+
+    // A finished Test. Passing is 16 of 20 answered right first time; the pass is recorded once
+    // and never taken away, so a worse retake cannot un-graduate a trick.
+    case 'TRICK_TEST_COMPLETE': {
+      const key = action.gi + '-' + action.ti;
+      const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
+      const unlocked = [];
+      const stats = state.trickStats || { practiceDone: {}, testDone: {}, testPassed: [] };
+      const testDone = { ...stats.testDone, [key]: (stats.testDone[key] || 0) + 1 };
+      const testPassed = [...(stats.testPassed || [])];
+      if (action.passed && testPassed.indexOf(key) === -1) testPassed.push(key);
+      if (action.passed) {
+        earn(m, unlocked, 'tr_first_exam');
+        if (action.total > 0 && testPassed.length >= action.totalTricks) {
+          earn(m, unlocked, 'tr_graduation');
+        }
+      }
+      return {
+        ...state,
+        milestones: m,
+        trickStats: { ...stats, testDone, testPassed },
+        _lastTrickUnlocked: { reqId: action.reqId, unlocked },
+      };
     }
 
     case 'SET_USERNAME':
