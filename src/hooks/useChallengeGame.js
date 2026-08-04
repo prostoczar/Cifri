@@ -45,10 +45,24 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
 
   const loadQuestion = useCallback(() => {
     const c = curRef.current;
-    const cfg = c.isPrac ? c.pcfg : DIFFS[c.diff];
-    // The Practice tab is the only caller with a parameter-driven config; everything else (real
-    // Challenge, Challenge warm-up practice) keeps using the difficulty-tier generator unchanged.
-    const res = cfg && cfg.custom ? makePracticeQ(lang, cfg) : makeQ(lang, cfg);
+    let res;
+    if (c.questions && c.qIdx < c.questions.length) {
+      // A server-issued set. These were drawn on this device from the seed the server sent, so
+      // they are the same questions the server holds the answers to — see _shared/rng.js. Nothing
+      // about how they are asked or scored differs from a locally generated one.
+      res = c.questions[c.qIdx];
+    } else {
+      // Either there is no set (guest, offline, or the prefetch lost its race with the
+      // countdown), or a set ran out. The second cannot really happen — eighty questions in sixty
+      // seconds is under a second each including the feedback pause — but "cannot really happen"
+      // is not a reason to crash if it does. Playing on locally is the graceful answer; `overran`
+      // then stops the run being submitted, because the server has no record of these questions.
+      if (c.questions) c.overran = true;
+      const cfg = c.isPrac ? c.pcfg : DIFFS[c.diff];
+      // The Practice tab is the only caller with a parameter-driven config; everything else (real
+      // Challenge, Challenge warm-up practice) keeps using the difficulty-tier generator unchanged.
+      res = cfg && cfg.custom ? makePracticeQ(lang, cfg) : makeQ(lang, cfg);
+    }
     c.answer = res.ans;
     c.op = res.op;
     // Question shape, carried only so the attempt log can describe what was asked.
@@ -97,6 +111,18 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       wrong: c.wrong,
       opTimes: c.opTimes,
       sessionId: c.sessionId,
+      // ── What the server needs to mark this run itself ───────────────────────────
+      //
+      // `answers` is the whole submission: which question, what was typed, how long it took.
+      // Note what is NOT here — a score. There is no field the client could put one in, which is
+      // the single most important thing about this payload. The server recomputes it from these
+      // three facts and its own copy of the answer key.
+      //
+      // `verifiable` is false whenever there is nothing to check against: a guest, a run that
+      // never got a set, a practice run, or the impossible overrun above.
+      setId: c.setId,
+      answers: c.answers,
+      verifiable: !!c.setId && !c.overran && !c.isPrac && c.answers.length > 0,
       // The tally kept alongside the score as it was earned (see submitAnswer). Reported, never
       // read back: nothing here feeds the score, it only describes how the score happened.
       breakdown: {
@@ -111,10 +137,26 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
 
   // Starts the actual timed session (called once the 3-2-1-Go countdown finishes).
   const begin = useCallback(
-    (diff, isPrac, pcfg, origin) => {
+    (diff, isPrac, pcfg, origin, serverSet) => {
       const c = {
         diff, isPrac, pcfg, origin,
         score: 0, correct: 0, wrong: 0, opTimes: {},
+        // ── The server-issued set, when there is one ────────────────────────────────
+        //
+        // `serverSet` is {setId, questions} and is prepared during the countdown, so arriving
+        // here it is either ready or absent — this function never waits on anything. Absent is an
+        // ordinary case, not a failure: guests, offline play, and a prefetch that lost its race
+        // all land here with null and play a locally generated game instead.
+        //
+        // `qIdx` is the index of the question currently on screen, and is what ties an answer to
+        // the question the server thinks it answered. It advances in submitAnswer rather than in
+        // loadQuestion, so that an answer is always recorded against the question that was
+        // actually showing when it was given.
+        setId: serverSet ? serverSet.setId : null,
+        questions: serverSet ? serverSet.questions : null,
+        qIdx: 0,
+        answers: [],
+        overran: false,
         // ── The score breakdown, tallied as it is earned ────────────────────────────
         //
         // These four counters exist so the result screen can show where the score came from
@@ -194,7 +236,12 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
     const val = parseFloat(raw);
     if (isNaN(val)) return;
 
-    const elapsed = (Date.now() - c.qStart) / 1000;
+    // Taken in milliseconds and divided, rather than the other way round, so the figure the
+    // server is sent is exactly the figure the score was computed from. A round trip through
+    // seconds and back would be a rounding difference between what the player was paid and what
+    // the server re-derives, on every single question.
+    const elapsedMs = Date.now() - c.qStart;
+    const elapsed = elapsedMs / 1000;
     const ok = Math.abs(val - c.answer) < 0.055;
     const pts = calcSc(ok, elapsed, c.op, c.dm);
 
@@ -204,6 +251,18 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
     const bo = (c.opPoints[c.op] = c.opPoints[c.op] || { asked: 0, correct: 0, points: 0 });
     bo.asked++;
     if (ok) { bo.correct++; bo.points += pts; } else { c.penalty += pts; }
+
+    // Book the answer for the server, and move to the next question in the set.
+    //
+    // Both lines run on the wrong-answer path as well as the right one. Challenge never asks a
+    // question twice — a wrong answer costs its points and the game moves on — so the indices
+    // this produces are 0, 1, 2, … with no gaps and no repeats, which is exactly the shape
+    // validate.js requires. Recording only correct answers would leave gaps and the server would,
+    // rightly, refuse the whole run as cherry-picked.
+    if (c.questions && !c.overran) {
+      c.answers.push({ i: c.qIdx, value: val, ms: elapsedMs });
+    }
+    c.qIdx++;
 
     // Adds this question's points to the running score. The clamp is exactly the line that was
     // here before — `Math.max(0, …)`, unchanged — with one extra statement recording how much of

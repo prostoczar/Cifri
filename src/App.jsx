@@ -4,7 +4,7 @@ import { useI18n } from './store/useI18n.js';
 import { useChallengeGame } from './hooks/useChallengeGame.js';
 import { useBrainingGame } from './hooks/useBrainingGame.js';
 import { useSwipeTabs, TAB_ORDER } from './hooks/useSwipeTabs.js';
-import { diffLabel } from './store/questionEngine.js';
+import { diffLabel, engineFor } from './store/questionEngine.js';
 import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors.js';
 import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
@@ -18,6 +18,7 @@ import {
 import { toSyncPayload } from './lib/syncedState.js';
 import { recordAttempt, endSession, discardSession } from './lib/attemptLog.js';
 import { arrivedFromRecoveryLink, clearRecoveryUrl } from './lib/recoveryLink.js';
+import { issueChallengeSet, submitChallengeAttempt } from './lib/verifiedPlay.js';
 
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
@@ -57,6 +58,21 @@ function AppShell() {
   // challenge|braining|practice|tricks|countdown|game|result|br-countdown|br-game|br-result
   const [screen, setScreen] = useState('challenge');
   const [countdownInfo, setCountdownInfo] = useState(null); // {diff,isPrac,pcfg,origin,label}
+
+  // ── The prefetched question set ─────────────────────────────────────────────
+  //
+  // Held in a ref rather than state because NOTHING RENDERS FROM IT. That is the whole design:
+  // a set arriving, or failing to arrive, must not cause a re-render, must not gate a screen,
+  // and must not be visible to the player in any way. The countdown runs its 3.2 seconds either
+  // way and the game starts on time.
+  //
+  // Shape: {setId, diff, questions} or null.
+  const pendingSetRef = useRef(null);
+
+  // Which set request is the current one. A slow reply from an abandoned request must not be
+  // adopted by the game that replaced it — that set was voided server-side the moment a newer one
+  // was issued, so playing it would produce a run the server refuses. Cheaper to ignore it here.
+  const setRequestRef = useRef(0);
   const [brCountdownInfo, setBrCountdownInfo] = useState(null); // {isPrac,label,sub}
   const [quitOpen, setQuitOpen] = useState(false);
   const [brQuitOpen, setBrQuitOpen] = useState(false);
@@ -209,8 +225,48 @@ function AppShell() {
         wrong: summary.wrong,
         opTimes: summary.opTimes,
         breakdown: summary.breakdown,
+        // Ties this stored run to the answers about to be sent, so the server's reply can find it.
+        attemptId: summary.sessionId,
         lang,
       });
+
+      // ── Sending the run to be verified ──────────────────────────────────────
+      //
+      // AFTER the dispatch above, and never awaited. By the time this line runs the score is
+      // already computed, the achievements are already unlocked and the result screen is already
+      // on its way up — so a slow submission delays nothing, and a failed one costs nothing.
+      // The player can tap Play Again while it is still in flight.
+      if (summary.verifiable) {
+        submitChallengeAttempt({ setId: summary.setId, answers: summary.answers }).then((res) => {
+          if (!res || !res.ok) return; // offline, timed out, or the server declined it
+
+          // Compared on the RAW score, not the final one. The two differ by the Braining boost,
+          // which the server applies from its own records — and until Braining is wired those
+          // records are empty, so a boosted day would disagree by 5% for reasons that are not a
+          // disagreement at all. Raw is also exactly what the achievements read.
+          if (res.rawScore !== summary.score) {
+            // Left alone deliberately. daily_results is what this device believes and
+            // verified_daily_results is what the server proved; migration 0007 says they may
+            // differ, and rewriting a number the player watched themselves earn would be worse
+            // than a divergence nobody sees. Loud in the console, silent on screen.
+            console.warn(
+              '[verifiedPlay] score disagreement — server %d, this device %d (run left as played)',
+              res.rawScore, summary.score
+            );
+            return;
+          }
+          // Silent in production: a verified run looks exactly like an unverified one to the
+          // player, which is the whole point. The dev build says so out loud, because otherwise
+          // the only way to tell the wiring is working is to go and read the database.
+          if (import.meta.env.DEV) {
+            console.info(
+              '[verifiedPlay] run verified — server and device both scored %d (day average now %s over %s attempt(s))',
+              res.rawScore, res.dayAverage, res.dayAttempts
+            );
+          }
+          dispatch({ type: 'CHALLENGE_ATTEMPT_VERIFIED', diff: summary.diff, attemptId: summary.sessionId });
+        });
+      }
     },
   });
 
@@ -362,12 +418,40 @@ function AppShell() {
   // No daily cap and no first-trial guard: Challenge can be started as many times as the player
   // wants, and each run is folded into today's average. (Braining keeps its own guard, in
   // handleStartBraining below — that mode is unchanged.)
-  function handleStartChallenge() {
+  // Starts a counting Challenge run: asks for a question set and shows the countdown.
+  //
+  // THE REQUEST IS NOT AWAITED, and that is the point rather than an oversight. It is sent and
+  // forgotten, and whatever it has managed by the time the countdown ends is what gets used — see
+  // handleCountdownDone. The countdown is four 800ms steps and the request is typically a couple
+  // of hundred milliseconds, so the set is there essentially always; but "essentially always" is
+  // not a guarantee, and the guarantee that matters is that the game starts on time whatever the
+  // network is doing.
+  function startChallengeCountdown(diff) {
+    pendingSetRef.current = null;
+    const token = ++setRequestRef.current;
+
+    issueChallengeSet(diff).then((set) => {
+      // Null covers guest, offline, timed out and rate limited alike. All four mean the same
+      // thing to the game — play locally — which is why none of them is handled separately.
+      if (!set || setRequestRef.current !== token) return;
+      // The questions are drawn HERE, during the countdown, rather than inside game.begin(), so
+      // that generating eighty of them never lands in the frame the game starts on.
+      pendingSetRef.current = {
+        setId: set.setId,
+        diff,
+        questions: engineFor(lang, set.seed).challengeSet(diff, set.setSize),
+      };
+    });
+
     setCountdownInfo({
-      diff: state.selDiff, isPrac: false, pcfg: null, origin: 'challenge',
-      label: diffLabel(lang, state.selDiff) + ' ' + t('challenge_word'),
+      diff, isPrac: false, pcfg: null, origin: 'challenge',
+      label: diffLabel(lang, diff) + ' ' + t('challenge_word'),
     });
     setScreen('countdown');
+  }
+
+  function handleStartChallenge() {
+    startChallengeCountdown(state.selDiff);
   }
 
   // The standalone Practice tab. `custom: true` routes question generation to the
@@ -683,7 +767,19 @@ function AppShell() {
 
   function handleCountdownDone() {
     const { diff, isPrac, pcfg, origin } = countdownInfo;
-    game.begin(diff, isPrac, pcfg, origin);
+    // The one moment the prefetch is consulted, and it is consulted exactly once. A set that has
+    // not arrived by now is not waited for and not retried — the run plays locally and simply is
+    // not verified. A reply landing a moment later finds its token stale and is discarded.
+    //
+    // The difficulty is re-checked because the set was issued for a specific tier: a player who
+    // somehow changed difficulty between tapping Start and the countdown ending must not be given
+    // Hard questions marked against an Easy key.
+    const pending = pendingSetRef.current;
+    pendingSetRef.current = null;
+    setRequestRef.current++;
+    const serverSet = pending && pending.diff === diff ? pending : null;
+
+    game.begin(diff, isPrac, pcfg, origin, serverSet);
     setScreen('game');
   }
 
@@ -704,11 +800,10 @@ function AppShell() {
     const { origin, diff } = resultData;
     setResultData(null);
     if (origin === 'challenge') {
-      setCountdownInfo({
-        diff, isPrac: false, pcfg: null, origin: 'challenge',
-        label: diffLabel(lang, diff) + ' ' + t('challenge_word'),
-      });
-      setScreen('countdown');
+      // Goes through the same path as the home screen's button, so a replay gets its own freshly
+      // issued set. It has to: a set is single-use, and replaying the questions just answered
+      // would be the memorisation problem the per-attempt design exists to avoid.
+      startChallengeCountdown(diff);
     } else {
       handleStartCustomPractice();
     }

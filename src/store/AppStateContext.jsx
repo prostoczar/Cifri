@@ -867,7 +867,13 @@ export function reducer(state, action) {
       // correct answers in each" of the three difficulties on one day. That question is about
       // OTHER difficulties' runs as well as this one, so it cannot be answered from the action
       // alone — the count has to survive on the session, next to the score it produced.
+      // `attemptId` is the id the game hook already minted to group this sitting's answers in the
+      // attempt log, carried onto the stored run so that the server's verdict — which arrives
+      // later, over the network, long after this reducer has returned — can find the run it is
+      // about. Without it there is nothing to match on: a day holds many runs and `ts` is a
+      // timestamp, not an identity.
       const entry = { date: today, score: countedScore, correct, real: !isPrac, ts: Date.now() };
+      if (action.attemptId) entry.attemptId = action.attemptId;
       if (boostSpent) {
         entry.rawScore = score;
         entry.boosted = true;
@@ -1058,6 +1064,40 @@ export function reducer(state, action) {
           isNewBest, unlocked,
         },
       };
+    }
+
+    // The server has confirmed a run, some time after it was played.
+    //
+    // This is the ONLY thing the server's reply changes locally, and the restraint is deliberate.
+    // It does not touch the score, the average, the streak or any achievement — all of those were
+    // settled the moment the run ended, from numbers the player watched themselves earn, and a
+    // network reply arriving seconds later has no business moving them. It records one fact:
+    // this run was witnessed.
+    //
+    // A run WITHOUT the flag is not a suspect run. Guests never get it, offline play never gets
+    // it, and a submission that timed out never gets it. It means "eligible to be ranked", not
+    // "believed" — the player's own history treats every run the same either way.
+    //
+    // Nothing reads this yet. It exists now because it cannot be added retrospectively: a run
+    // played today and confirmed today can only be marked today, and a leaderboard built later
+    // would otherwise start with a history it has no way to judge.
+    case 'CHALLENGE_ATTEMPT_VERIFIED': {
+      const { diff, attemptId } = action;
+      const d = diff && state.db[diff];
+      if (!d || !attemptId) return state;
+
+      let found = false;
+      const sessions = d.sessions.map((s) => {
+        if (found || s.attemptId !== attemptId || s.verified) return s;
+        found = true;
+        return { ...s, verified: true };
+      });
+      // Returning the identical state object when there is nothing to change is not a
+      // micro-optimisation here: a new object would be a new sync payload, and this action can
+      // fire for a run that was never stored (a Practice-tab run, or one that scored zero).
+      if (!found) return state;
+
+      return { ...state, db: { ...state.db, [diff]: { ...d, sessions } } };
     }
 
     // Mirrors the reference's brFinish(): records the session, updates best time/age, credits
