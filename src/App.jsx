@@ -6,7 +6,7 @@ import { useBrainingGame } from './hooks/useBrainingGame.js';
 import { useSwipeTabs, TAB_ORDER } from './hooks/useSwipeTabs.js';
 import { diffLabel, engineFor } from './store/questionEngine.js';
 import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors.js';
-import { brAge, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
+import { brAge, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
@@ -18,7 +18,7 @@ import {
 import { toSyncPayload } from './lib/syncedState.js';
 import { recordAttempt, endSession, discardSession } from './lib/attemptLog.js';
 import { arrivedFromRecoveryLink, clearRecoveryUrl } from './lib/recoveryLink.js';
-import { issueChallengeSet, submitChallengeAttempt } from './lib/verifiedPlay.js';
+import { issueChallengeSet, submitChallengeAttempt, issueBrainingSet, submitBrainingAttempt } from './lib/verifiedPlay.js';
 
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
@@ -73,6 +73,12 @@ function AppShell() {
   // adopted by the game that replaced it — that set was voided server-side the moment a newer one
   // was issued, so playing it would produce a run the server refuses. Cheaper to ignore it here.
   const setRequestRef = useRef(0);
+
+  // The same pair for Braining. Kept separate rather than shared because the two modes hold one
+  // live set EACH server-side — the uniqueness index is on (user_id, mode) — so starting a
+  // Braining trial must not void a Challenge set, or vice versa.
+  const pendingBrSetRef = useRef(null);
+  const brSetRequestRef = useRef(0);
   const [brCountdownInfo, setBrCountdownInfo] = useState(null); // {isPrac,label,sub}
   const [quitOpen, setQuitOpen] = useState(false);
   const [brQuitOpen, setBrQuitOpen] = useState(false);
@@ -312,8 +318,43 @@ function AppShell() {
         // How many questions this sitting asked, for the cumulative question count.
         total: summary.total,
         opTimes: summary.opTimes,
+        // Ties this stored trial to the answers about to be sent, so the reply can find it.
+        attemptId: summary.sessionId,
         lang,
       });
+
+      // ── Sending the trial to be verified ────────────────────────────────────
+      //
+      // After the dispatch, never awaited — the brain-age result is already on its way up. This
+      // is also what grants the Challenge boost: the server creates its own boost record when it
+      // accepts a counting trial, and that record is the ONLY thing a later Challenge attempt is
+      // paid from. Until this request lands the server knows of no boost, which is exactly right
+      // — a boost nobody witnessed is a boost nobody earned.
+      if (summary.verifiable) {
+        submitBrainingAttempt({
+          setId: summary.setId,
+          answers: summary.answers,
+          claimedSec: summary.sec,
+        }).then((res) => {
+          if (!res || !res.ok) return;
+          // Compared on the recorded time, which for Braining is the whole result. The server
+          // rounds the claim it was sent, so agreement here is agreement about the run itself.
+          if (res.timeSec !== Math.round(summary.sec)) {
+            console.warn(
+              '[verifiedPlay] time disagreement — server %ds, this device %ds (trial left as played)',
+              res.timeSec, Math.round(summary.sec)
+            );
+            return;
+          }
+          if (import.meta.env.DEV) {
+            console.info(
+              '[verifiedPlay] trial verified — %ds, brain age %d%s',
+              res.timeSec, res.brainAge, res.recorded ? '' : ' (already recorded today)'
+            );
+          }
+          dispatch({ type: 'BRAINING_ATTEMPT_VERIFIED', attemptId: summary.sessionId });
+        });
+      }
     },
   });
 
@@ -821,6 +862,22 @@ function AppShell() {
   // ── Braining ──
   function handleStartBraining(isPrac) {
     if (!isPrac && brDoneToday(state.brState)) return; // today's trial already counted
+
+    // Only the day's counting trial is worth verifying. A practice run records nothing, so there
+    // is nothing about it to check — and skipping the request is what keeps the practice button
+    // as instant as it has always been.
+    pendingBrSetRef.current = null;
+    if (!isPrac) {
+      const token = ++brSetRequestRef.current;
+      issueBrainingSet().then((set) => {
+        if (!set || brSetRequestRef.current !== token) return;
+        pendingBrSetRef.current = {
+          setId: set.setId,
+          questions: brMakeSession(set.setSize, set.seed),
+        };
+      });
+    }
+
     setBrCountdownInfo({
       isPrac,
       sub: t('br_cd_sub', { n: isPrac ? 20 : 50 }),
@@ -830,7 +887,13 @@ function AppShell() {
   }
 
   function handleBrCountdownDone() {
-    brGame.begin(brCountdownInfo.isPrac);
+    // Consulted once, exactly as Challenge does it. A set that has not arrived by now is not
+    // waited for: the trial plays locally, counts locally, and simply is not verified.
+    const pending = pendingBrSetRef.current;
+    pendingBrSetRef.current = null;
+    brSetRequestRef.current++;
+
+    brGame.begin(brCountdownInfo.isPrac, brCountdownInfo.isPrac ? null : pending);
     setScreen('br-game');
   }
 

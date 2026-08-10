@@ -80,16 +80,33 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     // `total` is how many questions this sitting asked — 50 or 20. Reported for the cumulative
     // question count, which has no other way to know: Braining stores a time and a brain age on
     // each session, never a question count.
-    onGameEnd({ isPrac: g.isPrac, sec, total: g.total, wrong: g.wrong, opTimes: g.opTimes, sessionId: g.sessionId });
+    onGameEnd({
+      isPrac: g.isPrac, sec, total: g.total, wrong: g.wrong, opTimes: g.opTimes, sessionId: g.sessionId,
+      // For the server. `sec` above is the claim it will be checked against — it has to account
+      // for very nearly the whole window the server watched, which is what makes a fast time
+      // impossible to assert rather than merely unlikely.
+      setId: g.setId,
+      answers: g.answers,
+      verifiable: !!g.setId && !g.isPrac && g.answers.length > 0,
+    });
   }, [clearTimer, onGameEnd]);
 
   const begin = useCallback(
-    (isPrac) => {
+    (isPrac, serverSet) => {
       const total = isPrac ? 20 : 50;
       const g = {
         isPrac,
         total,
-        questions: brMakeSession(total),
+        // The server's set when there is one, drawn on this device from the seed it sent — so
+        // these are the questions the server holds the answers to. Absent for a guest, for a
+        // practice run, and for anyone whose request lost its race with the countdown; all three
+        // fall back to ordinary local generation and play identically.
+        questions: serverSet ? serverSet.questions : brMakeSession(total),
+        setId: serverSet ? serverSet.setId : null,
+        // What the server will be sent. Braining makes a wrong answer be corrected before moving
+        // on, so one question can produce several entries here — which is exactly the shape
+        // validateBrainingSubmission expects: indices non-decreasing, repeats being corrections.
+        answers: [],
         qIdx: 0,
         answer: null,
         curOp: null,
@@ -143,6 +160,12 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     const val = parseFloat(raw);
     if (isNaN(val)) return;
     const ok = Math.abs(val - g.answer) < 0.05;
+    const elapsedMs = Date.now() - g.qStart;
+
+    // Book the attempt for the server. Every attempt, not just the successful one: a correction
+    // is part of what happened, and a submission that hid its wrong answers would arrive with
+    // indices the server could not reconcile against the run it issued.
+    if (g.setId) g.answers.push({ i: g.qIdx, value: val, ms: elapsedMs });
 
     // Report the answered question, right or wrong. Wrapped so a logging fault can never
     // interrupt play, and placed after the marking above so it only describes what was decided.

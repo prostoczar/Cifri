@@ -25,14 +25,16 @@
 import {
   validateChallengeSubmission,
   validateBrainingSubmission,
-  SET_TTL_MS,
+  CHALLENGE_SET_TTL_MS,
+  BRAINING_SET_TTL_MS,
+  markBrainingCompletion,
   FAST_ANSWER_FLOOR_MS,
   WALL_SLACK_MS,
   BRAINING_WALL_SLACK_MS,
   ABSOLUTE_FLOOR_MS,
   SCORING_FLOOR_MS,
 } from '../supabase/functions/_shared/validate.js';
-import { scoreAttempt, applyBrainingBoost, CHALLENGE_DURATION_SEC } from '../supabase/functions/_shared/scoring.js';
+import { scoreAttempt, applyBrainingBoost, CHALLENGE_DURATION_SEC, BRAINING_TOLERANCE } from '../supabase/functions/_shared/scoring.js';
 import { generateChallengeSet, generateBrainingSet, CHALLENGE_SET_SIZE } from '../supabase/functions/_shared/generator.js';
 import { checkIssueRate, isPlausibleDay, ISSUES_PER_MINUTE, CHALLENGE_ISSUES_PER_DAY } from '../supabase/functions/_shared/ratelimit.js';
 
@@ -233,7 +235,7 @@ console.log('\nAttack: rewrite the clock');
   // Hoarding: solve the set at leisure and submit tomorrow.
   caught('a set submitted twenty minutes after issue', validateChallengeSubmission({
     answers: baseline, setSize: CHALLENGE_SET_SIZE,
-    issuedAt: ISSUED, submittedAt: ISSUED + SET_TTL_MS + 1000,
+    issuedAt: ISSUED, submittedAt: ISSUED + CHALLENGE_SET_TTL_MS + 1000,
   }), 'set_expired');
 
   // A bot's signature: correct, fast enough to be legal, and metronomic.
@@ -408,6 +410,111 @@ console.log('\nAttack: a Braining time that was not run');
     answers: brAnswers, setSize: 50, claimedSec: 0,
     issuedAt: ISSUED, submittedAt: ISSUED + 200 * 1000,
   }), 'claimed_time_invalid');
+}
+
+// ═══ Attack 4b — minting a boost that was never earned ═══════════════════════
+//
+// This is the section with the real stakes. A Challenge submission has no boost field, so the
+// only way to be paid 5% is for `braining_boosts` to hold a row — and the only thing that
+// creates one is a Braining submission the server ACCEPTED. So every check below is really the
+// same question asked from a different angle: can a run that did not happen mint that row?
+console.log('\nAttack: mint a boost without doing the work');
+{
+  const brQuestions = generateBrainingSet(31415926, 50);
+  const key = brQuestions.map((q) => ({ a: q.ans, o: q.op }));
+  const tolerance = BRAINING_TOLERANCE;
+
+  // A genuine run: some corrections, every question ending right.
+  const genuine = [];
+  for (let i = 0; i < 50; i++) {
+    if (i % 9 === 0) genuine.push({ i, value: brQuestions[i].ans + 4, ms: 2500 });
+    genuine.push({ i, value: brQuestions[i].ans, ms: 4200 + ((i * 173) % 1400) });
+  }
+  const done = markBrainingCompletion({ answers: genuine, key, tolerance });
+  if (!done.complete) fail(`a genuine trial was marked incomplete (${done.unresolved} unresolved)`);
+  else ok('a genuine trial with corrections is complete — every question ends correct');
+
+  // The obvious forgery: claim to have finished while getting things wrong.
+  const allWrong = Array.from({ length: 50 }, (_, i) => ({ i, value: brQuestions[i].ans + 11, ms: 4000 }));
+  const wrongMark = markBrainingCompletion({ answers: allWrong, key, tolerance });
+  if (wrongMark.complete) fail('fifty wrong answers were accepted as a completed trial');
+  else ok(`fifty wrong answers → ${wrongMark.unresolved} unresolved, no boost minted`);
+
+  // The subtle one: get everything right except the last word on a single question. A run that
+  // answered 49 questions and gave up on the 50th must not mint a boost.
+  const oneShort = genuine.filter((a) => a.i !== 37).concat([{ i: 37, value: brQuestions[37].ans + 1, ms: 3000 }]);
+  const shortMark = markBrainingCompletion({ answers: oneShort, key, tolerance });
+  if (shortMark.complete) fail('a trial with one unresolved question was accepted');
+  else ok('one question left wrong → incomplete, however many were right');
+
+  // Right answer first, wrong answer after. The LAST word is what counts, so this did not finish.
+  const corruptedAfter = genuine.concat([{ i: 12, value: brQuestions[12].ans + 5, ms: 900 }]);
+  const afterMark = markBrainingCompletion({ answers: corruptedAfter, key, tolerance });
+  if (afterMark.complete) fail('a question answered right and then wrong was still counted complete');
+  else ok('right then wrong on the same question → incomplete, the last word is what counts');
+
+  // And the whole reason the completion check cannot stand alone: a cheater CAN compute fifty
+  // correct answers instantly. What stops them is the clock, so the two have to hold together.
+  const instantPerfect = Array.from({ length: 50 }, (_, i) => ({ i, value: brQuestions[i].ans, ms: 40 }));
+  if (!markBrainingCompletion({ answers: instantPerfect, key, tolerance }).complete) {
+    fail('the fixture is wrong — fifty correct answers should mark as complete');
+  } else {
+    ok('fifty instantly-computed correct answers DO mark complete — arithmetic is solvable');
+    caught('…and are refused on the clock instead', validateBrainingSubmission({
+      answers: instantPerfect, setSize: 50, claimedSec: 4,
+      issuedAt: ISSUED, submittedAt: ISSUED + 4200,
+    }), 'answers_impossible_in_window');
+  }
+
+  // The complete forgery, end to end: perfect answers, plausible per-question times, and a fast
+  // claimed time — submitted the instant the set was issued. This is what "I completed Braining"
+  // looks like when nobody did.
+  const forged = Array.from({ length: 50 }, (_, i) => ({ i, value: brQuestions[i].ans, ms: 3000 }));
+  caught('a fabricated 170s trial submitted 2s after issue', validateBrainingSubmission({
+    answers: forged, setSize: 50, claimedSec: 170,
+    issuedAt: ISSUED, submittedAt: ISSUED + 2000,
+  }), 'claimed_time_exceeds_wall_clock');
+
+  // The patient forgery: wait out a real window, then claim a world-class time from inside it.
+  // This is the one a determined cheater would actually try, and the claim/wall check is the
+  // only thing standing in its way.
+  caught('waiting 12 minutes, then claiming 170s', validateBrainingSubmission({
+    answers: forged, setSize: 50, claimedSec: 170,
+    issuedAt: ISSUED, submittedAt: ISSUED + 12 * 60 * 1000,
+  }), 'claimed_time_far_below_wall_clock');
+
+  // Which leaves exactly one way through, and it is not cheating: wait the time and claim it.
+  // The boost costs precisely what it costs an honest player, and the brain age reflects it.
+  const wall = 12 * 60 * 1000;
+  allowed('waiting 12 minutes and claiming 12 minutes — a boost, and a brain age to match',
+    validateBrainingSubmission({
+      answers: forged, setSize: 50, claimedSec: (wall - 3000) / 1000,
+      issuedAt: ISSUED, submittedAt: ISSUED + wall,
+    }));
+}
+
+// ═══ The Braining set expiry ═════════════════════════════════════════════════
+console.log('\nA slow Braining trial is not thrown away');
+{
+  const brQuestions = generateBrainingSet(2718281, 50);
+  const slow = [];
+  for (let i = 0; i < 50; i++) slow.push({ i, value: brQuestions[i].ans, ms: 20000 + ((i * 97) % 3000) });
+  // Seventeen minutes: past the Challenge expiry, well inside Braining's. The scale's worst
+  // bucket is "Over 10 min", so this is a real person having a hard time, not an attack.
+  const wall = 17 * 60 * 1000;
+  allowed('a 17-minute trial — past the Challenge expiry, inside Braining\'s', validateBrainingSubmission({
+    answers: slow, setSize: 50, claimedSec: (wall - 4000) / 1000,
+    issuedAt: ISSUED, submittedAt: ISSUED + wall,
+  }));
+  caught('a trial still unsubmitted after 46 minutes', validateBrainingSubmission({
+    answers: slow, setSize: 50, claimedSec: (BRAINING_SET_TTL_MS + 60000 - 4000) / 1000,
+    issuedAt: ISSUED, submittedAt: ISSUED + BRAINING_SET_TTL_MS + 60000,
+  }), 'set_expired');
+  // The Challenge expiry is unchanged by any of that.
+  caught('a Challenge set still unsubmitted after 16 minutes', validateChallengeSubmission({
+    answers: baseline, setSize: CHALLENGE_SET_SIZE,
+    issuedAt: ISSUED, submittedAt: ISSUED + CHALLENGE_SET_TTL_MS + 60000,
+  }), 'set_expired');
 }
 
 // ═══ Attack 5 — fishing and flooding ══════════════════════════════════════════

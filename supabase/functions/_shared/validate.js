@@ -26,7 +26,26 @@ import { CHALLENGE_DURATION_SEC } from './scoring.js';
 // How long an issued set stays playable. Past this it is assumed abandoned rather than in
 // progress, which is what stops sets being hoarded: you cannot pull a pile of them, solve them
 // at leisure, and submit them later.
-export const SET_TTL_MS = 15 * 60 * 1000;
+// It is MODE-AWARE, because the two modes have genuinely different honest durations.
+//
+// A Challenge run is sixty seconds and is submitted within a couple of minutes of being issued;
+// fifteen leaves generous room. A Braining trial is fifty questions with every wrong answer
+// corrected before moving on, and the brain-age scale's worst bucket is literally "Over 10 min" —
+// so a slow first-timer, or anyone who takes a phone call part-way, genuinely passes fifteen
+// minutes. Under one shared TTL their honest run expired and went unverified, which is the same
+// class of failure as the phone-call case above: it only ever punishes real players.
+//
+// Raising it for Braining gives nothing away, and the reason is worth stating because it is not
+// obvious. The expiry is not what secures this mode — the claimed-time-against-wall-clock check
+// is. A longer-lived set cannot buy a better result, because the claim still has to account for
+// very nearly the whole window the server watched; all it buys is the chance to finish. And the
+// client already holds the answers, having drawn them from the seed, so a set living longer
+// exposes nothing it did not expose in its first second.
+export const CHALLENGE_SET_TTL_MS = 15 * 60 * 1000;
+export const BRAINING_SET_TTL_MS = 45 * 60 * 1000;
+
+// The outer bound on any single answer's reported time, used before the mode is even considered.
+export const MAX_ANSWER_MS = BRAINING_SET_TTL_MS;
 
 // Beyond this a run is stored but flagged. A backgrounded phone genuinely can stretch a
 // 60-second game out, so this is generous — it is looking for a set that sat around, not for a
@@ -113,7 +132,7 @@ function checkAnswerShape(answers, setSize) {
   for (const a of answers) {
     if (!a || typeof a !== 'object') return reject('answer_malformed');
     if (!Number.isInteger(a.i) || a.i < 0 || a.i >= setSize) return reject('answer_index_out_of_range', a.i);
-    if (!Number.isFinite(a.ms) || a.ms < 0 || a.ms > SET_TTL_MS) return reject('answer_time_invalid', a.ms);
+    if (!Number.isFinite(a.ms) || a.ms < 0 || a.ms > MAX_ANSWER_MS) return reject('answer_time_invalid', a.ms);
     // A missing or non-numeric value is allowed through as a wrong answer rather than rejected:
     // the keypad cannot produce one, but a submission that lost a field should cost the player a
     // question, not the whole run.
@@ -138,7 +157,7 @@ export function validateChallengeSubmission({ answers, setSize, issuedAt, submit
 
   const wallMs = submittedAt - issuedAt;
   if (!Number.isFinite(wallMs) || wallMs < 0) return reject('wall_clock_invalid', wallMs);
-  if (wallMs > SET_TTL_MS) return reject('set_expired', wallMs);
+  if (wallMs > CHALLENGE_SET_TTL_MS) return reject('set_expired', wallMs);
 
   const playMs = answers.reduce((a, x) => a + x.ms, 0);
 
@@ -204,7 +223,7 @@ export function validateBrainingSubmission({ answers, setSize, claimedSec, issue
 
   const wallMs = submittedAt - issuedAt;
   if (!Number.isFinite(wallMs) || wallMs < 0) return reject('wall_clock_invalid', wallMs);
-  if (wallMs > SET_TTL_MS) return reject('set_expired', wallMs);
+  if (wallMs > BRAINING_SET_TTL_MS) return reject('set_expired', wallMs);
 
   if (!Number.isFinite(claimedSec) || claimedSec <= 0) return reject('claimed_time_invalid', claimedSec);
   const claimedMs = claimedSec * 1000;
@@ -231,4 +250,29 @@ export function validateBrainingSubmission({ answers, setSize, claimedSec, issue
   if (times.length >= UNIFORM_MIN_ANSWERS && stdev(times) < UNIFORM_STDEV_MS) flags.push('uniform_timing');
 
   return accept(flags);
+}
+
+// Did this Braining run actually finish?
+//
+// Braining's rule is that a wrong answer is corrected rather than counted against you, so the
+// only marking that means anything is whether the LAST word on each question was right. A
+// submission whose final answer to question 31 is wrong did not complete question 31, whatever
+// it claims about having reached the end.
+//
+// This lived inline in the Edge Function until Braining was wired, which quietly made it the one
+// rule in the whole design that no test could reach — every other decision sits in this file
+// precisely so check-anticheat.mjs can attack it. It is the rule standing between a fabricated
+// run and a 5% boost, so it is the last one that should have been sitting somewhere unreachable.
+//
+// `key` is the server's own answer key: [{a, o}, ...]. `answers` is what was submitted.
+export function markBrainingCompletion({ answers, key, tolerance }) {
+  const lastByIndex = new Map();
+  for (const a of answers) lastByIndex.set(a.i, a);
+
+  let unresolved = 0;
+  for (let i = 0; i < key.length; i++) {
+    const a = lastByIndex.get(i);
+    if (!a || !Number.isFinite(a.value) || Math.abs(a.value - key[i].a) >= tolerance) unresolved++;
+  }
+  return { complete: unresolved === 0, unresolved };
 }

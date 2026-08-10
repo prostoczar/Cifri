@@ -1100,6 +1100,33 @@ export function reducer(state, action) {
       return { ...state, db: { ...state.db, [diff]: { ...d, sessions } } };
     }
 
+    // The server has confirmed a Braining trial, some time after it was played.
+    //
+    // Same restraint as the Challenge equivalent: it records one fact and changes nothing else.
+    // In particular it does NOT grant the boost — `brBoostDay` was already set by the trial
+    // itself, on the device, because the boost has to work offline like every other game rule.
+    // What the server's own boost record does is decide whether the 5% is actually PAID into a
+    // stored score, which is a different question and one the client has no say in.
+    //
+    // So the two can legitimately disagree: an offline trial grants a local boost that the server
+    // will never honour. The player sees their boosted score exactly as before; the competitive
+    // record simply does not include a bonus nobody witnessed.
+    case 'BRAINING_ATTEMPT_VERIFIED': {
+      const { attemptId } = action;
+      const br = state.brState;
+      if (!attemptId || !br || !br.sessions) return state;
+
+      let found = false;
+      const sessions = br.sessions.map((sn) => {
+        if (found || sn.attemptId !== attemptId || sn.verified) return sn;
+        found = true;
+        return { ...sn, verified: true };
+      });
+      if (!found) return state;
+
+      return { ...state, brState: { ...br, sessions } };
+    }
+
     // Mirrors the reference's brFinish(): records the session, updates best time/age, credits
     // the unified streak, and collects achievement unlocks.
     case 'BRAINING_SESSION_COMPLETE': {
@@ -1143,7 +1170,7 @@ export function reducer(state, action) {
             ...br,
             // `ts` pairs with the one stamped on Challenge attempts: it is what lets a boosted
             // attempt be shown to have come after the trial that granted the boost.
-            sessions: [...sessions, { date: today, time: sec, age, real: true, ts: Date.now() }],
+            sessions: [...sessions, { date: today, time: sec, age, real: true, ts: Date.now(), attemptId: action.attemptId }],
             todayTime: sec, todayAge: age,
             bestTime, bestAge,
             prevDay: today, lastDay: today,
@@ -1159,7 +1186,7 @@ export function reducer(state, action) {
           }
           nextBr = {
             ...br,
-            sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now() }],
+            sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now(), attemptId: action.attemptId }],
             bestTime, bestAge,
           };
         }

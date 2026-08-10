@@ -37,11 +37,11 @@ const SUBMIT_TIMEOUT_MS = 10000;
 // Two retries, then silence. Deliberately short, and the reason is worth stating because it is
 // the one place this design gives something up:
 //
-// A question set expires fifteen minutes after it is issued. A submission that could not be sent
-// inside that window will NEVER be accepted, so persisting it to localStorage the way the attempt
-// log does would build an outbox that can only ever fail — the appearance of eventual delivery
-// with none of the substance. The expiry is what stops sets being hoarded and solved at leisure;
-// this is what that protection costs, and it is worth it.
+// A question set expires — fifteen minutes after issue for Challenge, forty-five for Braining.
+// A submission that could not be sent inside that window will NEVER be accepted, so persisting it
+// to localStorage the way the attempt log does would build an outbox that can only ever fail: the
+// appearance of eventual delivery with none of the substance. The expiry is what stops sets being
+// hoarded and solved at leisure; this is what that protection costs, and it is worth it.
 const RETRY_DELAYS_MS = [2000, 8000];
 
 // The player's token, or null if they are a guest. Read fresh each time rather than cached: a
@@ -92,12 +92,23 @@ async function callFunction(name, body, { token, timeoutMs }) {
 // Null is not an error state and needs no handling beyond "play locally": guests get it, players
 // with no signal get it, and a player whose request was simply slower than the countdown gets it.
 export async function issueChallengeSet(difficulty) {
+  return issueSet({ mode: 'challenge', difficulty });
+}
+
+// The same, for the day's counting Braining trial. Practice runs never come here: they record
+// nothing, so there is nothing about them to verify, and generating them locally is what keeps
+// the practice button instant.
+export async function issueBrainingSet() {
+  return issueSet({ mode: 'braining', difficulty: 'standard' });
+}
+
+async function issueSet({ mode, difficulty }) {
   const token = await accessToken();
   if (!token) return null; // a guest, which is not a failure
 
   const res = await callFunction(
     'issue-question-set',
-    { mode: 'challenge', difficulty, day: dayKey() },
+    { mode, difficulty, day: dayKey() },
     { token, timeoutMs: ISSUE_TIMEOUT_MS }
   );
   if (!res || res.status !== 200 || !res.body?.setId) {
@@ -120,6 +131,18 @@ export async function issueChallengeSet(difficulty) {
 // question_sets.result stores the verdict of the first submission, so a retry after a lost
 // response is answered with the original decision instead of being refused as a replay.
 export async function submitChallengeAttempt({ setId, answers }) {
+  return submitAttempt({ setId, answers });
+}
+
+// Braining additionally sends the time it claims to have taken, because for this mode the time IS
+// the result. The server checks it against the window it watched itself — see
+// validateBrainingSubmission — so claiming a fast one is the thing that cannot be done.
+export async function submitBrainingAttempt({ setId, answers, claimedSec }) {
+  return submitAttempt({ setId, answers, claimedSec });
+}
+
+async function submitAttempt(payload) {
+  const { setId, answers } = payload;
   if (!setId || !answers || !answers.length) return null;
 
   for (let attempt = 0; ; attempt++) {
@@ -128,7 +151,7 @@ export async function submitChallengeAttempt({ setId, answers }) {
 
     const res = await callFunction(
       'submit-attempt',
-      { setId, answers },
+      payload,
       { token, timeoutMs: SUBMIT_TIMEOUT_MS }
     );
 

@@ -23,6 +23,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFile } from 'node:fs/promises';
 import { createEngine } from '../supabase/functions/_shared/generator.js';
+import { applyBrainingBoost } from '../supabase/functions/_shared/scoring.js';
 import { scoreAttempt } from '../supabase/functions/_shared/scoring.js';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -316,6 +317,145 @@ console.log('\nThe recorded score cannot be edited afterwards');
     const unchanged = JSON.stringify((after || []).map((r) => r.score)) === JSON.stringify(before.map((r) => r.score));
     if (!unchanged) fail('the scores moved despite the writes being refused');
     else ok('the recorded scores are byte-identical after every attack');
+  }
+}
+
+// ═══ 9b. The boost, end to end ═══════════════════════════════════════════════
+//
+// The section this session exists for. Everything above proves a Challenge submission cannot
+// ASSERT a boost; this proves the only thing that can grant one is a Braining trial the server
+// itself accepted — and that a fabricated trial grants nothing.
+console.log('\nThe boost: earned by doing the work, and only that');
+{
+  const brQuestionsFor = (seed, total) => createEngine({ seed }).brainingSet(total);
+  const boostRows = async () => {
+    const { data } = await supabase.from('braining_boosts').select('*').eq('day', DAY);
+    return data || [];
+  };
+
+  if ((await boostRows()).length) {
+    fail('a boost already exists for the probe day — clean up before re-running, or this proves nothing');
+  } else {
+    ok('starting from no boost record at all');
+  }
+
+  // ── The forgery: claim a completed trial without completing one ────────────
+  const forgeSet = await issueOrNull('a fabricated Braining trial', 'standard', 'braining');
+  if (forgeSet) {
+    const q = brQuestionsFor(forgeSet.seed, forgeSet.setSize);
+    // Perfect answers — a cheater can compute these instantly, and that is not the defence.
+    // The defence is that the claimed time has to account for the window the server watched.
+    const perfect = Array.from({ length: forgeSet.setSize }, (_, i) => ({ i, value: q[i].ans, ms: 3000 }));
+    await expectReject('50 perfect answers claiming 170s, submitted at once',
+      { setId: forgeSet.setId, answers: perfect, claimedSec: 170 }, 'claimed_time_exceeds_wall_clock');
+
+    const after = await boostRows();
+    if (after.length) fail('A FABRICATED TRIAL MINTED A BOOST');
+    else ok('the rejected trial minted no boost — the record is still empty');
+  }
+
+  // ── An incomplete trial: right up to the last question ────────────────────
+  const partialSet = await issueOrNull('an unfinished Braining trial', 'standard', 'braining');
+  if (partialSet) {
+    const q = brQuestionsFor(partialSet.seed, partialSet.setSize);
+    const nearly = Array.from({ length: partialSet.setSize }, (_, i) => ({
+      i, value: i === partialSet.setSize - 1 ? q[i].ans + 3 : q[i].ans, ms: 300,
+    }));
+    await new Promise((r) => setTimeout(r, 6000));
+    await expectReject('49 of 50 right, the last one wrong',
+      { setId: partialSet.setId, answers: nearly, claimedSec: 6 }, undefined);
+
+    const after = await boostRows();
+    if (after.length) fail('an unfinished trial minted a boost');
+    else ok('an unfinished trial minted no boost either');
+  }
+
+  // ── A Challenge run with no boost on record ───────────────────────────────
+  const before = await issueOrNull('a Challenge run before any Braining', 'easy');
+  if (before) {
+    const q = questionsFor(before.seed, 'easy', before.setSize);
+    const answers = honestAnswers(q, 10);
+    await playOut(answers);
+    const res = await submit({ setId: before.setId, answers });
+    if (!res.body?.ok) fail(`an honest Challenge run was rejected: ${JSON.stringify(res.body)}`);
+    else if (res.body.boosted) fail('A CHALLENGE RUN WAS BOOSTED WITH NO BRAINING ON RECORD');
+    else ok(`no boost on record → score ${res.body.score} paid unboosted (raw ${res.body.rawScore})`);
+  }
+
+  // ── The genuine article ───────────────────────────────────────────────────
+  //
+  // Answered correctly AND waited out. This is the only way through, and it is not a loophole —
+  // it is the price an honest player pays too.
+  const realSet = await issueOrNull('a genuine Braining trial', 'standard', 'braining');
+  let boostEarned = false;
+  if (realSet) {
+    const q = brQuestionsFor(realSet.seed, realSet.setSize);
+    const answers = [];
+    for (let i = 0; i < realSet.setSize; i++) {
+      if (i % 13 === 0) answers.push({ i, value: q[i].ans + 2, ms: 1200 });
+      answers.push({ i, value: q[i].ans, ms: 1500 + ((i * 137) % 900) });
+    }
+    // Wait out a plausible trial. Kept short on purpose — the probe should not take four minutes —
+    // but long enough that the claim genuinely sits inside the window the server watched.
+    const waited = 40000;
+    await new Promise((r) => setTimeout(r, waited));
+    const res = await submit({ setId: realSet.setId, answers, claimedSec: Math.round(waited / 1000) + 3 });
+    if (!res.body?.ok) {
+      fail(`a genuine Braining trial was rejected: ${JSON.stringify(res.body)}`);
+    } else {
+      ok(`a genuine trial accepted: ${res.body.timeSec}s, brain age ${res.body.brainAge}`);
+      const rows = await boostRows();
+      if (!rows.length) fail('a genuine trial did NOT create the boost record');
+      else if (rows[0].consumed_at) fail('the new boost arrived already consumed');
+      else { boostEarned = true; ok('the boost record now exists, unconsumed'); }
+    }
+  }
+
+  // ── Now the boost is actually paid ────────────────────────────────────────
+  if (boostEarned) {
+    const boostedSet = await issueOrNull('the Challenge run that spends it', 'easy');
+    if (boostedSet) {
+      const q = questionsFor(boostedSet.seed, 'easy', boostedSet.setSize);
+      const answers = honestAnswers(q, 12);
+      await playOut(answers);
+      const res = await submit({ setId: boostedSet.setId, answers });
+      if (!res.body?.ok) fail(`the boosted run was rejected: ${JSON.stringify(res.body)}`);
+      else if (!res.body.boosted) fail('the earned boost was NOT paid');
+      else if (res.body.score !== applyBrainingBoost(res.body.rawScore)) {
+        fail(`boosted score ${res.body.score} is not round(${res.body.rawScore} x 1.05)`);
+      } else {
+        ok(`the boost was paid: raw ${res.body.rawScore} → ${res.body.score}, exactly round(raw x 1.05)`);
+      }
+    }
+
+    // ── And spent only once ─────────────────────────────────────────────────
+    const secondSet = await issueOrNull('a second Challenge run the same day', 'easy');
+    if (secondSet) {
+      const q = questionsFor(secondSet.seed, 'easy', secondSet.setSize);
+      const answers = honestAnswers(q, 10);
+      await playOut(answers);
+      const res = await submit({ setId: secondSet.setId, answers });
+      if (!res.body?.ok) fail(`the second run was rejected: ${JSON.stringify(res.body)}`);
+      else if (res.body.boosted) fail('THE SAME BOOST WAS PAID TWICE');
+      else ok('the second run of the day is unboosted — the boost is spent, and stays spent');
+    }
+
+    // ── A second Braining trial does not re-grant ───────────────────────────
+    const retrySet = await issueOrNull('a second Braining trial the same day', 'standard', 'braining');
+    if (retrySet) {
+      const q = brQuestionsFor(retrySet.seed, retrySet.setSize);
+      const answers = Array.from({ length: retrySet.setSize }, (_, i) => ({ i, value: q[i].ans, ms: 1400 }));
+      const waited = 40000;
+      await new Promise((r) => setTimeout(r, waited));
+      const res = await submit({ setId: retrySet.setId, answers, claimedSec: Math.round(waited / 1000) + 3 });
+      if (res.body?.ok) {
+        const rows = await boostRows();
+        if (rows.length && !rows[0].consumed_at) fail('a second trial RESET the spent boost');
+        else ok('a second trial the same day leaves the spent boost spent');
+      } else {
+        ok(`a second trial the same day → ${res.body?.code} (nothing re-granted)`);
+      }
+    }
   }
 }
 

@@ -22,7 +22,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
-import { validateChallengeSubmission, validateBrainingSubmission } from '../_shared/validate.js';
+import { validateChallengeSubmission, validateBrainingSubmission, markBrainingCompletion } from '../_shared/validate.js';
 import { scoreAttempt, applyBrainingBoost, BRAINING_TOLERANCE } from '../_shared/scoring.js';
 import { brAge } from '../_shared/braining.js';
 
@@ -124,19 +124,15 @@ Deno.serve(async (req) => {
 
   // ── 3, 4, 5 ─────────────────────────────────────────────────────────────────
   if (set.mode === 'braining') {
-    // Braining's rule is that every question must end correct — a wrong answer is corrected
-    // rather than counted against you. So the marking that matters is whether the LAST attempt
-    // at each question was right. A submission whose last word on a question is wrong did not
-    // finish it, whatever the client claims about having reached the end.
-    const lastByIndex = new Map<number, { value: number; ms: number }>();
-    for (const a of answers) lastByIndex.set(a.i, a);
-    let unresolved = 0;
-    for (let i = 0; i < set.set_size; i++) {
-      const a = lastByIndex.get(i);
-      if (!a || !Number.isFinite(a.value) || Math.abs(a.value - key[i].a) >= BRAINING_TOLERANCE) unresolved++;
-    }
-    if (unresolved > 0) {
-      return json(await remember({ ok: false, code: 'braining_unresolved_questions', recorded: false }), 422);
+    // Every question has to end correct. The rule lives in _shared/validate.js rather than here,
+    // like every other decision in this function — it is the one standing between a fabricated
+    // run and a 5% Challenge boost, so it is the last one that should be unreachable by a test.
+    const completion = markBrainingCompletion({ answers, key, tolerance: BRAINING_TOLERANCE });
+    if (!completion.complete) {
+      return json(await remember({
+        ok: false, code: 'braining_unresolved_questions',
+        unresolved: completion.unresolved, recorded: false,
+      }), 422);
     }
 
     const sec = Math.round(claimedSec as number);

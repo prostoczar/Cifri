@@ -35,7 +35,13 @@ logic rather than a copy of it.
 | `check:braining` | brain-age and the Sharper Every Day tiers |
 | `check:achievements` | a catalogue row that renders wrong, or unlocks a reward it should not |
 | `check:triggers` | an achievement wired to the wrong number, or firing on a near-miss |
+| `check:achievements-verified` | an achievement the Braining boost could buy, or one that needs the network |
 | `check:invariant` | the three places a day's score is computed disagreeing |
+
+`npm run probe:anticheat` is the live counterpart to `check:anticheat`: it attacks the DEPLOYED
+functions with a real account. It needs credentials in the environment and a throwaway account —
+never a real one, since it records real games. Run it after any change to `_shared/`, the Edge
+Functions, or the client wiring; the headless suite cannot prove the rules are wired up.
 
 `supabase/verification/*.sql` are the database-side RLS checks. They are **run by hand** in the
 Supabase SQL editor, not by `npm run check`, and they need a real account to defend.
