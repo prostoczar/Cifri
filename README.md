@@ -171,6 +171,31 @@ via the API (the "update own profile" policy covers every column), so a real con
 needed at launch; and scores arrive from the device and are trusted, which matters once they rank
 players against each other.
 
+### Where auth emails send people back to
+
+Every Supabase email carrying a link — password reset, signup confirmation, email change — is told
+where to land by `lib/authRedirect.js`, which returns the origin the request was made from. Nothing
+is written down, so the same code is correct on a laptop, on a phone over Wi-Fi, on a Vercel
+preview, and on the real domain once it is live. Do not replace it with a fixed URL.
+
+The other half is in the Supabase dashboard, under **Authentication → URL Configuration**, and it
+is the half that fails quietly. A `redirectTo` the project does not recognise is not rejected — it
+is silently swapped for the **Site URL**, so a perfectly correct address computed in the app still
+lands somewhere else. That is what used to happen: the allowlist knew only the dev machine, so a
+reset requested from the deployed site fell back to a Site URL of `http://localhost:3000` and sent
+real people to a dead address on a computer they do not own.
+
+| Setting | Value |
+|---|---|
+| Site URL | `https://cifri-1cju.vercel.app` — the fallback, and the *only* entry to revisit at cutover |
+| Redirect URLs | `http://localhost:5173/**`, `http://192.168.1.25:5173/**`, `http://macbook-air-van-bogdan.local:5173/**`, `https://cifri-1cju.vercel.app/**`, `https://cifri-*.vercel.app/**`, `https://trycifri.com/**`, `https://www.trycifri.com/**` |
+
+`https://cifri-*.vercel.app/**` is there because preview deployments get a fresh hostname every
+time and could never be listed one by one. `trycifri.com` is listed before it serves the rewrite so
+that the cutover is a DNS change and nothing else. A new dev machine — or a new Wi-Fi network, which
+changes the `192.168.*` address — needs its address added here, or resets asked for from it will
+land on the Site URL instead.
+
 ### Cross-device restore
 
 The server's copy normally wins when an account loads — that is what makes picking up your history

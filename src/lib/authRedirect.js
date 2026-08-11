@@ -1,0 +1,35 @@
+// Where an emailed auth link should send the player back to.
+//
+// Every Supabase email that contains a link — password reset, signup confirmation, email change —
+// needs to be told where to land. This is the one place that decides, so the three of them cannot
+// drift apart and start sending people to different addresses.
+//
+// The value is DERIVED, never written down. The app has no permanent home yet: it is opened from
+// a laptop's dev server, from a phone on the same Wi-Fi, from a Vercel preview whose hostname
+// changes with every deployment, and eventually from trycifri.com. Any address hardcoded here —
+// or put in an env var someone has to remember to set — would be wrong for all but one of those,
+// and wrong SILENTLY: the email still arrives and the link still works, it just lands somewhere
+// the person holding the phone cannot open. The cutover to the real domain therefore needs no
+// change to this file at all.
+//
+// window.location.origin is the right answer in every one of those cases for one reason: the
+// reset was asked for FROM the page the player is looking at, so that page is by definition an
+// address their browser can reach.
+//
+// The remaining half of this lives in Supabase, not here. An address that is not on the project's
+// Redirect URLs allowlist is not refused — it is quietly swapped for the project's Site URL. So a
+// correct value computed here still lands in the wrong place if the allowlist has not been told
+// about it, and nothing in the app can detect that. The README records the list that has to be
+// kept in step, under "Where auth emails send people back to".
+
+export function authRedirectUrl() {
+  // Returning undefined rather than a guess: supabase-js treats a missing redirect the same as no
+  // option at all and falls back to the Site URL, which is the safest thing to do off a browser.
+  if (typeof window === 'undefined') return undefined;
+
+  // Vite allows the app to be served from a sub-path (BASE_URL), and dropping it would send the
+  // player to the domain root, where the app is not. It is '/' today, which makes this line a
+  // no-op — the point is that it stays correct if that ever changes.
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+  return window.location.origin + base;
+}

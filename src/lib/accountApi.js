@@ -7,6 +7,7 @@
 // Nothing here ever throws for an expected failure — only genuinely unexpected ones bubble up.
 
 import { supabase, probeClient } from './supabaseClient.js';
+import { authRedirectUrl } from './authRedirect.js';
 import { toSyncPayload, fromSyncPayload } from './syncedState.js';
 
 export const ERR = {
@@ -115,6 +116,11 @@ export async function signUpWithProfile({ email, password, username, fullName, a
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      // Confirmation is switched off in the project today, so this link is never sent and this
+      // line does nothing. It is here because the day it IS switched on is not the day to
+      // remember that the confirmation email had no redirect and was quietly using whatever the
+      // Site URL happened to be.
+      options: { emailRedirectTo: authRedirectUrl() },
     });
 
     if (error) {
@@ -329,7 +335,12 @@ export async function updateProfile({ username, fullName, avatar }) {
 // the change only takes effect once it is clicked. The caller surfaces that as a "check your
 // inbox" line under the field.
 export async function requestEmailChange(newEmail) {
-  const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+  // This one is sent for real, and until now it carried no redirect at all — so the link in it
+  // went wherever the project's Site URL pointed, regardless of where the player was standing.
+  const { error } = await supabase.auth.updateUser(
+    { email: newEmail.trim() },
+    { emailRedirectTo: authRedirectUrl() },
+  );
   if (error) return { ok: false, error: mapAuthError(error) };
   return { ok: true, pending: true };
 }
@@ -340,11 +351,11 @@ export async function requestEmailChange(newEmail) {
 // "If an account exists for that email…", so this matches the copy that is already there.
 
 export async function sendPasswordReset(email) {
-  // Land back on the app's own origin and nothing more. Supabase appends the recovery token to
+  // Land back on the app's own address and nothing more. Supabase appends the recovery token to
   // this URL itself, so adding a path or hash of our own here only risks colliding with it —
   // ResetPasswordScreen is opened by detecting that token, not by a URL we chose.
   await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: window.location.origin,
+    redirectTo: authRedirectUrl(),
   });
   return { ok: true };
 }
