@@ -214,7 +214,8 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
         value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
       />
-      <div className="np">
+      {/* ph-no-capture — see the note on the identical keypad in ChallengeGameScreen. */}
+      <div className="np ph-no-capture">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <button key={n} className="k" onClick={() => padInput(n)}>{n}</button>
         ))}

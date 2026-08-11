@@ -38,8 +38,13 @@ export default function AccountCreateScreen({
   const pwOk = password.length >= 6;
   const canSubmit = nameOk && emailOk && pwOk && !busy;
 
+  // ph-no-capture puts this whole screen out of reach of analytics autocapture. Every account
+  // screen carries it: these are the only surfaces in the app where a person types something
+  // about themselves — an email address, a real name, a password — and none of it is anything
+  // analytics has a use for. Blocking at the container is deliberate rather than field by field,
+  // so a field added later is covered by default instead of by remembering.
   return (
-    <div className={'acct-screen' + (open ? ' on' : '')}>
+    <div className={'acct-screen ph-no-capture' + (open ? ' on' : '')}>
       <div className="acct-title">{t('acct_title')}</div>
       <div className="acct-sub">{t('acct_sub')}</div>
 

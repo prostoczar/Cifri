@@ -97,8 +97,9 @@ export default function EditAccountScreen({
     setPwDone(true);
   }
 
+  // ph-no-capture — see the note in AccountCreateScreen. Nothing typed here reaches analytics.
   return (
-    <div className={'acct-screen' + (open ? ' on' : '')}>
+    <div className={'acct-screen ph-no-capture' + (open ? ' on' : '')}>
       <div className="acct-title">{t('ea_title')}</div>
       <div className="acct-sub">{t('ea_sub')}</div>
 

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { dayKey, yesterday, addDaysStr, dateStrToDate, daysBetweenKeys } from './dates.js';
-import { ACHIEVEMENTS, streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
+import { ACHIEVEMENTS, earnedCount, streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
 import { applyBrainingBoost } from './scoring.js';
 import { brainAge20Count, isSharperEveryDay } from './braining.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
@@ -8,6 +8,7 @@ import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
 import { clearBaseline, fingerprint, readBaseline, writeBaseline } from '../lib/syncBaseline.js';
 import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
+import { identifyPlayer, resetIdentity, setPlayerContext } from '../lib/analytics.js';
 
 // Remembers which account has already had its full history projected into daily_results, so the
 // backfill runs once per account rather than on every app start.
@@ -1325,6 +1326,29 @@ export function AppStateProvider({ children }) {
     }
   }, [state]);
 
+  // The context every analytics event is stamped with. Read-only over state the reducer has
+  // already settled, and deliberately kept to values that describe WHERE a player is rather than
+  // who they are — nothing here is personal, and the account's own fields (username, email) are
+  // excluded on purpose.
+  //
+  // Registered once per change rather than passed at each of the ~30 capture sites, because a
+  // property that has to be remembered thirty times is a property that will be forgotten once.
+  const achievementsUnlocked = earnedCount(state.milestones);
+  useEffect(() => {
+    setPlayerContext({
+      is_guest: !state.acctCreated,
+      lang: state.settings.lang || 'en',
+      dark_mode: !!state.settings.dark,
+      streak: state.streak || 0,
+      best_streak_ever: state.bestStreakEver || 0,
+      achievements_unlocked: achievementsUnlocked,
+      days_since_first_open: state.firstOpenDate ? daysBetweenKeys(state.firstOpenDate, dayKey()) : 0,
+    });
+  }, [
+    state.acctCreated, state.settings.lang, state.settings.dark,
+    state.streak, state.bestStreakEver, achievementsUnlocked, state.firstOpenDate,
+  ]);
+
   // ── Account sync ─────────────────────────────────────────────────────────────
   //
   // `ready` gates uploading. It is false until we know the server's copy, which is what stops
@@ -1408,7 +1432,11 @@ export function AppStateProvider({ children }) {
       sync.current.uid = uid;
       // From here, attempts belong to this account. Set immediately rather than waiting for the
       // bootstrap effect below, so nothing logged during startup is misattributed as guest data.
-      if (uid) setLogOwner(uid);
+      // Analytics identity rides along for the identical reason.
+      if (uid) {
+        setLogOwner(uid);
+        identifyPlayer(uid);
+      }
     }
 
     getSession().then((session) => {
@@ -1421,8 +1449,11 @@ export function AppStateProvider({ children }) {
         sync.current.ready = false;
         sync.current.lastPushed = null;
         // Anything played from now on is guest data again. Rows already queued keep the previous
-        // owner, so they can never be handed to whoever signs in next.
+        // owner, so they can never be handed to whoever signs in next. resetIdentity() is the
+        // same guarantee for analytics: a fresh anonymous id, so the next guest on this device
+        // cannot be merged into the account that just left.
         setLogOwner(null);
+        resetIdentity();
         bootstrap.current.doneFor = null;
         sync.current.uid = null;
         clearBaseline();
@@ -1513,6 +1544,9 @@ export function AppStateProvider({ children }) {
         if (!uid) return;
         sync.current.uid = uid;
         setLogOwner(uid);
+        // The moment a signup's guest history reaches the account is also the moment its analytics
+        // history should. Idempotent, so the startup path above having already run is harmless.
+        identifyPlayer(uid);
 
         // Everything queued on this device, including every question answered as a guest before
         // signing up — this is the only moment that history can reach an account.

@@ -74,7 +74,12 @@ export default function AchievementPopup({ queue, onDone, guestConvoStarted, acc
             // Stop this from also bubbling up and dismissing the popup, then clear anything left
             // in the queue so no leftover card is waiting behind the account screen.
             e.stopPropagation();
-            onCreateAccount();
+            // Which card was on screen when the offer was taken. The dedicated first-streak
+            // prompt is the one the whole conversion flow is built around, so it is reported
+            // under its own name rather than lumped in with the achievements — it is not one
+            // (see the catalogue's note on row 43), and the difference is the entire question
+            // "does the streak moment convert better than a later milestone?".
+            onCreateAccount(card.key ? 'achievement_cta' : 'streak_lit', card.key || null);
           }}
         >
           {t('create_account')}

@@ -31,8 +31,9 @@ export default function ForgotPasswordScreen({ open, prefillEmail, onSubmit, onC
     setSent(true);
   }
 
+  // ph-no-capture — see the note in AccountCreateScreen. Nothing typed here reaches analytics.
   return (
-    <div className={'acct-screen' + (open ? ' on' : '')}>
+    <div className={'acct-screen ph-no-capture' + (open ? ' on' : '')}>
       {!sent ? (
         <div>
           <div className="acct-title">{t('fp_title')}</div>

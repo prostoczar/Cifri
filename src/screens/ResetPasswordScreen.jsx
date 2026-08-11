@@ -46,8 +46,9 @@ export default function ResetPasswordScreen({ open, onDone }) {
     setDone(true);
   }
 
+  // ph-no-capture — see the note in AccountCreateScreen. Nothing typed here reaches analytics.
   return (
-    <div className={'acct-screen' + (open ? ' on' : '')}>
+    <div className={'acct-screen ph-no-capture' + (open ? ' on' : '')}>
       {!done ? (
         <div>
           <div className="acct-title">{t('rp_title')}</div>

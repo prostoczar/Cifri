@@ -54,7 +54,9 @@ export default function BrainingGameScreen({ game, onShowQuit }) {
         value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submitAnswer(); }}
       />
-      <div className="np">
+      {/* ph-no-capture — see the note on the identical keypad in ChallengeGameScreen. Autocapture
+          would otherwise send each digit tapped as element text. */}
+      <div className="np ph-no-capture">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <button key={n} className="k" onClick={() => padInput(n)}>{n}</button>
         ))}

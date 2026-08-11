@@ -34,8 +34,9 @@ export default function LoginScreen({ open, busy, onSubmit, onClose, onForgotPas
     if (!res.ok) setError(t(res.messageKey || 'login_error'));
   }
 
+  // ph-no-capture — see the note in AccountCreateScreen. Nothing typed here reaches analytics.
   return (
-    <div className={'acct-screen' + (open ? ' on' : '')}>
+    <div className={'acct-screen ph-no-capture' + (open ? ' on' : '')}>
       <div className="acct-title">{t('login_title')}</div>
       <div className="acct-sub">{t('login_sub')}</div>
 

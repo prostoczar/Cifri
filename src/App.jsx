@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AppStateProvider, useAppState, chDoneToday, brDoneToday } from './store/AppStateContext.jsx';
+import {
+  AppStateProvider, useAppState, chDoneToday, brDoneToday, hasMeaningfulProgress,
+} from './store/AppStateContext.jsx';
 import { useI18n } from './store/useI18n.js';
 import { useChallengeGame } from './hooks/useChallengeGame.js';
 import { useBrainingGame } from './hooks/useBrainingGame.js';
 import { useSwipeTabs, TAB_ORDER } from './hooks/useSwipeTabs.js';
 import { diffLabel, engineFor } from './store/questionEngine.js';
-import { getYestChallengeScore, getTodayChallengeScore } from './store/selectors.js';
+import {
+  getYestChallengeScore, getTodayChallengeScore, countingSessions, todaySessionsFor, dayAverage,
+} from './store/selectors.js';
+import { ACHIEVEMENT_BY_KEY, earnedCount } from './store/achievements.js';
+import { track } from './lib/analytics.js';
 import { brAge, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
-import { dayKey, dateStrToDate } from './store/dates.js';
+import { dayKey, dateStrToDate, daysBetweenKeys } from './store/dates.js';
 import {
   changePassword, deleteAccount, errorKey, fetchAccount, onAuthChange, requestEmailChange,
   sendPasswordReset, signInWithIdentifier, signOut, signUpWithProfile, updateProfile,
@@ -143,6 +149,68 @@ function AppShell() {
   const soundOnRef = useRef(soundOn);
   soundOnRef.current = soundOn;
 
+  // ── Analytics ───────────────────────────────────────────────────────────────
+  //
+  // Events are captured HERE rather than in the reducer, and that placement is a rule rather
+  // than a convenience. The reducer holds every game rule and is driven directly by the scripts
+  // in scripts/; a `case` that fired a network call would stop being a pure function of its
+  // inputs, and `npm run check` would start emitting events into the real project. Everything
+  // below hangs off a callback or reads state the reducer has already settled.
+
+  // Which conversion surface opened the account screen. A ref because nothing renders from it and
+  // it must survive the screen being open without causing a re-render of it.
+  const convSourceRef = useRef({ source: 'unknown', achievementKey: null });
+
+  // How the player got to the screen they are now on — tapping the nav, swiping between tabs, or
+  // neither (a game flow moving them along). "Do people find the tabs by swiping?" is otherwise
+  // unanswerable: both routes end in the same setScreen call.
+  const navViaRef = useRef('auto');
+
+  // One event per card. The catalogue is consulted for the readable name and rarity so charts do
+  // not have to be read as 59 opaque keys — but `key` is what identifies it, because CLAUDE.md
+  // says those are permanent and analytics must not invent a second identifier that could drift.
+  const trackUnlocked = useCallback((list, milestones) => {
+    for (const card of list || []) {
+      // Two card shapes exist (see AchievementPopup): a catalogue `{ key }`, and the two ad-hoc
+      // cards that have no catalogue row — the streak-lit prompt, and streaks past 365 which keep
+      // celebrating forever. The ad-hoc pair are given stable synthetic keys rather than dropped:
+      // streak-lit in particular is the centre of the whole conversion funnel.
+      const key = card.key
+        || (card.nameKey === 'ms_streaklit_name' ? 'streak_lit' : 'streak_beyond_catalogue');
+      const ach = ACHIEVEMENT_BY_KEY[key];
+      track('achievement_unlocked', {
+        key,
+        name_en: ach ? ach.en.name : null,
+        rarity: ach ? ach.rarity : null,
+        achievement_mode: ach ? ach.mode : null,
+        counts_towards_total: !!ach,
+        total_unlocked: earnedCount(milestones),
+      });
+    }
+  }, []);
+
+  // What this run did to the day's average — the payoff question of the whole averaging model,
+  // and the one thing about a replay that cannot be reconstructed after the fact.
+  //
+  // Read back off the db the reducer has already written, where the run just played is the last
+  // counting session of the day. Deliberately not recomputed from the session summary: CLAUDE.md
+  // counts the places a day's score is derived and warns about them disagreeing, and analytics
+  // must not quietly become another one.
+  function challengeAverageMove(diff) {
+    if (!diff) return null;
+    const counted = countingSessions(todaySessionsFor(state.db, diff));
+    if (!counted.length) return null;
+    const after = dayAverage(counted);
+    const before = counted.length > 1 ? dayAverage(counted.slice(0, -1)) : null;
+    return {
+      attempt_number_today: counted.length,
+      is_replay: counted.length > 1,
+      day_average_after: after,
+      day_average_before: before,
+      day_average_delta: before === null ? null : after - before,
+    };
+  }
+
   // Apply dark mode + font size to <body>, matching applyTheme()/applyFontSize().
   useEffect(() => {
     document.body.classList.toggle('dark', !!state.settings.dark);
@@ -184,6 +252,7 @@ function AppShell() {
   useEffect(() => {
     const r = state._lastAmbientUnlocked;
     if (!r || r.reqId !== pendingAmbientReqId.current) return;
+    trackUnlocked(r.unlocked, state.milestones);
     if (r.unlocked && r.unlocked.length) setAmbientAchievementQueue(r.unlocked);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state._lastAmbientUnlocked]);
@@ -283,6 +352,30 @@ function AppShell() {
     setResultData(r);
     setAchievementQueue(r.unlocked || []);
     setScreen('result');
+
+    // Reported from here rather than from onGameEnd because the reducer has now run: the db holds
+    // this session, so the day's average — before and after — is a fact to be read rather than a
+    // number to be predicted.
+    const total = r.correct + r.wrong;
+    track('game_completed', {
+      mode: r.origin === 'practice' ? 'practice' : 'challenge',
+      difficulty: r.diff || null,
+      is_practice: !!r.isPrac,
+      correct: r.correct,
+      wrong: r.wrong,
+      questions_answered: total,
+      accuracy_pct: total ? Math.round((r.correct / total) * 100) : 0,
+      // Both numbers, always. `raw_score` is what was earned and `score` is what the day counted;
+      // they differ only on the one boosted run a day, and `boost_applied` says which that was.
+      // Reporting only the boosted figure would make the boost invisible to the analysis that
+      // exists to check the boost.
+      raw_score: r.rawScore,
+      score: r.score,
+      boost_applied: !!r.boosted,
+      is_new_best: !!r.isNewBest,
+      ...challengeAverageMove(r.isPrac ? null : r.diff),
+    });
+    trackUnlocked(r.unlocked, state.milestones);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state._lastSessionResult]);
 
@@ -364,6 +457,21 @@ function AppShell() {
     setBrResultData(r);
     setBrAchievementQueue(r.unlocked || []);
     setScreen('br-result');
+
+    // A counting trial is also the moment the Challenge boost is granted, so this event doubles as
+    // "boost earned". There is deliberately no separate event for that: the boost is spent on a
+    // Challenge run that reports `boost_applied`, so earned-versus-unspent already falls out as a
+    // funnel between the two, and a dedicated pair would be a second way to say the same thing.
+    track('game_completed', {
+      mode: 'braining',
+      is_practice: !!r.isPrac,
+      duration_sec: Math.round(r.sec),
+      brain_age: r.age,
+      is_first_ever: !!r.isFirst,
+      is_personal_best: !!r.isPR,
+      grants_boost: !r.isPrac,
+    });
+    trackUnlocked(r.unlocked, state.milestones);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state._lastBrResult]);
 
@@ -371,6 +479,7 @@ function AppShell() {
   const brDone = brDoneToday(state.brState);
 
   const handleSelectTab = useCallback((tab) => {
+    navViaRef.current = 'tap';
     setActiveTab(tab);
     setScreen(tab);
     // Re-key the screen so the .tab-fade-in animation replays on every switch, matching
@@ -384,6 +493,7 @@ function AppShell() {
   const handleSwipeTab = useCallback(
     (tab, dir) => {
       if (slide) return; // already animating
+      navViaRef.current = 'swipe';
       // Start from the top, the same place tapping a nav icon leaves you. Without this the
       // scroll offset carries into a screen of a different height and the page appears to jump.
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
@@ -456,6 +566,56 @@ function AppShell() {
     onSwitchTab: handleSwipeTab,
   });
 
+  // ── Screens ─────────────────────────────────────────────────────────────────
+  //
+  // A custom event rather than a $pageview, because this app has no router: the address bar never
+  // changes, so PostHog's automatic pageview fires once on load and never again. Synthesising one
+  // per screen was rejected — they would all carry the identical URL, and would corrupt bounce
+  // rate and session length by looking like navigation that never happened.
+  useEffect(() => {
+    track('screen_viewed', { screen, via: navViaRef.current });
+    navViaRef.current = 'auto'; // game-flow transitions are neither a tap nor a swipe
+  }, [screen]);
+
+  // ── Streak ──────────────────────────────────────────────────────────────────
+  //
+  // A break has no callback to hang off: the reducer notices it inside CHECK_STREAK_BREAK, which
+  // can fire from the midnight timer with nobody touching the screen. So it is read off a state
+  // transition instead — a previous-value ref compared each render. This notices; it decides
+  // nothing and changes nothing.
+  const prevStreakRef = useRef(null);
+  useEffect(() => {
+    const prev = prevStreakRef.current;
+    prevStreakRef.current = {
+      streak: state.streak || 0,
+      pendingRestore: state.pendingRestore,
+      creditedForDay: state.streakCreditedForDay,
+    };
+    if (!prev) return; // first render: nothing to compare against, and nothing has happened
+
+    // The reducer sets pendingRestore at the same moment it zeroes the streak, so this is exactly
+    // the break. `restore_offered` doubles as "the restore modal was shown" — it is the same
+    // condition the modal itself renders on, so a separate shown-event would say nothing new.
+    if (!prev.pendingRestore && state.pendingRestore) {
+      track('streak_broken', {
+        broken_value: state.pendingRestore.brokenValue,
+        restore_offered: !!state.pendingRestore.availableAtBreak,
+      });
+    }
+
+    // The day banked. `streakCreditedForDay` moving on is the reducer's own definition of that,
+    // so this reports the rule rather than a second guess at it.
+    if (state.streakCreditedForDay !== prev.creditedForDay && (state.streak || 0) > prev.streak) {
+      track('streak_credited', {
+        streak_length: state.streak,
+        // Either mode earns the day now; this says which one actually did it today.
+        via: chDoneToday(state.db) ? 'challenge' : 'braining',
+        is_new_best: (state.streak || 0) >= (state.bestStreakEver || 0),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.streak, state.pendingRestore, state.streakCreditedForDay]);
+
   // No daily cap and no first-trial guard: Challenge can be started as many times as the player
   // wants, and each run is folded into today's average. (Braining keeps its own guard, in
   // handleStartBraining below — that mode is unchanged.)
@@ -468,6 +628,16 @@ function AppShell() {
   // not a guarantee, and the guarantee that matters is that the game starts on time whatever the
   // network is doing.
   function startChallengeCountdown(diff) {
+    // Counted before the run exists, so this is how many counting runs the day already had.
+    const priorToday = countingSessions(todaySessionsFor(state.db, diff)).length;
+    track('game_started', {
+      mode: 'challenge',
+      difficulty: diff,
+      is_practice: false,
+      is_replay: priorToday > 0,
+      attempt_number_today: priorToday + 1,
+    });
+
     pendingSetRef.current = null;
     const token = ++setRequestRef.current;
 
@@ -511,6 +681,20 @@ function AppShell() {
       count: pracCfg.count,
       dm: 1.0,
     };
+    // The Practice tab's settings are the interesting part of this event: they say which
+    // operations people actually choose to drill, which no other mode can reveal.
+    track('game_started', {
+      mode: 'practice',
+      is_practice: true,
+      ops: pracCfg.ops,
+      digits: pracCfg.digits,
+      terms: pracCfg.terms,
+      allow_negative: pracCfg.neg,
+      allow_decimal: pracCfg.dec,
+      length_mode: pracCfg.mode,
+      duration_min: pracCfg.mode === 'time' ? pracCfg.timeMin : null,
+      question_count: pracCfg.mode === 'time' ? null : pracCfg.count,
+    });
     setCountdownInfo({ diff: null, isPrac: true, pcfg: cfg, origin: 'practice', label: t('practice_mode') });
     setScreen('countdown');
   }
@@ -520,7 +704,10 @@ function AppShell() {
   useEffect(() => {
     if (!state.pendingRestore) return;
     const hoursSince = (Date.now() - state.pendingRestore.brokenAtMs) / 3600000;
-    if (hoursSince >= 24) dispatch({ type: 'STREAK_RESTORE_EXPIRE' });
+    if (hoursSince >= 24) {
+      track('streak_restore_expired', { broken_value: state.pendingRestore.brokenValue });
+      dispatch({ type: 'STREAK_RESTORE_EXPIRE' });
+    }
   }, [state.pendingRestore, dispatch]);
 
   // ── Account / onboarding (real Supabase auth; the calls live in src/lib/accountApi.js) ──
@@ -528,7 +715,16 @@ function AppShell() {
   // returns you there with your username prefilled rather than to a bare login screen.
   const needsOnboarding = !state.username || !!state._loggedOut;
 
-  function openAccountCreation() {
+  // `source` is which of the six conversion surfaces sent us here. It is threaded from the button
+  // that was tapped rather than guessed at, because all six used to arrive here as one
+  // indistinguishable call — and "which ask actually converts" is the question this whole flow
+  // exists to answer.
+  function openAccountCreation(source, achievementKey) {
+    convSourceRef.current = { source: source || 'unknown', achievementKey: achievementKey || null };
+    track('account_create_started', {
+      source: convSourceRef.current.source,
+      achievement_key: convSourceRef.current.achievementKey,
+    });
     setSavePromptOpen(false);
     setProfileOpen(false);
     setAcctError('');
@@ -553,11 +749,31 @@ function AppShell() {
     });
     setAcctBusy(false);
     if (!res.ok) {
+      // The failure REASON only — never the address that failed. `res.error` is already a short
+      // code rather than a message, which is what makes it safe to send.
+      track('account_create_failed', { source: convSourceRef.current.source, reason: res.error || 'unknown' });
       // A lost race on the username is shown against the username field's own message, which
       // the live check already owns — everything else gets the shared error line.
       setAcctError(res.error === 'taken' ? 'username_taken' : errorKey(res.error));
       return;
     }
+
+    // The shape of the guest life that led here. Every number is read off the state as it was a
+    // moment ago, before ACCOUNT_CREATED lands — this is the only moment "what did they do before
+    // signing up" can be answered, and it cannot be reconstructed afterwards.
+    const guestSessions = ['easy', 'medium', 'hard']
+      .reduce((n, dd) => n + (((state.db[dd] || {}).sessions) || []).length, 0);
+    track('account_created', {
+      source: convSourceRef.current.source,
+      achievement_key: convSourceRef.current.achievementKey,
+      days_as_guest: state.firstOpenDate ? daysBetweenKeys(state.firstOpenDate, dayKey()) : 0,
+      streak_at_signup: state.streak || 0,
+      best_streak_at_signup: state.bestStreakEver || 0,
+      achievements_at_signup: earnedCount(state.milestones),
+      challenge_runs_as_guest: guestSessions,
+      braining_runs_as_guest: ((state.brState || {}).sessions || []).length,
+    });
+
     dispatch({ type: 'ACCOUNT_CREATED', username: d.username, email: d.email, fullName: d.fullName });
     // Device and server now hold the same thing, so sync starts from that as its baseline.
     beginSync(payload);
@@ -577,6 +793,8 @@ function AppShell() {
     const acct = await fetchAccount();
     setLoginBusy(false);
     if (!acct.ok || !acct.profile) return { ok: false, messageKey: 'err_generic' };
+
+    track('logged_in', { had_local_progress: hasMeaningfulProgress(state) });
 
     dispatch({
       type: 'ACCOUNT_LOADED',
@@ -656,6 +874,9 @@ function AppShell() {
       setDeleteError('err_generic');
       return;
     }
+    // Before the reload, for the same reason as logout above: after it there is no one to
+    // attribute it to.
+    track('account_deleted');
     setConfirm(null);
     localStorage.removeItem('cifri_react_v1');
     location.reload();
@@ -665,6 +886,9 @@ function AppShell() {
   // is a local copy now, no longer syncing anywhere.
   async function handleLogout() {
     setConfirm(null);
+    // Sent before signOut(), which is what triggers resetIdentity() — after it this event would
+    // be attributed to a fresh anonymous person rather than to whoever actually left.
+    track('logged_out');
     await signOut();
     dispatch({ type: 'ACCOUNT_SIGNED_OUT' });
   }
@@ -673,7 +897,15 @@ function AppShell() {
   // nudges become the small banner rather than another full-screen prompt.
   function closeAccountCreation() {
     setAcctOpen(false);
-    if (!state.acctCreated) dispatch({ type: 'GUEST_PROMPT_DISMISSED' });
+    if (!state.acctCreated) {
+      // Backed out without signing up. Reported against the surface that made the ask, so the
+      // funnel reads shown → started → abandoned-or-created per surface rather than in aggregate.
+      track('account_prompt_dismissed', {
+        source: convSourceRef.current.source,
+        stage: 'create_screen',
+      });
+      dispatch({ type: 'GUEST_PROMPT_DISMISSED' });
+    }
   }
 
   // The 5-day fallback prompt: once ever, only if a streak has never been lit (if it has, the
@@ -685,6 +917,7 @@ function AppShell() {
       (dateStrToDate(dayKey()).getTime() - dateStrToDate(state.firstOpenDate).getTime()) / 86400000
     );
     if (days >= 5) {
+      track('account_prompt_shown', { source: 'fallback_prompt', days_as_guest: days });
       dispatch({ type: 'SAVE_PROMPT_SHOWN' });
       setSavePromptOpen(true);
     }
@@ -692,6 +925,13 @@ function AppShell() {
 
   const guestBannerVisible =
     !state.acctCreated && state.anyGuestPromptDismissed && state.guestBannerLastShownDay !== dayKey();
+
+  // The banner is already capped to once a day by the condition above, so this needs no cap of
+  // its own — it fires at most once per guest per day, which is what makes it comparable with the
+  // other two prompts rather than drowning them.
+  useEffect(() => {
+    if (guestBannerVisible) track('account_prompt_shown', { source: 'guest_banner' });
+  }, [guestBannerVisible]);
 
   // The picker covers the whole screen at a higher layer than everything that opens it, so a
   // screen underneath it is hidden just as completely as one that has been closed — and can be
@@ -711,6 +951,9 @@ function AppShell() {
   // we return to whichever screen opened the picker.
   function closeIconPicker(draft) {
     if (draft) {
+      // The reward ladder's payoff: which icons and symbols people actually choose to wear once
+      // an achievement has unlocked them.
+      track('avatar_changed', { avatar_type: draft.type, avatar_value: draft.value, color: draft.color });
       dispatch({ type: 'SET_AVATAR', avatar: draft });
       // The avatar lives in the profiles table, not in the synced progress blob, so it needs
       // its own write. Not awaited: the picker should close instantly, and a failed write just
@@ -729,12 +972,16 @@ function AppShell() {
   // Opening a practice drill unlocks nothing, so this just opens it. It used to dispatch
   // PRACTICE_TRICK first, which awarded First Trick before the player had answered anything —
   // see the note above TRICK_PRACTICE_COMPLETE for where that credit lives now.
+  // `gi-ti` is the same identifier trickStats and the achievement credit use, so a trick can be
+  // followed from "opened" through to "passed" without a second naming scheme to keep in step.
   function handlePracticeTrick(gi, ti) {
+    track('game_started', { mode: 'trick_practice', trick_id: gi + '-' + ti, trick_group: gi });
     setTrickGame({ gi, ti, mode: 'practice' });
     setScreen('trickgame');
   }
 
   function handleTestTrick(gi, ti) {
+    track('game_started', { mode: 'trick_test', trick_id: gi + '-' + ti, trick_group: gi });
     setTrickGame({ gi, ti, mode: 'test' });
     setScreen('trickgame');
   }
@@ -745,6 +992,19 @@ function AppShell() {
   const handleTrickRunComplete = useCallback((result) => {
     if (!trickGame) return;
     const { gi, ti, mode } = trickGame;
+
+    // A failed Test stops at the wrong answer, so `correct` is how far it got rather than a score
+    // out of twenty — which is exactly what makes it worth recording: it says where in a trick
+    // people come unstuck.
+    track('game_completed', {
+      mode: mode === 'test' ? 'trick_test' : 'trick_practice',
+      trick_id: gi + '-' + ti,
+      trick_group: gi,
+      ...(mode === 'test'
+        ? { passed: !!result.passed, correct_before_end: result.correct, test_length: TEST_LENGTH }
+        : { first_try_correct: result.correct, questions_answered: PRACTICE_LENGTH }),
+    });
+
     const reqId = ++pendingTrickReqId.current;
     afterTrickAchievementsRef.current = null;
     if (mode === 'test') {
@@ -771,6 +1031,7 @@ function AppShell() {
 
   function handleOpenTrickOfDay() {
     const idx = trickOfDayIndex();
+    track('trick_of_day_opened', { trick_index: idx, first_time_today: state.totdLastViewed !== dayKey() });
     const reqId = ++pendingTrickReqId.current;
     afterTrickAchievementsRef.current = () => {
       handleSelectTab('tricks');
@@ -782,6 +1043,7 @@ function AppShell() {
   useEffect(() => {
     const r = state._lastTrickUnlocked;
     if (!r || r.reqId !== pendingTrickReqId.current) return;
+    trackUnlocked(r.unlocked, state.milestones);
     const reveal = afterTrickAchievementsRef.current;
     afterTrickAchievementsRef.current = null;
     if (r.unlocked && r.unlocked.length) {
@@ -824,7 +1086,16 @@ function AppShell() {
     setScreen('game');
   }
 
+  // Where people give up. The counterpart to game_completed, and the more informative half of the
+  // pair: a run that ended is a run that worked, while a run walked out of is the thing to fix.
   function handleQuitConfirm() {
+    const s = game.session;
+    track('game_quit', {
+      mode: countdownInfo && countdownInfo.origin === 'practice' ? 'practice' : 'challenge',
+      difficulty: (countdownInfo && countdownInfo.diff) || null,
+      questions_answered: s ? (s.correct || 0) + (s.wrong || 0) : 0,
+      seconds_remaining: s && !s.isUnlim && !s.isCountMode ? s.timer : null,
+    });
     const { origin, sessionId } = game.quit();
     // A quit session is discarded by the game and records nothing, so its attempts are dropped
     // too rather than being logged as a partial run.
@@ -863,6 +1134,10 @@ function AppShell() {
   function handleStartBraining(isPrac) {
     if (!isPrac && brDoneToday(state.brState)) return; // today's trial already counted
 
+    // Tracked after that guard, not before: a tap that the daily cap silently swallows started
+    // no game, and recording it as one would invent trials that were never played.
+    track('game_started', { mode: 'braining', is_practice: !!isPrac });
+
     // Only the day's counting trial is worth verifying. A practice run records nothing, so there
     // is nothing about it to check — and skipping the request is what keeps the practice button
     // as instant as it has always been.
@@ -898,6 +1173,16 @@ function AppShell() {
   }
 
   function handleBrQuitConfirm() {
+    // How far into the fifty a person got before quitting — the single most useful number about
+    // Braining, since the mode's whole risk is that it is too long to finish.
+    const s = brGame.session;
+    track('game_quit', {
+      mode: 'braining',
+      is_practice: !!(s && s.isPrac),
+      questions_answered: s ? s.qIdx : 0,
+      questions_total: s ? s.total : null,
+      elapsed_sec: s ? Math.round(s.elapsed) : null,
+    });
     discardSession(brGame.quit().sessionId);
     setBrQuitOpen(false);
     setScreen('braining');
@@ -924,7 +1209,10 @@ function AppShell() {
         <GuestBanner
           visible={guestBannerVisible}
           onCreateAccount={openAccountCreation}
-          onDismiss={() => dispatch({ type: 'DISMISS_GUEST_BANNER' })}
+          onDismiss={() => {
+            track('account_prompt_dismissed', { source: 'guest_banner', stage: 'prompt' });
+            dispatch({ type: 'DISMISS_GUEST_BANNER' });
+          }}
         />
         <ChallengeHomeScreen
           db={state.db}
@@ -1020,7 +1308,7 @@ function AppShell() {
             onAchievementsDone={() => setAchievementQueue([])}
             guestConvoStarted={state.guestConvoStarted}
             acctCreated={state.acctCreated}
-            onCreateAccount={() => { setAchievementQueue([]); openAccountCreation(); }}
+            onCreateAccount={(src, key) => { setAchievementQueue([]); openAccountCreation(src, key); }}
             onPlayAgain={handlePlayAgain}
             onBack={handleBackHome}
           />
@@ -1054,7 +1342,7 @@ function AppShell() {
             onAchievementsDone={() => setBrAchievementQueue([])}
             guestConvoStarted={state.guestConvoStarted}
             acctCreated={state.acctCreated}
-            onCreateAccount={() => { setBrAchievementQueue([]); openAccountCreation(); }}
+            onCreateAccount={(src, key) => { setBrAchievementQueue([]); openAccountCreation(src, key); }}
             onTryAgain={handleBrTryAgain}
             onBack={handleBrBack}
             onCompleteStreak={() => handleSelectTab('challenge')}
@@ -1068,20 +1356,32 @@ function AppShell() {
         onDone={handleTrickAchievementsDone}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}
-        onCreateAccount={() => { setTrickAchievementQueue([]); openAccountCreation(); }}
+        onCreateAccount={(src, key) => { setTrickAchievementQueue([]); openAccountCreation(src, key); }}
       />
       <AchievementPopup
         queue={ambientAchievementQueue}
         onDone={() => setAmbientAchievementQueue([])}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}
-        onCreateAccount={() => { setAmbientAchievementQueue([]); openAccountCreation(); }}
+        onCreateAccount={(src, key) => { setAmbientAchievementQueue([]); openAccountCreation(src, key); }}
       />
       <StreakRestoreModal
         pendingRestore={state.pendingRestore}
         // Restoring earns Rebirth, so it carries a reqId like every other card-producing action.
-        onRestore={() => dispatch({ type: 'STREAK_RESTORE', reqId: ++pendingAmbientReqId.current })}
-        onStartOver={() => dispatch({ type: 'STREAK_START_OVER' })}
+        // Both are tracked against the same condition the reducer guards on, so an event is never
+        // recorded for a restore the reducer went on to refuse.
+        onRestore={() => {
+          if (state.pendingRestore && state.pendingRestore.availableAtBreak) {
+            track('streak_restored', { restored_value: state.pendingRestore.brokenValue });
+          }
+          dispatch({ type: 'STREAK_RESTORE', reqId: ++pendingAmbientReqId.current });
+        }}
+        onStartOver={() => {
+          track('streak_start_over', {
+            broken_value: state.pendingRestore ? state.pendingRestore.brokenValue : null,
+          });
+          dispatch({ type: 'STREAK_START_OVER' });
+        }}
       />
 
       <ProfileSheet
@@ -1090,14 +1390,30 @@ function AppShell() {
         onClose={() => setProfileOpen(false)}
         onEditPrimary={() => {
           setProfileOpen(false);
-          if (state.acctCreated) setEditAcctOpen(true); else openAccountCreation();
+          if (state.acctCreated) setEditAcctOpen(true); else openAccountCreation('profile');
         }}
         onEditPicture={() => openIconPicker('profile')}
-        onOpenAchievements={() => { setProfileOpen(false); setAchListOpen(true); }}
+        onOpenAchievements={() => {
+          track('achievements_list_opened', { unlocked: earnedCount(state.milestones) });
+          setProfileOpen(false);
+          setAchListOpen(true);
+        }}
         onOpenLegal={(which) => { setProfileOpen(false); setLegal(which); }}
-        onSetting={(key, value) => dispatch({ type: 'SET_SETTING', key, value })}
-        onSetFontSize={(sz) => dispatch({ type: 'SET_SETTING', key: 'fontSize', value: sz })}
-        onSetLanguage={(l) => dispatch({ type: 'SET_SETTING', key: 'lang', value: l })}
+        // Settings carry the value as well as the key. On a bilingual app the language switch in
+        // particular is a product fact, not a preference: it is the only way to find out what
+        // share of players are reading the Russian copy.
+        onSetting={(key, value) => {
+          track('setting_changed', { setting: key, value });
+          dispatch({ type: 'SET_SETTING', key, value });
+        }}
+        onSetFontSize={(sz) => {
+          track('setting_changed', { setting: 'fontSize', value: sz });
+          dispatch({ type: 'SET_SETTING', key: 'fontSize', value: sz });
+        }}
+        onSetLanguage={(l) => {
+          track('setting_changed', { setting: 'lang', value: l });
+          dispatch({ type: 'SET_SETTING', key: 'lang', value: l });
+        }}
         onLogout={() => { setProfileOpen(false); setConfirm('logout'); }}
         onReset={() => { setProfileOpen(false); setConfirm('reset'); }}
         onDeleteAccount={() => { setProfileOpen(false); setConfirm('delete'); }}
@@ -1146,7 +1462,11 @@ function AppShell() {
       <SavePromptModal
         open={savePromptOpen}
         onCreateAccount={openAccountCreation}
-        onDismiss={() => { setSavePromptOpen(false); dispatch({ type: 'GUEST_PROMPT_DISMISSED' }); }}
+        onDismiss={() => {
+          track('account_prompt_dismissed', { source: 'fallback_prompt', stage: 'prompt' });
+          setSavePromptOpen(false);
+          dispatch({ type: 'GUEST_PROMPT_DISMISSED' });
+        }}
       />
 
       <ConfirmModal
@@ -1180,7 +1500,12 @@ function AppShell() {
         <OnboardingScreen
           initialUsername={state.username}
           onOpenLogin={() => setLoginOpen(true)}
-          onFinish={(u) => dispatch({ type: 'ONBOARDING_FINISH', username: u })}
+          // The true start of a player's life in the app — everything before this is a person
+          // looking at a username box. The username itself is deliberately not sent.
+          onFinish={(u) => {
+            track('onboarding_completed', { returning: !!state._loggedOut });
+            dispatch({ type: 'ONBOARDING_FINISH', username: u });
+          }}
         />
       )}
       <LoginScreen
@@ -1204,7 +1529,11 @@ function AppShell() {
       <TutorialOverlay
         open={!!state._showTutorial}
         onSelectTab={handleSelectTab}
-        onFinish={() => { dispatch({ type: 'TUTORIAL_DONE' }); handleSelectTab('challenge'); }}
+        onFinish={() => {
+          track('tutorial_finished');
+          dispatch({ type: 'TUTORIAL_DONE' });
+          handleSelectTab('challenge');
+        }}
       />
     </div>
   );

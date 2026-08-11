@@ -50,7 +50,12 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
       <div className={feedback.cls}>{feedback.text}</div>
       <input type="text" className={inputClass} placeholder="?" autoComplete="off" inputMode="decimal" readOnly value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submitAnswer(); }} />
-      <div className="np">
+      {/* ph-no-capture keeps analytics autocapture off the keypad. Autocapture records the TEXT of
+          whatever was clicked, and these buttons are labelled 1-9 — so without it every tap would
+          be sent as a digit, and the sequence would reconstruct the player's answer exactly. The
+          answer field itself is an <input>, which is masked by default; the keypad is not, and is
+          the route that would leak. */}
+      <div className="np ph-no-capture">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <button key={n} className="k" onClick={() => padInput(n)}>{n}</button>
         ))}
