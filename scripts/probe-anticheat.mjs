@@ -23,9 +23,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFile } from 'node:fs/promises';
 import { createEngine } from '../supabase/functions/_shared/generator.js';
-import { applyBrainingBoost } from '../supabase/functions/_shared/scoring.js';
+import { scoreAttempt, applyBrainingBoost } from '../supabase/functions/_shared/scoring.js';
 import { RATE_WINDOW_MS, ISSUES_PER_MINUTE } from '../supabase/functions/_shared/ratelimit.js';
-import { scoreAttempt } from '../supabase/functions/_shared/scoring.js';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -95,6 +94,19 @@ function honestAnswers(questions, n, { correctEvery = 5, msEach = 1600 } = {}) {
   }));
 }
 
+// Wait out the per-minute set allowance.
+//
+// The probe asks for more sets in a minute than any player ever would, and by the time it reaches
+// the boost lifecycle it has spent the whole allowance on attacks. The first live run of that
+// section died on its own rate limit — which is the limiter working exactly as intended, and a
+// pacing bug in the test rather than a fault in the product. Raising the cap to make the test
+// pass would be weakening a real control for the convenience of the thing checking it.
+async function cooldown(reason) {
+  const ms = RATE_WINDOW_MS + 3000;
+  console.log(`      (pausing ${Math.round(ms / 1000)}s for the ${ISSUES_PER_MINUTE}-per-minute window to clear — ${reason})`);
+  await new Promise((r) => setTimeout(r, ms));
+}
+
 // Actually wait out the play being claimed, instead of claiming it and submitting at once.
 //
 // The first live run got this wrong and was rejected as tampered — correctly. It built answers
@@ -105,17 +117,6 @@ function honestAnswers(questions, n, { correctEvery = 5, msEach = 1600 } = {}) {
 // A real player is never in this position: the set is issued as the 3-2-1 countdown starts and
 // submitted a minute later, so the claimed play always sits comfortably inside the window. To
 // behave like one, this has to spend the time.
-// The probe asks for more sets in a minute than any player ever would, and by the time it reaches
-// the boost lifecycle it has spent its whole per-minute allowance on attacks. The first live run
-// of this section died on its own rate limit — which is the limiter working exactly as intended,
-// and a pacing bug in the test rather than a fault in the product. Raising the cap to make the
-// test pass would be weakening a real control for the convenience of the thing checking it.
-async function cooldown(reason) {
-  const ms = RATE_WINDOW_MS + 3000;
-  console.log(`      (pausing ${Math.round(ms / 1000)}s for the ${ISSUES_PER_MINUTE}-per-minute window to clear — ${reason})`);
-  await new Promise((r) => setTimeout(r, ms));
-}
-
 async function playOut(answers) {
   const ms = answers.reduce((a, x) => a + x.ms, 0);
   await new Promise((r) => setTimeout(r, ms + 500));
