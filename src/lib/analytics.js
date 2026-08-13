@@ -28,6 +28,40 @@ const HOST = import.meta.env.VITE_POSTHOG_HOST;
 // configured. Everything below then becomes a no-op rather than an error.
 let enabled = false;
 
+// ── Which app sent this? ──────────────────────────────────────────────────────
+//
+// Everything reports into ONE PostHog project, and this property is what keeps the real numbers
+// honest inside it: PostHog's "filter out internal and test users" setting is pointed at
+// `environment is not production`, so a day spent testing never lands in the figures.
+//
+// A separate project per environment is the textbook answer and was rejected deliberately —
+// it costs a paid plan, and it would buy nothing this property does not.
+//
+// Detected from the hostname rather than from a build-time variable, because the failure mode
+// matters more than the elegance. A stale or forgotten env var would silently mark staging as
+// production and quietly poison the real numbers; a hostname cannot be wrong about itself.
+//
+// PRODUCTION IS AN EXPLICIT ALLOWLIST, never a fallback. Vercel gives every deployment its own
+// hostname (cifri-1cju-git-<branch>-<team>.vercel.app and friends), so anything that tried to
+// name the test hosts instead would be out of date by the next branch. Anything unrecognised —
+// a new preview URL, a LAN address with the app open on a phone — is treated as test data, which
+// is the safe direction to be wrong in.
+const PRODUCTION_HOSTS = ['trycifri.com', 'www.trycifri.com'];
+
+function detectEnvironment() {
+  try {
+    const host = window.location.hostname;
+    if (PRODUCTION_HOSTS.indexOf(host) !== -1) return 'production';
+    if (/\.vercel\.app$/.test(host)) return 'staging';
+    return 'development';
+  } catch (e) {
+    // No window at all. Not a browser, so not a real player either.
+    return 'development';
+  }
+}
+
+const ENVIRONMENT = detectEnvironment();
+
 // ── Keeping auth tokens out of the URL properties ──────────────────────────────
 //
 // This is the one piece of this file that is load-bearing for security rather than for tidiness.
@@ -114,6 +148,11 @@ export function initAnalytics() {
         if (!event) return event;
         try {
           scrubUrlProperties(event.properties);
+          // Stamped here rather than registered as a super property, because the initial
+          // $pageview is captured DURING init — before any register() call could possibly run.
+          // An environment tag that the one guaranteed event is missing is not a filter, it is a
+          // leak, so it goes where nothing can be captured ahead of it.
+          if (event.properties) event.properties.environment = ENVIRONMENT;
         } catch (e) {
           // A property bag that cannot be scrubbed is a property bag that cannot be shown to be
           // safe, so it does not get sent. Dropping one event costs a data point; sending an
