@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { stripSpaces } from '../store/accountRules.js';
 import { useUsernameCheck } from '../hooks/useUsernameCheck.js';
+// The app icon's own artwork, imported from the canonical brand assets rather than copied into
+// src/ — a second copy of the mark is a copy that drifts from the icon. See assets/README.md.
+import markUrl from '../../assets/source/cifri-icon-adaptive-foreground.svg';
 
 const FEATURES = [
   { key: 'ob_feat_challenge', icon: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /> },
@@ -28,6 +31,7 @@ export default function OnboardingScreen({ initialUsername, onFinish, onOpenLogi
 
   return (
     <div className="ob-screen">
+      <img className="ob-mark" src={markUrl} alt="" width="220" height="220" />
       <div className="ob-wordmark">Cifri</div>
       <div className="ob-tagline">{t('ob_tagline')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28, maxWidth: 300, textAlign: 'left' }}>

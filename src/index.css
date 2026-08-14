@@ -478,8 +478,17 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ob-screen.hidden{display:none}
 .ob-logo{font-size:calc(42px * var(--fs-mult));font-weight:900;color:var(--txt);letter-spacing:-1px;margin-bottom:6px}
 .ob-logo span{color:var(--G)}
-/* v14.9 item 1: text wordmark badge, replaces the old embedded logo image */
-.ob-wordmark{display:inline-block;background:var(--G);color:#fff;font-size:calc(34px * var(--fs-mult));font-weight:900;padding:14px 30px;border-radius:22px;margin-bottom:14px;box-shadow:0 3px 0 var(--GD);letter-spacing:.01em}
+/* The app icon's mark, standing on the page rather than on a card — the green badge that used to
+   be here was a stand-in from before the icon existed. The file is the Android adaptive
+   foreground, so it carries the safe-zone padding that format requires: at 220px the artwork only
+   occupies the middle ~142×119, leaving a ~50px transparent band above and below. The negative
+   margins crop that band back off so the mark sits at a sane distance from the top of the screen
+   and from the word underneath. They are tied to this asset's proportions — recompute them if the
+   mark is ever redrawn. */
+.ob-mark{display:block;width:220px;height:auto;margin:-30px 0 -38px}
+/* The wordmark is now plain text under the mark: the mark carries the colour, so a green badge
+   behind the word as well was two logos stacked. Nunito 900 is the same weight the badge used. */
+.ob-wordmark{font-size:calc(34px * var(--fs-mult));font-weight:900;color:var(--txt);margin-bottom:6px;letter-spacing:.01em}
 .ob-tagline{font-size:calc(13px * var(--fs-mult));color:var(--txt3);font-weight:600;margin-bottom:40px}
 .ob-label{font-size:calc(13px * var(--fs-mult));font-weight:800;color:var(--txt);margin-bottom:8px;text-align:left;width:100%;max-width:320px;letter-spacing:.04em;text-transform:uppercase}
 .ob-input{width:100%;max-width:320px;padding:14px 16px;font-size:calc(16px * var(--fs-mult));font-weight:700;border:none;border-radius:var(--r);background:var(--card);color:var(--txt);outline:none;margin-bottom:10px;text-align:center}
