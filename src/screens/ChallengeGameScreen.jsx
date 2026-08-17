@@ -31,8 +31,8 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
           <div className="ts">{ts}</div>
         </div>
         <div className="scd">
-          {session.todayScore != null && <div className="sc-today show">{'Today: ' + fn(session.todayScore)}</div>}
-          {session.yestScore != null && <div className="sc-yest show">{'Yesterday: ' + fn(session.yestScore)}</div>}
+          {session.todayScore != null && <div className="sc-today show">{t('hud_today', { v: fn(session.todayScore) })}</div>}
+          {session.yestScore != null && <div className="sc-yest show">{t('hud_yesterday', { v: fn(session.yestScore) })}</div>}
           <div className="sb" style={{ color: session.yestScore == null ? '' : session.score < session.yestScore ? 'var(--TC)' : 'var(--G)' }}>
             {session.score}
           </div>

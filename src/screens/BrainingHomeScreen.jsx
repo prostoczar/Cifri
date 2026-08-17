@@ -32,7 +32,7 @@ export default function BrainingHomeScreen({
           <div className="br-stat-l">{t('stat_best_streak')}</div>
         </div>
         <div className={statCls(false)}>
-          <div className="br-stat-n" style={numStyle}>{brState.bestTime !== null && brState.bestTime !== undefined ? brFmtSec(brState.bestTime) : '--'}</div>
+          <div className="br-stat-n" style={numStyle}>{brState.bestTime !== null && brState.bestTime !== undefined ? brFmtSec(brState.bestTime, t) : '--'}</div>
           <div className="br-stat-l">{t('stat_best_time')}</div>
         </div>
         <div className={statCls(false)}>
@@ -67,8 +67,9 @@ export default function BrainingHomeScreen({
         totdLastViewed={totdLastViewed}
         onOpen={onOpenTrickOfDay}
       />
+      {/* fmtBrCountdown takes `t` — the unit letters are translated too, not just the sentence. */}
       {done ? (
-        <button className="br-btn-g timer" disabled><MidnightCountdown format={fmtBrCountdown} /></button>
+        <button className="br-btn-g timer" disabled><MidnightCountdown format={(ms) => fmtBrCountdown(ms, t)} /></button>
       ) : (
         <button className="br-btn-g br-btn-red" onClick={onStart}>{t('start_braining')}</button>
       )}

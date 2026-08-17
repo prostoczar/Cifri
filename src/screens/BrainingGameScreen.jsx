@@ -15,10 +15,10 @@ export default function BrainingGameScreen({ game, onShowQuit }) {
       <div className="br-gtop">
         <div className="br-tc">
           {session.todayTime != null && (
-            <div className="br-todaytime show">{'Today: ' + brFmtTimer(session.todayTime)}</div>
+            <div className="br-todaytime show">{t('hud_today', { v: brFmtTimer(session.todayTime) })}</div>
           )}
           {session.lastTime != null && (
-            <div className="br-lasttime show">{'Last time: ' + brFmtTimer(session.lastTime)}</div>
+            <div className="br-lasttime show">{t('hud_last_time', { v: brFmtTimer(session.lastTime) })}</div>
           )}
           <div className="br-tn" style={{ color: overLast ? 'var(--TC)' : '' }}>{brFmtTimer(session.elapsed)}</div>
           <div className="br-ts">{t('elapsed')}</div>

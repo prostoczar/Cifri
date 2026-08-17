@@ -156,7 +156,7 @@ export default function ProfileSheet({
           <div className="prof-section-title">{t('nav_braining')}</div>
           <div className="prof-stats-grid">
             {stat(brState.bestAge || '--', t('prof_best_age'))}
-            {stat(brState.bestTime !== null && brState.bestTime !== undefined ? brFmtSec(brState.bestTime) : '--', t('prof_best_time'))}
+            {stat(brState.bestTime !== null && brState.bestTime !== undefined ? brFmtSec(brState.bestTime, t) : '--', t('prof_best_time'))}
             {stat(brTotal, t('prof_total_sessions'))}
           </div>
 

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { brMakeSession, brFmtTimer } from '../store/braining.js';
+import { opName } from '../store/questionEngine.js';
 import { tick, buzz } from '../store/sound.js';
 import { startSession } from '../lib/attemptLog.js';
 import { t } from '../i18n_data.js';
@@ -64,13 +65,18 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     g.curDigits = q.digits;
     g.curTerms = q.terms;
     g.qStart = Date.now();
-    setQuestion({ text: q.q, opLabel: q.op });
+    // Translated, the way Challenge already does it. This badge was rendering the generator's own
+    // `op` value — 'Subtraction' — so a Russian player read one English word in the middle of every
+    // question, on all fifty of them. The opname_* keys already existed and were already translated;
+    // only Braining was not using them. The generator capitalises its Braining ops where Challenge
+    // does not, hence the lowercase before the lookup.
+    setQuestion({ text: q.q, opLabel: opName(lang, String(q.op).toLowerCase()) });
     setInputBoth('');
     setInputBad(false);
     setHint('');
     setQcState('');
     pushUpdate();
-  }, [pushUpdate, setInputBoth]);
+  }, [pushUpdate, setInputBoth, lang]);
 
   const finishGame = useCallback(() => {
     clearTimer();
@@ -217,14 +223,15 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
   }, [clearTimer]);
 
   // Which warning the quit modal shows depends on whether this run could still have counted.
+  //
+  // Composed from `quit_session_warn` plus a tail, rather than three whole sentences: the shared
+  // opening is the string that key already held, and it is still the same promise on both branches.
+  // Practice takes neither — nothing is being lost, so warning about lost progress would be a lie.
   const quitWarningFor = useCallback((brDoneToday) => {
     const g = gameRef.current;
-    if (g && g.isPrac) return 'This is a practice session — nothing is counted anyway.';
-    if (!brDoneToday) {
-      return 'Your progress will not be saved. This would have been your first trial today — quitting means it will not count.';
-    }
-    return 'Your progress will not be saved. Your first trial is already logged — this retry will not affect your record.';
-  }, []);
+    if (g && g.isPrac) return t(lang, 'br_quit_practice');
+    return t(lang, 'quit_session_warn') + ' ' + t(lang, brDoneToday ? 'br_quit_retry' : 'br_quit_first');
+  }, [lang]);
 
   return {
     session, question, input, inputBad, qcState, hint,

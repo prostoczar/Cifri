@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { dateToKey } from '../store/dates.js';
 import { brFmtSec } from '../store/braining.js';
+import { useI18n } from '../store/useI18n.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
 
 // Ported from the reference prototype's brDrawChart().
 export default function BrainingChart({ brState, range, type }) {
   const svgRef = useRef(null);
+  // Same empty state as the Challenge chart, and it was hardcoded English in the same way.
+  const { t } = useI18n();
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -47,7 +50,7 @@ export default function BrainingChart({ brState, range, type }) {
     const filled = pts.filter((p) => !p.empty);
     if (!filled.length) {
       const txt = ns('text', { x: W / 2, y: H / 2 + 4, 'text-anchor': 'middle', 'font-size': 'calc(11px * var(--fs-mult))', fill: '#bbbbbb' });
-      txt.textContent = 'Complete a session to see your progress';
+      txt.textContent = t('chart_empty');
       svg.appendChild(txt);
       return;
     }
@@ -89,7 +92,7 @@ export default function BrainingChart({ brState, range, type }) {
           svg.appendChild(ns('circle', { cx, cy, r: 4, fill: G }));
           if (days <= 14 || i === hiIdx || i === loIdx) {
             const tlbl = ns('text', { x: cx, y: cy - 7, 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', fill: 'var(--txt)' });
-            tlbl.textContent = brFmtSec(p.val);
+            tlbl.textContent = brFmtSec(p.val, t);
             svg.appendChild(tlbl);
           }
         } else if (days <= 14 || i === hiIdx || i === loIdx) {
@@ -114,7 +117,7 @@ export default function BrainingChart({ brState, range, type }) {
         svg.appendChild(dl2);
       }
     });
-  }, [brState, range, type]);
+  }, [brState, range, type, t]);
 
   return <svg className="br-spk" ref={svgRef}></svg>;
 }

@@ -13,17 +13,47 @@ import { BR_SCALE, brAge } from '../../supabase/functions/_shared/braining.js';
 // importer is unaffected.
 export { BR_SCALE, brAge };
 
-// The fixed 8-row scale shown on the result screen (a condensed view of BR_SCALE above).
-export const BR_SCALE_SHOWN = [
-  { label: 'Under 3 min', age: 20, color: '#3d7020' },
-  { label: '3 – 4 min', age: 25, color: '#5a9e35' },
-  { label: '4 – 5 min', age: 32, color: '#0f9d6c' },
-  { label: '5 – 6 min', age: 40, color: '#c8a840' },
-  { label: '6 – 7 min', age: 46, color: '#c07a30' },
-  { label: '7 – 9 min', age: 57, color: '#d05a20' },
-  { label: '9 – 10 min', age: 72, color: '#c0654a' },
-  { label: 'Over 10 min', age: 80, color: '#8a3a25' },
-];
+// ── The scale the result screen draws ─────────────────────────────────────────
+//
+// GENERATED from BR_SCALE, which is the code that actually computes the age. It used to be eight
+// rows written out by hand beside a twelve-row computation, and the two disagreed. The 2026-08-14
+// audit measured the damage: four of the eight rows stated an age brAge() never returns, the age 57
+// it displayed was unearnable by anybody, and the five ages that are reachable but absent — 22, 28,
+// 36, 53, 62 — highlighted NO ROW AT ALL, because the screen marks the current row with
+// `age === s.age`. That is about 30% of the plausible time range showing a player a scale their own
+// result does not appear on.
+//
+// A condensed view is not worth that. One row per band, derived, means every reachable age has a row
+// that can highlight and no row can state an age the computation disagrees with. The check script
+// asserts this rather than trusting it.
+//
+// It is a FUNCTION rather than a constant because the labels are translated, and the language is
+// not known until render. The boundaries come from BR_SCALE; only the wording comes from `t`.
+
+// `t` is the one-argument t from useI18n, i.e. t(key, vars).
+//
+// Boundaries are written in the m:ss form brFmtTimer already uses for the live timer during a run,
+// so the scale a player reads afterwards is in the same units as the clock they just watched. The
+// alternative was spelled-out units, and at twelve bands that produced rows like "3 min – 3m 30s",
+// which is both uglier and wider than the column it has to fit in.
+//
+// The middle ten rows are therefore pure numerals and need no translation — a colon and an en dash
+// are not language. Only the two open-ended rows carry words, and those come from the table.
+export function brScaleShown(t) {
+  return BR_SCALE.map((row, i) => {
+    let label;
+    if (i === 0) {
+      label = t('br_scale_under', { time: brFmtTimer(row.maxSec) });
+    } else if (i === BR_SCALE.length - 1) {
+      // The last band has no upper bound worth printing — maxSec is a sentinel 99999 — so it reads
+      // from the band below it instead.
+      label = t('br_scale_over', { time: brFmtTimer(BR_SCALE[i - 1].maxSec) });
+    } else {
+      label = brFmtTimer(BR_SCALE[i - 1].maxSec) + ' – ' + brFmtTimer(row.maxSec);
+    }
+    return { label, age: row.age, color: row.color };
+  });
+}
 
 export function brAgeColor(age) {
   for (let i = 0; i < BR_SCALE.length; i++) {
@@ -36,10 +66,17 @@ export function brRn(a, b) {
   return Math.floor(Math.random() * (b - a + 1)) + a;
 }
 
-export function brFmtSec(s) {
-  if (s < 60) return s + 's';
+// A duration in words, e.g. "45s" or "3m 15s". `t` is the one-argument t from useI18n.
+//
+// The unit letters used to be literal 'm' and 's'. They appear on the Braining home screen's best
+// time, the result screen's cards and vs-best figures, the chart's tooltips and the profile sheet —
+// so a Russian player read "3m 15s" everywhere Braining talks about time. The 2026-08-14 audit
+// listed the whole result screen but did not name this function, and it is the same bug: an English
+// letter is still English.
+export function brFmtSec(s, t) {
+  if (s < 60) return t('br_sec_fmt', { s });
   const m = Math.floor(s / 60), sec = s % 60;
-  return m + 'm ' + (sec < 10 ? '0' : '') + sec + 's';
+  return t('br_min_sec_fmt', { m, s: (sec < 10 ? '0' : '') + sec });
 }
 
 export function brFmtTimer(s) {
@@ -47,10 +84,13 @@ export function brFmtTimer(s) {
   return m + ':' + (sec < 10 ? '0' : '') + sec;
 }
 
-export function fmtBrCountdown(ms) {
+// `t` is the one-argument t from useI18n. It is a parameter rather than an import because this is a
+// plain module with no hook available, and the unit letters have to be translated too — "2h 5m 30s"
+// is not something a Russian player would read.
+export function fmtBrCountdown(ms, t) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  return 'Next Braining in ' + h + 'h ' + m + 'm ' + sec + 's';
+  return t('br_next_in', { h, m, s: sec });
 }
 
 // ── The generator wrappers ────────────────────────────────────────────────────

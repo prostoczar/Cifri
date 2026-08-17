@@ -16,6 +16,12 @@ import { createServer } from 'vite';
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
 const { reducer, defaultState } = await server.ssrLoadModule('/src/store/AppStateContext.jsx');
 const { applyBrainingBoost } = await server.ssrLoadModule('/src/store/scoring.js');
+const { brScaleShown, BR_AGES, BR_SCALE, brAge } = await server.ssrLoadModule('/src/store/braining.js');
+const { t } = await server.ssrLoadModule('/src/i18n_data.js');
+
+// The scale exactly as the result screen builds it, in English. The translation check below builds
+// it again in both languages.
+const shown = brScaleShown((k, v) => t('en', k, v));
 
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
 const key = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
@@ -132,6 +138,69 @@ check('yesterday\'s trial does not make today already done', () => {
   const after = braining(s);
   if (after._lastBrResult.isFirst !== true) return 'today\'s trial was treated as a retry';
   return realBr(after).length === 2 || 'real sessions ' + realBr(after).length;
+});
+
+// ── The displayed scale against the computed age ──────────────────────────────
+//
+// These were two hand-written lists — twelve bands in BR_SCALE, which decides the age, and eight in
+// BR_SCALE_SHOWN, which the result screen drew. They disagreed. The 2026-08-14 audit found four rows
+// stating an age brAge() never returns, one row (57) displaying an age nobody could earn, and five
+// reachable ages with no row at all, so a player landing on 22, 28, 36, 53 or 62 saw a scale with
+// nothing highlighted — the result screen marks the current row with `age === s.age`.
+//
+// The shown scale is now GENERATED from BR_SCALE, so it cannot drift by construction. That is a
+// claim about the code, and these three checks are the claim being tested rather than asserted: for
+// every second in the plausible range, the age brAge() computes must appear on exactly one displayed
+// row, and every displayed row must be an age that is genuinely reachable.
+
+check('every displayed scale row states an age brAge() can actually return', () => {
+  const reachable = new Set(BR_AGES);
+  for (const row of shown) {
+    if (!reachable.has(row.age)) return `row "${row.label}" claims age ${row.age}, which brAge() never returns`;
+  }
+  return true;
+});
+
+check('every reachable age has exactly one row that can highlight it', () => {
+  for (const age of BR_AGES) {
+    const rows = shown.filter((r) => r.age === age);
+    if (rows.length !== 1) return `age ${age} matches ${rows.length} displayed rows, so the screen highlights ${rows.length === 0 ? 'nothing' : 'several'}`;
+  }
+  return true;
+});
+
+check('every second from 0 to 20 minutes lands on the row its own label describes', () => {
+  for (let sec = 0; sec <= 1200; sec++) {
+    const age = brAge(sec);
+    const row = shown.find((r) => r.age === age);
+    if (!row) return `${sec}s computes age ${age}, which no displayed row carries`;
+    // And the row really is the band this second falls in, not merely a row with a matching age:
+    // compare against the BR_SCALE band index rather than trusting the age to be unique.
+    const bandIdx = BR_SCALE.findIndex((b) => sec <= b.maxSec);
+    if (shown.indexOf(row) !== bandIdx) {
+      return `${sec}s falls in band ${bandIdx} but highlights displayed row ${shown.indexOf(row)}`;
+    }
+  }
+  return true;
+});
+
+check('the two rows with words in them are translated', () => {
+  const en = brScaleShown((k, v) => t('en', k, v)).map((r) => r.label);
+  const ru = brScaleShown((k, v) => t('ru', k, v)).map((r) => r.label);
+  // Only the first and last rows carry words. The ten between them read "3:00 – 3:30" and are
+  // DELIBERATELY identical in both languages, so asserting that every row differs would be
+  // asserting the wrong thing — it would force a translation onto a row that has nothing to
+  // translate. What matters is that the rows which do carry words carry translated ones.
+  const worded = [0, en.length - 1];
+  for (const i of worded) {
+    if (en[i] === ru[i]) return `row ${i} reads "${en[i]}" in both languages`;
+    if (!/[а-яА-Я]/.test(ru[i])) return `row ${i} has no Cyrillic in Russian: "${ru[i]}"`;
+  }
+  // And the rest really are wordless, rather than English that nobody noticed.
+  for (let i = 1; i < en.length - 1; i++) {
+    if (/[a-zA-Z]/.test(en[i])) return `row ${i} "${en[i]}" contains letters, so it needs a key`;
+  }
+  return true;
 });
 
 let failed = 0;

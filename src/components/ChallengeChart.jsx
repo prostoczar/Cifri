@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { dateToKey } from '../store/dates.js';
+import { useI18n } from '../store/useI18n.js';
 import { dayAverage } from '../store/selectors.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
@@ -19,6 +20,9 @@ const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
 // high/low labels — one number, stated once.
 export default function ChallengeChart({ db, diff, range }) {
   const svgRef = useRef(null);
+  // The empty state is the only text this chart writes, and it was English for every player until
+  // the 2026-08-14 audit found it — the first thing a brand-new account sees.
+  const { t } = useI18n();
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -59,7 +63,7 @@ export default function ChallengeChart({ db, diff, range }) {
     const hasSess = pts.some((p) => p.avg !== null);
     if (!hasSess) {
       const empty = ns('text', { x: W / 2, y: H / 2 + 4, 'text-anchor': 'middle', 'font-size': 'calc(11px * var(--fs-mult))', fill: '#bbbbbb' });
-      empty.textContent = 'Complete a session to see your progress';
+      empty.textContent = t('chart_empty');
       svg.appendChild(empty);
       return;
     }
@@ -145,7 +149,7 @@ export default function ChallengeChart({ db, diff, range }) {
         svg.appendChild(lbl2);
       }
     });
-  }, [db, diff, range]);
+  }, [db, diff, range, t]);
 
   return <svg className="spk" ref={svgRef}></svg>;
 }

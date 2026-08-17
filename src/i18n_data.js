@@ -117,7 +117,15 @@ en:{
   quit:"Quit",
   quit_session_title:"Quit session?",
   quit_session_desc:"You are about to leave your current session.",
+  // Still live, and deliberately so. The refactor that replaced one quit warning with three
+  // context-specific ones left this key orphaned in the table while rendering English literals in
+  // its place — the 2026-08-14 audit called it the smoking gun. Rather than write three new strings
+  // and delete this one, the sentence it already holds is the FIRST sentence of two of the three,
+  // and the tail is what differs. So it is reused and composed, in useBrainingGame's quitWarningFor.
   quit_session_warn:"Your progress will not be saved.",
+  br_quit_practice:"This is a practice session — nothing is counted anyway.",
+  br_quit_first:"This would have been your first trial today — quitting means it will not count.",
+  br_quit_retry:"Your first trial is already logged — this retry will not affect your record.",
   restore_title:"Restore your streak?",
   start_over:"Start over",
   guest_banner_text:"Save your progress — create a free account anytime.",
@@ -174,6 +182,14 @@ en:{
   go:"Go!",
   sec:"sec",
   pts:"pts",
+  // ── The in-game HUD, both modes ─────────────────────────────────────────────
+  // hud_today is shared by Challenge (today's score) and Braining (today's time) on purpose: it is
+  // the same word doing the same job, and two keys would be two chances to translate it differently.
+  hud_today:"Today: {{v}}",
+  hud_yesterday:"Yesterday: {{v}}",
+  hud_last_time:"Last time: {{v}}",
+  // Both progress charts, before there is anything to draw.
+  chart_empty:"Complete a session to see your progress",
   submit:"Submit",
   new_pb:"New personal best",
   weighted_score:"weighted score",
@@ -206,6 +222,29 @@ en:{
   completion_time_cap:"Completion time",
   day_streak:"day streak",
   vs_best_time:"vs. best time",
+  // ── The Braining result screen ──────────────────────────────────────────────
+  // Every one of these was rendered as an English literal until the 2026-08-14 audit found them.
+  // The whole result screen was English regardless of the language setting, which is the screen a
+  // player sees after every single Braining run.
+  br_age_label:"brain age",
+  br_age_label_practice:"brain age (practice)",
+  br_completed_in:"Completed in {{time}}",
+  br_pr_sub:"Best time: {{time}} · Brain age: {{age}}",
+  br_scale_age:"Age {{age}}",
+  // ── The brain-age scale rows ────────────────────────────────────────────────
+  // The scale's twelve rows are BUILT rather than stored as twelve strings: the boundaries live in
+  // BR_SCALE, the code that computes the age, so the two can no longer disagree. Only the two
+  // open-ended rows need words. The ten in between read "3:00 – 3:30" and are the same in every
+  // language, because a colon and an en dash are not language.
+  br_scale_under:"Under {{time}}",
+  br_scale_over:"Over {{time}}",
+  // brFmtSec's units. Separate from the scale rows above, which use the m:ss clock form — these two
+  // are the spelled-out form Braining uses for a best time, a card and a chart tooltip.
+  br_sec_fmt:"{{s}}s",
+  br_min_sec_fmt:"{{m}}m {{s}}s",
+  // The Braining countdown, once the day's trial is done. The unit letters were English too, which
+  // is the part a Russian player would notice first.
+  br_next_in:"Next Braining in {{h}}h {{m}}m {{s}}s",
   try_again_not_counted:"Try again (not counted)",
   back_to_braining:"Back to Braining",
   save_prompt_title:"Save your progress?",
@@ -460,6 +499,9 @@ ru:{
   quit_session_title:"Завершить сессию?",
   quit_session_desc:"Вы собираетесь покинуть текущую сессию.",
   quit_session_warn:"Ваш прогресс не будет сохранён.",
+  br_quit_practice:"Это тренировочный прогон — здесь всё равно ничего не засчитывается.",
+  br_quit_first:"Это была бы ваша первая попытка сегодня — если выйти, она не засчитается.",
+  br_quit_retry:"Первая попытка уже записана — этот повтор не повлияет на ваш результат.",
   restore_title:"Восстановить серию?",
   start_over:"Начать заново",
   guest_banner_text:"Сохраните прогресс — создайте бесплатный аккаунт в любое время.",
@@ -513,6 +555,10 @@ ru:{
   go:"Старт!",
   sec:"сек",
   pts:"очк",
+  hud_today:"Сегодня: {{v}}",
+  hud_yesterday:"Вчера: {{v}}",
+  hud_last_time:"Прошлый раз: {{v}}",
+  chart_empty:"Пройдите сессию, чтобы увидеть свой прогресс",
   submit:"Ответить",
   new_pb:"Новый личный рекорд",
   weighted_score:"взвешенный балл",
@@ -545,6 +591,16 @@ ru:{
   completion_time_cap:"Время выполнения",
   day_streak:"серия дней",
   vs_best_time:"к лучшему времени",
+  br_age_label:"возраст мозга",
+  br_age_label_practice:"возраст мозга (практика)",
+  br_completed_in:"Пройдено за {{time}}",
+  br_pr_sub:"Лучшее время: {{time}} · Возраст мозга: {{age}}",
+  br_scale_age:"Возраст {{age}}",
+  br_scale_under:"Быстрее {{time}}",
+  br_scale_over:"Дольше {{time}}",
+  br_sec_fmt:"{{s}}с",
+  br_min_sec_fmt:"{{m}}м {{s}}с",
+  br_next_in:"Следующая тренировка мозга через {{h}}ч {{m}}м {{s}}с",
   try_again_not_counted:"Повторить (не засчитывается)",
   back_to_braining:"Назад в Брейнинг",
   save_prompt_title:"Сохранить прогресс?",
