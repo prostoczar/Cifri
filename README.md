@@ -441,6 +441,12 @@ button anyone could press.
 
 Send a `{"dryRun": true}` body to get the exact filters back without anything being delivered.
 
+The hourly schedule is `supabase/verification/0010_schedule_reminders.sql`, run by hand in the SQL
+editor like the RLS checks beside it. It lives there rather than in `migrations/` because it
+carries the cron secret, and a committed migration is the wrong home for the value that stops
+anyone on the internet notifying every subscriber. The dashboard's Cron UI does the same job, but
+only appears once `pg_cron` is enabled — which is why it is easy to go looking for and not find.
+
 **Push subscriptions do not survive a domain change.** They are bound to one origin, so whenever
 the rewrite is cut over to trycifri.com every subscriber re-subscribes from scratch. Costless now,
 expensive later — an argument for cutting over before there are many.
