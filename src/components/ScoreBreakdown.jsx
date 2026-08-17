@@ -12,7 +12,7 @@ import { BRAINING_BOOST_PCT } from '../store/scoring.js';
 //
 // The difficulty multiplier is stated rather than applied. That is not a simplification: scoring
 // multiplies and ROUNDS it into each question individually (see calcSc), so pulling it out into a
-// bottom-line "× 1.6" step would produce a total a point or two away from the real score. The
+// bottom-line "× 4.2" step would produce a total a point or two away from the real score. The
 // operation rows therefore carry their true awarded points, difficulty already inside them, and
 // the difficulty row says so in words.
 //
@@ -82,7 +82,9 @@ export default function ScoreBreakdown({ breakdown, rawScore, boosted, score, di
         <div className="sb-row factor">
           <span className="sb-name">{t('sb_difficulty', { diff: diffLabel(lang, diff) })}</span>
           {/* One decimal always, so Easy reads "×1.0" rather than a bare "×1" — the three tiers
-              line up as 1.0 / 1.3 / 1.6, which is the comparison a player is actually making. */}
+              line up as 1.0 / 1.9 / 4.2, which is the comparison a player is actually making.
+              DIFF_MULT is kept to one decimal for this reason: anything finer would be displayed
+              here as a number that is not the one the score was computed from. */}
           <span className="sb-detail">{t('sb_diff_factor', { m: breakdown.dm.toFixed(1) })}</span>
         </div>
       )}

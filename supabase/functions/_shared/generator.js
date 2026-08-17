@@ -34,7 +34,35 @@ import { makeRng } from './rng.js';
 
 // The difficulty multiplier applied to every question's points. Part of scoring, but declared
 // here because it is a property of the tier the generator is building for.
-export const DIFF_MULT = { easy: 1.0, medium: 1.3, hard: 1.6 };
+//
+// THESE NUMBERS ARE NOT ARBITRARY, AND THEY ARE NOT THE ORIGINAL ONES.
+//
+// They were 1.0 / 1.3 / 1.6, and at those values the tiers were ordered BACKWARDS: the audit of
+// 14 August 2026 measured a player scoring roughly 56% as much on Hard as on Easy for the same
+// skill, because a tier that asks half as many questions in the same sixty seconds needs about
+// double the per-question value merely to break even, and 1.6 is not double. A score-maximising
+// player should have played Easy forever, which is the opposite of what a training app wants.
+//
+// The replacements pay a premium of about 20% per step up, measured on simulated play re-scored
+// through this file's own scoreAttempt. A typical player's median now runs 181 / 219 / 265 across
+// the three tiers, and the value of one question runs 9.8 / 16.6 / 28.9 points. Crucially the
+// slope stays positive for weak players too (86 / 93 / 94) — an equalising table would have left
+// beginners with no reason to ever move up. scripts/sim-difficulty.mjs is the model these came
+// from; re-run it before changing them.
+//
+// One honest limit: the DIRECTION is robust to the timing model being wrong by ±25%, the exact
+// figures are not. Per-question attempt data is already being collected, so these should be
+// re-derived from real telemetry rather than from the model once there are players.
+//
+// Kept to one decimal place on purpose: ScoreBreakdown.jsx prints this with `toFixed(1)`, so a
+// value like 4.15 would show a player "×4.2" beside a total computed from something else.
+//
+// REVISIT BEFORE THE CUTOVER. Changing these makes old scores and new scores incomparable — a
+// Hard run recorded at ×1.6 sits in the same chart, daily average and personal best as one
+// recorded at ×4.2. That was accepted here because this branch has no real player data. It will
+// NOT be safe to rebalance this way again once it does: the main/react-rewrite cutover, and any
+// later rebalance, need a migration plan for historical scores first.
+export const DIFF_MULT = { easy: 1.0, medium: 1.9, hard: 4.2 };
 
 export const DIFFS_ENG = {
   easy: {

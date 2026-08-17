@@ -1,10 +1,24 @@
-// The achievement catalogue — all 59, transcribed from Cifri_Milestones_v4.xlsx.
+// The achievement catalogue — 65 rows: the 59 transcribed from Cifri_Milestones_v4.xlsx, plus six
+// that are not in it.
 //
-// Each entry is one row of that spreadsheet, kept whole: its name, the trigger text shown to the
-// player, its rarity, and the picker reward it unlocks. The copy is the spreadsheet's own wording,
-// not a rewrite of it, and both languages sit on the row rather than in i18n_data.js — that is
-// deliberate. It means a row here can be read straight across against the source file and checked,
-// which is the only practical way to keep 59 rows honest to a spreadsheet nobody wants to re-read.
+// WHERE THIS NOW DIVERGES FROM THE SPREADSHEET, stated here because it can no longer be recovered
+// by diffing, and because the spreadsheet was not available to diff against when this was written
+// (Cifri_Milestones_v4.xlsx was gone from ~/Downloads on 17 August 2026):
+//
+//   1. Six appended rows — ch_sprout, ch_leaf, ch_evergreen, ch_small_change, ch_making_bank,
+//      ch_priceless. They are the Easy and Medium rungs of the per-difficulty Challenge score
+//      ladder. They sit at the END of the array so the 59 above stay index-aligned to the file.
+//   2. Three retuned rows — ch_peak, ch_sky, ch_moon. Keys, names and rewards are the
+//      spreadsheet's; the thresholds and the rarities are not. See the comment on them below.
+//
+// Nothing else moved. If the spreadsheet turns up, the 59 rows above it still describes are the
+// 59 rows above, in its order — that is what the appended block is at the end to protect.
+//
+// Each of those 59 is one row of that spreadsheet, kept whole: its name, the trigger text shown to
+// the player, its rarity, and the picker reward it unlocks. The copy is the spreadsheet's own
+// wording, not a rewrite of it, and both languages sit on the row rather than in i18n_data.js —
+// that is deliberate. It means a row here can be read straight across against the source file and
+// checked, which is the only practical way to keep 59 rows honest to a file nobody wants to re-read.
 //
 // The spreadsheet has 60 rows. Row 43, "You've lit a streak!", is marked there as "Not a real
 // achievement" — it is the onboarding save-your-progress prompt — so it is not in this list. It
@@ -73,15 +87,27 @@ export const ACHIEVEMENTS = [
   { key: 'ch_speed_demon', rarity: 'rare', mode: 'challenge', reward: { type: 'icon', value: 'demon' },
     en: { name: 'Speed Demon', desc: 'You answered 20 or more questions correctly in one 60-second Challenge.' },
     ru: { name: 'Демон скорости', desc: 'Вы правильно ответили на 20 и более вопросов за один 60-секундный Challenge.' } },
-  { key: 'ch_peak', rarity: 'epic', mode: 'challenge', reward: { type: 'icon', value: 'mountain' },
-    en: { name: 'To the Peak!', desc: 'You scored 100 or higher in a single Challenge session.' },
-    ru: { name: 'На вершину!', desc: 'Вы набрали 100 и более очков за один Challenge.' } },
+  // ── Hard's three rungs of the score ladder ──────────────────────────────────
+  //
+  // These three are the spreadsheet's own rows, and they keep their keys, names and icons — the
+  // keys because they are already in players' saved data and on the server, the names because
+  // Peak < Sky < Moon is already an ascending ladder and pointing it at Hard's three rungs in that
+  // same order costs nothing to understand.
+  //
+  // What changed is the NUMBER and the tier. They used to be a flat 100 / 150 / 200 on any
+  // difficulty, and under the multipliers in generator.js all three would now fire on roughly the
+  // first Hard run anybody ever finished — 100 and 150 are reached on every single run by a typical
+  // player on any tier. The thresholds also had to become per-difficulty, or a ladder shared across
+  // tiers just measures which tier you picked. Rarity rose with the rung for the same reason.
+  { key: 'ch_peak', rarity: 'rare', mode: 'challenge', reward: { type: 'icon', value: 'mountain' },
+    en: { name: 'To the Peak!', desc: 'You scored 200 or higher in a single Hard Challenge session.' },
+    ru: { name: 'На вершину!', desc: 'Вы набрали 200 и более очков за один Challenge на уровне Hard.' } },
   { key: 'ch_sky', rarity: 'epic', mode: 'challenge', reward: { type: 'icon', value: 'plane' },
-    en: { name: 'To the Sky!', desc: 'You scored 150 or higher in a single Challenge session.' },
-    ru: { name: 'В небо!', desc: 'Вы набрали 150 и более очков за один Challenge.' } },
-  { key: 'ch_moon', rarity: 'epic', mode: 'challenge', reward: { type: 'icon', value: 'rocket' },
-    en: { name: 'To the Moon!', desc: 'You scored 200 or higher in a single Challenge session.' },
-    ru: { name: 'На Луну!', desc: 'Вы набрали 200 и более очков за один Challenge.' } },
+    en: { name: 'To the Sky!', desc: 'You scored 550 or higher in a single Hard Challenge session.' },
+    ru: { name: 'В небо!', desc: 'Вы набрали 550 и более очков за один Challenge на уровне Hard.' } },
+  { key: 'ch_moon', rarity: 'legendary', mode: 'challenge', reward: { type: 'icon', value: 'rocket' },
+    en: { name: 'To the Moon!', desc: 'You scored 750 or higher in a single Hard Challenge session.' },
+    ru: { name: 'На Луну!', desc: 'Вы набрали 750 и более очков за один Challenge на уровне Hard.' } },
   { key: 'ch_triple_crown', rarity: 'legendary', mode: 'challenge', reward: { type: 'icon', value: 'crown' },
     en: { name: 'Triple Crown', desc: 'Complete Easy, Medium, and Hard Challenge in the same day with at least 20 correct answers in each.' },
     ru: { name: 'Тройная корона', desc: 'Пройдите Easy, Medium и Hard Challenge в один день, набрав минимум 20 правильных ответов в каждом.' } },
@@ -221,6 +247,35 @@ export const ACHIEVEMENTS = [
   { key: 'tr_graduation', rarity: 'legendary', mode: 'tricks', reward: { type: 'icon', value: 'graduation' },
     en: { name: 'Graduation', desc: 'Complete every trick test.' },
     ru: { name: 'Выпускной', desc: 'Сдайте тесты по всем трюкам.' } },
+
+  // ── NOT IN THE SPREADSHEET: the six new rungs of the Challenge score ladder ──
+  //
+  // Appended here rather than filed with the other Challenge rows on purpose. Everything above is
+  // Cifri_Milestones_v4.xlsx in its own order, index for index, and inserting into the middle
+  // would shift every row after the insertion point out of alignment with it. Kept at the end, the
+  // original 59 still read straight across against the spreadsheet and only this block does not.
+  // Display order is unaffected either way — achievementsByRarity() is a view, not this order.
+  //
+  // Rewards: `sprout`, `leaf`, `pine`, `coins`, `banknote` were added to AVATAR_ICONS for these,
+  // and `gem` was promoted out of RESERVED_ICONS. Nothing else in reserve was spent.
+  { key: 'ch_sprout', rarity: 'common', mode: 'challenge', reward: { type: 'icon', value: 'sprout' },
+    en: { name: 'First Shoots!', desc: 'You scored 125 or higher in a single Easy Challenge session.' },
+    ru: { name: 'Первые всходы!', desc: 'Вы набрали 125 и более очков за один Challenge на уровне Easy.' } },
+  { key: 'ch_leaf', rarity: 'rare', mode: 'challenge', reward: { type: 'icon', value: 'leaf' },
+    en: { name: 'New Leaf!', desc: 'You scored 300 or higher in a single Easy Challenge session.' },
+    ru: { name: 'Новый лист!', desc: 'Вы набрали 300 и более очков за один Challenge на уровне Easy.' } },
+  { key: 'ch_evergreen', rarity: 'epic', mode: 'challenge', reward: { type: 'icon', value: 'pine' },
+    en: { name: 'Evergreen!', desc: 'You scored 375 or higher in a single Easy Challenge session.' },
+    ru: { name: 'Вечнозелёный!', desc: 'Вы набрали 375 и более очков за один Challenge на уровне Easy.' } },
+  { key: 'ch_small_change', rarity: 'uncommon', mode: 'challenge', reward: { type: 'icon', value: 'coins' },
+    en: { name: 'Small Change!', desc: 'You scored 150 or higher in a single Medium Challenge session.' },
+    ru: { name: 'Мелочь!', desc: 'Вы набрали 150 и более очков за один Challenge на уровне Medium.' } },
+  { key: 'ch_making_bank', rarity: 'epic', mode: 'challenge', reward: { type: 'icon', value: 'banknote' },
+    en: { name: 'Making Bank!', desc: 'You scored 400 or higher in a single Medium Challenge session.' },
+    ru: { name: 'Крупные купюры!', desc: 'Вы набрали 400 и более очков за один Challenge на уровне Medium.' } },
+  { key: 'ch_priceless', rarity: 'legendary', mode: 'challenge', reward: { type: 'icon', value: 'gem' },
+    en: { name: 'Priceless!', desc: 'You scored 525 or higher in a single Medium Challenge session.' },
+    ru: { name: 'Бесценно!', desc: 'Вы набрали 525 и более очков за один Challenge на уровне Medium.' } },
 ];
 
 export const ACHIEVEMENT_BY_KEY = ACHIEVEMENTS.reduce((acc, a) => {

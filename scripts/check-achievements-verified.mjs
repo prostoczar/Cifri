@@ -38,41 +38,87 @@ const ok = (msg) => console.log('ok    ' + msg);
 // reported as missing while the reducer was firing all of them correctly.
 const keysOf = (unlocked) => (unlocked || []).map((u) => u && u.key).filter(Boolean);
 
-// The four score-based achievements, and the only ones whose trigger is the score NUMBER rather
+// The ten score-based achievements, and the only ones whose trigger is the score NUMBER rather
 // than how the run was played. Everything else keys off correct answers, difficulty or operation
 // coverage, none of which the boost can touch.
+//
+// `diff` is half of each rule now: nine of the ten only fire on the tier they were calibrated for,
+// so a rung is wrong in TWO ways it was not before — it can fire on the right number and the wrong
+// tier. `fires()` below is the single place that combines the two, so no test can check one and
+// forget the other.
 const SCORE_LADDER = [
-  { key: 'ch_peak', at: (s) => s >= 100, label: '100+' },
-  { key: 'ch_sky', at: (s) => s >= 150, label: '150+' },
-  { key: 'ch_moon', at: (s) => s >= 200, label: '200+' },
-  { key: 'ch_nice', at: (s) => s === 69, label: 'exactly 69' },
+  { key: 'ch_sprout', diff: 'easy', at: (s) => s >= 125, label: 'easy 125+' },
+  { key: 'ch_leaf', diff: 'easy', at: (s) => s >= 300, label: 'easy 300+' },
+  { key: 'ch_evergreen', diff: 'easy', at: (s) => s >= 375, label: 'easy 375+' },
+  { key: 'ch_small_change', diff: 'medium', at: (s) => s >= 150, label: 'medium 150+' },
+  { key: 'ch_making_bank', diff: 'medium', at: (s) => s >= 400, label: 'medium 400+' },
+  { key: 'ch_priceless', diff: 'medium', at: (s) => s >= 525, label: 'medium 525+' },
+  { key: 'ch_peak', diff: 'hard', at: (s) => s >= 200, label: 'hard 200+' },
+  { key: 'ch_sky', diff: 'hard', at: (s) => s >= 550, label: 'hard 550+' },
+  { key: 'ch_moon', diff: 'hard', at: (s) => s >= 750, label: 'hard 750+' },
+  // Nice! is the one rung with no tier gate: an exact 69 anywhere.
+  { key: 'ch_nice', diff: null, at: (s) => s === 69, label: 'exactly 69, any tier' },
 ];
+
+const fires = (rung, score, diff) => (rung.diff === null || rung.diff === diff) && rung.at(score);
 
 // ── Building a run that scores exactly N, as the server would mark it ─────────
 //
 // Greedy: walk the set, and for each question choose an answer time whose points bring the
-// running total as close to the target as possible without passing it. Because a question's
-// worth depends on its operation as well as its speed, the reachable values are dense enough
-// that exact targets land within a few questions.
+// running total as close to the target as possible without passing it.
+//
+// WHY THIS ALSO USES WRONG ANSWERS. Correct answers alone cannot land on an arbitrary total once
+// the difficulty multiplier is large. A question's worth is `round(speed × OMULT × dm)`, so on Hard
+// the cheapest correct answer is worth `round(1 × 1.0 × 4.2)` = 4 points and the reachable values
+// climb in steps of four or more. A gap of one, two or three points is then simply unreachable, and
+// a greedy walk of correct answers stalls three short of the target forever. This is not a flaw in
+// the game — it is what coarser scoring means — but it does mean the old solver silently stopped
+// being able to build fixtures the moment the multipliers went up, which is exactly how a test file
+// stops testing anything.
+//
+// A wrong answer is a flat −2 at any speed, and that is the fine adjustment. So: fill upwards with
+// correct answers, then deliberately OVERSHOOT by an even margin with one more correct answer and
+// walk back down two points at a time. Every score in range becomes constructible.
 function runScoringExactly(target, questions, difficulty) {
+  const scoreOf = (a) => scoreAttempt({ questions, answers: a, difficulty }).rawScore;
+  const wrongAt = (i) => ({ i, value: questions[i].ans + 1, ms: 3000 });
   const answers = [];
-  for (let i = 0; i < questions.length; i++) {
-    const remaining = target - scoreAttempt({ questions, answers, difficulty }).rawScore;
-    if (remaining === 0) break;
+  let next = 0;
+
+  // Phase 1 — greedy fill with correct answers, never passing the target.
+  for (; next < questions.length; next++) {
+    const remaining = target - scoreOf(answers);
+    if (remaining === 0) return answers;
 
     let best = null;
     for (let ms = 400; ms <= 13000; ms += 100) {
-      const trial = answers.concat([{ i, value: questions[i].ans, ms }]);
-      const got = scoreAttempt({ questions, answers: trial, difficulty }).rawScore;
+      const got = scoreOf(answers.concat([{ i: next, value: questions[next].ans, ms }]));
       if (got > target) continue;
       if (!best || got > best.got) best = { got, ms };
       if (got === target) break;
     }
-    if (!best) return null; // nothing at this question can avoid overshooting
-    answers.push({ i, value: questions[i].ans, ms: best.ms });
+    if (!best) break; // every speed at this question overshoots — phase 2 takes over
+    if (best.got === scoreOf(answers)) break; // no forward progress available
+    answers.push({ i: next, value: questions[next].ans, ms: best.ms });
   }
-  const finalScore = scoreAttempt({ questions, answers, difficulty }).rawScore;
-  return finalScore === target ? answers : null;
+
+  if (scoreOf(answers) === target) return answers;
+
+  // Phase 2 — overshoot by an even margin, then subtract 2 per wrong answer.
+  const gap = target - scoreOf(answers);
+  if (gap < 0) return null;
+  for (let i = next; i < questions.length; i++) {
+    for (let ms = 400; ms <= 13000; ms += 100) {
+      const trial = answers.concat([{ i, value: questions[i].ans, ms }]);
+      const over = scoreOf(trial) - target;
+      if (over < 0 || over % 2 !== 0) continue;
+      const wrongsNeeded = over / 2;
+      if (i + 1 + wrongsNeeded > questions.length) continue;
+      for (let w = 0; w < wrongsNeeded; w++) trial.push(wrongAt(i + 1 + w));
+      if (scoreOf(trial) === target) return trial;
+    }
+  }
+  return null;
 }
 
 function playChallenge(state, { diff, score, correct = 5, wrong = 0, attemptId = 'a1' }) {
@@ -87,39 +133,53 @@ function playChallenge(state, { diff, score, correct = 5, wrong = 0, attemptId =
 
 console.log('\nA real set, marked by the server, drives the real reducer');
 {
-  const targets = [69, 99, 100, 101, 149, 150, 199, 200, 260];
-  let built = 0;
+  // One pair of targets either side of every rung, plus 69 and 70 for Nice!, played on the tier the
+  // rung belongs to. The values one BELOW each threshold are the ones that matter: an off-by-one in
+  // the reducer is exactly the kind of thing that never throws.
+  //
+  // Every target is played on all three tiers, not just its own, which is the assertion the flat
+  // ladder never needed: a 400-point EASY run must leave Making Bank (medium 400+) locked. A rung
+  // firing on the right number and the wrong tier is the new way this can be wrong.
+  const targets = {
+    easy: [69, 70, 124, 125, 299, 300, 374, 375],
+    medium: [149, 150, 399, 400, 524, 525],
+    hard: [199, 200, 549, 550, 749, 750],
+  };
+  let built = 0, wanted = 0;
 
-  for (const target of targets) {
-    // Easy has the finest granularity (no difficulty multiplier), so exact targets are reachable.
-    const questions = generateChallengeSet(1000 + target, 'easy');
-    const answers = runScoringExactly(target, questions, 'easy');
-    if (!answers) { fail(`could not construct a run scoring exactly ${target}`); continue; }
-    built++;
+  for (const playedOn of ['easy', 'medium', 'hard']) {
+    for (const target of targets[playedOn]) {
+      wanted++;
+      const questions = generateChallengeSet(1000 + target, playedOn);
+      const answers = runScoringExactly(target, questions, playedOn);
+      if (!answers) { fail(`could not construct a ${playedOn} run scoring exactly ${target}`); continue; }
+      built++;
 
-    const marked = scoreAttempt({ questions, answers, difficulty: 'easy' });
-    if (marked.rawScore !== target) {
-      fail(`the server marked the constructed run as ${marked.rawScore}, not ${target}`);
-      continue;
-    }
+      const marked = scoreAttempt({ questions, answers, difficulty: playedOn });
+      if (marked.rawScore !== target) {
+        fail(`the server marked the constructed run as ${marked.rawScore}, not ${target}`);
+        continue;
+      }
 
-    // Drive the reducer with the SERVER's number, exactly as App.jsx does.
-    const after = playChallenge({ ...defaultState() }, {
-      diff: 'easy', score: marked.rawScore, correct: marked.correct, wrong: marked.wrong,
-    });
-    const unlocked = keysOf(after._lastSessionResult.unlocked);
+      // Drive the reducer with the SERVER's number, exactly as App.jsx does.
+      const after = playChallenge({ ...defaultState() }, {
+        diff: playedOn, score: marked.rawScore, correct: marked.correct, wrong: marked.wrong,
+      });
+      const unlocked = keysOf(after._lastSessionResult.unlocked);
 
-    for (const rung of SCORE_LADDER) {
-      const should = rung.at(target);
-      const did = unlocked.indexOf(rung.key) !== -1;
-      if (should !== did) {
-        fail(`score ${target}: ${rung.key} (${rung.label}) ${did ? 'fired but should not have' : 'did not fire but should have'}`);
+      for (const rung of SCORE_LADDER) {
+        const should = fires(rung, target, playedOn);
+        const did = unlocked.indexOf(rung.key) !== -1;
+        if (should !== did) {
+          fail(`${playedOn} score ${target}: ${rung.key} (${rung.label}) ` +
+            (did ? 'fired but should not have' : 'did not fire but should have'));
+        }
       }
     }
   }
-  if (built === targets.length) {
-    ok(`${built} runs built from real question sets, each scoring an exact target the server confirmed`);
-    ok('every score-ladder achievement fired exactly when the server-computed score said it should');
+  if (built === wanted) {
+    ok(`${built} runs built from real question sets across all three tiers, each scoring an exact target the server confirmed`);
+    ok('every score-ladder achievement fired exactly when the score AND the tier said it should');
   }
 }
 
@@ -131,17 +191,26 @@ console.log('\nA real set, marked by the server, drives the real reducer');
 
 console.log('\nThe Braining boost cannot buy a score achievement');
 {
-  const questions = generateChallengeSet(555001, 'easy');
+  // One straddling fixture per rung, on the rung's own tier: a raw score just under the threshold
+  // that the 5% boost carries over it. These are the only scores where the raw/boosted distinction
+  // is observable at all, so they are the only ones worth testing.
   const boundaries = [
-    { raw: 96, ladder: 'ch_peak', threshold: 100 },
-    { raw: 143, ladder: 'ch_sky', threshold: 150 },
-    { raw: 191, ladder: 'ch_moon', threshold: 200 },
+    { diff: 'easy', raw: 120, ladder: 'ch_sprout', threshold: 125 },
+    { diff: 'easy', raw: 286, ladder: 'ch_leaf', threshold: 300 },
+    { diff: 'easy', raw: 358, ladder: 'ch_evergreen', threshold: 375 },
+    { diff: 'medium', raw: 143, ladder: 'ch_small_change', threshold: 150 },
+    { diff: 'medium', raw: 381, ladder: 'ch_making_bank', threshold: 400 },
+    { diff: 'medium', raw: 500, ladder: 'ch_priceless', threshold: 525 },
+    { diff: 'hard', raw: 191, ladder: 'ch_peak', threshold: 200 },
+    { diff: 'hard', raw: 524, ladder: 'ch_sky', threshold: 550 },
+    { diff: 'hard', raw: 715, ladder: 'ch_moon', threshold: 750 },
   ];
 
   for (const b of boundaries) {
-    const answers = runScoringExactly(b.raw, questions, 'easy');
-    if (!answers) { fail(`could not construct a run scoring exactly ${b.raw}`); continue; }
-    const marked = scoreAttempt({ questions, answers, difficulty: 'easy' });
+    const questions = generateChallengeSet(555001 + b.raw, b.diff);
+    const answers = runScoringExactly(b.raw, questions, b.diff);
+    if (!answers) { fail(`could not construct a ${b.diff} run scoring exactly ${b.raw}`); continue; }
+    const marked = scoreAttempt({ questions, answers, difficulty: b.diff });
     const boosted = applyBrainingBoost(marked.rawScore);
 
     if (boosted < b.threshold) {
@@ -151,7 +220,7 @@ console.log('\nThe Braining boost cannot buy a score achievement');
 
     // A day with an unspent boost waiting, exactly as finishing Braining leaves it.
     const withBoost = { ...defaultState(), brBoostDay: new Date().toLocaleDateString('en-CA') };
-    const after = playChallenge(withBoost, { diff: 'easy', score: marked.rawScore, correct: marked.correct, wrong: marked.wrong });
+    const after = playChallenge(withBoost, { diff: b.diff, score: marked.rawScore, correct: marked.correct, wrong: marked.wrong });
     const result = after._lastSessionResult;
     const unlocked = keysOf(result.unlocked);
 
@@ -166,20 +235,26 @@ console.log('\nThe Braining boost cannot buy a score achievement');
       ok(`raw ${b.raw} → counted ${boosted}, crossing ${b.threshold}, and ${b.ladder} stayed locked`);
     }
     // And the run really is stored at the boosted value, so this is not passing by accident.
-    const stored = after.db.easy.sessions[after.db.easy.sessions.length - 1];
+    const stored = after.db[b.diff].sessions[after.db[b.diff].sessions.length - 1];
     if (stored.score !== boosted || stored.rawScore !== b.raw) {
       fail(`stored session is score=${stored.score} raw=${stored.rawScore}, expected ${boosted}/${b.raw}`);
     }
   }
 
-  // The mirror image: a raw score that genuinely crosses the line still unlocks when boosted.
-  const answers = runScoringExactly(100, questions, 'easy');
-  const withBoost = { ...defaultState(), brBoostDay: new Date().toLocaleDateString('en-CA') };
-  const after = playChallenge(withBoost, { diff: 'easy', score: scoreAttempt({ questions, answers, difficulty: 'easy' }).rawScore, correct: 12 });
-  if (keysOf(after._lastSessionResult.unlocked).indexOf('ch_peak') === -1) {
-    fail('a genuine 100 did not unlock To the Peak when a boost was also spent');
+  // The mirror image: a raw score that genuinely crosses the line still unlocks when boosted. Run on
+  // Easy against Sprout's 125, the lowest rung, so the fixture stays easy to build exactly.
+  const questions = generateChallengeSet(555999, 'easy');
+  const answers = runScoringExactly(125, questions, 'easy');
+  if (!answers) {
+    fail('could not construct an easy run scoring exactly 125');
   } else {
-    ok('a genuine raw 100 still unlocks To the Peak with a boost active — the rule cuts one way only');
+    const withBoost = { ...defaultState(), brBoostDay: new Date().toLocaleDateString('en-CA') };
+    const after = playChallenge(withBoost, { diff: 'easy', score: scoreAttempt({ questions, answers, difficulty: 'easy' }).rawScore, correct: 12 });
+    if (keysOf(after._lastSessionResult.unlocked).indexOf('ch_sprout') === -1) {
+      fail('a genuine raw 125 did not unlock First Shoots when a boost was also spent');
+    } else {
+      ok('a genuine raw 125 still unlocks First Shoots with a boost active — the rule cuts one way only');
+    }
   }
 }
 
@@ -248,8 +323,8 @@ console.log('\nBraining: verification changes nothing a player earns');
 
 console.log('\nThe catalogue');
 {
-  if (ACHIEVEMENTS.length !== 59) fail(`the catalogue holds ${ACHIEVEMENTS.length} achievements, expected 59`);
-  else ok('all 59 achievements are present');
+  if (ACHIEVEMENTS.length !== 65) fail(`the catalogue holds ${ACHIEVEMENTS.length} achievements, expected 65`);
+  else ok('all 65 achievements are present');
 
   const keys = ACHIEVEMENTS.map((a) => a.key);
   const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);

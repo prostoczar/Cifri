@@ -1,4 +1,4 @@
-// The 59-entry achievement catalogue, and the ones that are not connected to anything yet.
+// The 65-entry achievement catalogue, and the ones that are not connected to anything yet.
 //
 // Most of this catalogue cannot fire. That is intended — the rows were imported in one go so the
 // picker could show players what is out there — but "intended" is a claim about the future, and
@@ -6,7 +6,7 @@
 // invisible to the machinery: it should render, lock its reward, count towards the total, and be
 // unreachable. What it must not do is throw, render an empty box, or quietly hand out a reward.
 //
-// So this walks all 59 and asks the questions that would surface those failures, then reports
+// So this walks all 65 and asks the questions that would surface those failures, then reports
 // which are wired and which are waiting.
 //
 // Run it with:  npm run check:achievements
@@ -41,10 +41,14 @@ function check(name, fn) {
   checks.push({ name, ok, detail });
 }
 
-check('the catalogue is 59 entries with unique keys', () => {
+// 65: the spreadsheet's 59, plus the six Easy and Medium rungs of the per-difficulty Challenge
+// score ladder, which are appended at the end of the catalogue and are not in the spreadsheet.
+// Written as a literal rather than read from the array, because a check that takes the array's own
+// length as the answer cannot notice a row being lost.
+check('the catalogue is 65 entries with unique keys', () => {
   const keys = new Set(ACHIEVEMENTS.map((a) => a.key));
   if (keys.size !== ACHIEVEMENTS.length) return 'duplicate keys';
-  return ACHIEVEMENTS.length === 59 || 'found ' + ACHIEVEMENTS.length;
+  return ACHIEVEMENTS.length === 65 || 'found ' + ACHIEVEMENTS.length;
 });
 
 check('every entry has both languages and a known rarity', () => {

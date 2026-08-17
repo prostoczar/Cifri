@@ -952,9 +952,10 @@ export function reducer(state, action) {
         // wrong; Medium and Hard are still the tier actually played. Keep it that way — an
         // achievement that keyed off the score number would start firing on the boost.
         //
-        // The four score-based achievements the spreadsheet adds are the deliberate exception, and
-        // they are wired below against `score` — the RAW number this run earned — never against
-        // `countedScore`. That one word is what stops a Braining boost from buying them.
+        // The ten score-based achievements — the nine-rung ladder plus Nice! — are the deliberate
+        // exception, and they are wired below against `score` — the RAW number this run earned —
+        // never against `countedScore`. That one word is what stops a Braining boost from buying
+        // them, and check:achievements-verified re-proves it rather than trusting this comment.
         const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
         earn(m, unlocked, 'ch_first');
         const total = correct + wrong;
@@ -968,11 +969,41 @@ export function reducer(state, action) {
         if (correct >= 20) earn(m, unlocked, 'ch_speed_demon');
 
         // ── The score ladder ────────────────────────────────────────────────────
-        // Raw, for the reason above. Nice! is an exact 69 rather than a threshold, so on a boosted
-        // run it is the number the player watched themselves earn, not the inflated one.
-        if (score >= 100) earn(m, unlocked, 'ch_peak');
-        if (score >= 150) earn(m, unlocked, 'ch_sky');
-        if (score >= 200) earn(m, unlocked, 'ch_moon');
+        //
+        // Raw, for the reason above. `score` is what this run earned before any Braining boost.
+        //
+        // Three rungs per difficulty, and the difficulty gate is half the rule rather than a
+        // decoration on it. A single ladder shared across the tiers cannot help measuring which
+        // tier was picked instead of how well it was played, because the tiers do not pay the same
+        // per question — that is the whole point of DIFF_MULT. Gating each rung on the tier it was
+        // calibrated for is what makes "300 on Easy" and "550 on Hard" comparable achievements.
+        //
+        // The nine numbers come from simulated play re-scored through the shipped scorer; see
+        // scripts/sim-difficulty.mjs. Each difficulty's rungs are aimed at a beginner, a practised
+        // player and a strong one respectively, which is why the low rung is deliberately soft:
+        // a player who cannot yet clear it on Easy should still have something to reach for.
+        //
+        // Ordered high-to-low within each tier only for readability — `earn` is idempotent, so a
+        // run that clears the top rung correctly banks the two below it as well.
+        if (diff === 'easy') {
+          if (score >= 375) earn(m, unlocked, 'ch_evergreen');
+          if (score >= 300) earn(m, unlocked, 'ch_leaf');
+          if (score >= 125) earn(m, unlocked, 'ch_sprout');
+        } else if (diff === 'medium') {
+          if (score >= 525) earn(m, unlocked, 'ch_priceless');
+          if (score >= 400) earn(m, unlocked, 'ch_making_bank');
+          if (score >= 150) earn(m, unlocked, 'ch_small_change');
+        } else if (diff === 'hard') {
+          if (score >= 750) earn(m, unlocked, 'ch_moon');
+          if (score >= 550) earn(m, unlocked, 'ch_sky');
+          if (score >= 200) earn(m, unlocked, 'ch_peak');
+        }
+        // Nice! stays what it was: an exact 69 on any difficulty, not a threshold and not gated on
+        // a tier. On a boosted run it is the number the player watched themselves earn rather than
+        // the inflated one. Raising the multipliers made the exact-69 lump sparser on the harder
+        // tiers, so in practice this is now a beginner's achievement earned while a player's scores
+        // still pass through 69 — reachable about one Easy run in 75 for a weak player, which is
+        // where it already was.
         if (score === 69) earn(m, unlocked, 'ch_nice');
 
         // Four for Four: every operation type answered correctly in this one session. Challenge

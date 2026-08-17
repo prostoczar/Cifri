@@ -145,21 +145,43 @@ stopsShort('streak_record', 'a first streak passing its own record is not a reco
 // ── Challenge ─────────────────────────────────────────────────────────────────
 console.log('\nChallenge');
 
-earns('ch_peak', 'a 100-point run', (s) => challenge(s, { score: 100 }), { not: ['ch_sky', 'ch_moon'] });
-earns('ch_sky', 'a 150-point run', (s) => challenge(s, { score: 150 }), { not: ['ch_moon'] });
-earns('ch_moon', 'a 200-point run', (s) => challenge(s, { score: 200 }));
-stopsShort('ch_peak', 'a 99-point run', (s) => challenge(s, { score: 99 }));
+// The score ladder: three rungs on each difficulty, and the difficulty is part of every rule. Each
+// rung is checked three ways — it fires on its own tier at its own number, it does NOT fire one
+// point short, and it does NOT fire on the same number on a different tier. The third is the one the
+// old flat ladder never needed and the one a careless edit would lose.
+const LADDER = [
+  { key: 'ch_sprout', diff: 'easy', at: 125, above: ['ch_leaf', 'ch_evergreen'] },
+  { key: 'ch_leaf', diff: 'easy', at: 300, above: ['ch_evergreen'] },
+  { key: 'ch_evergreen', diff: 'easy', at: 375, above: [] },
+  { key: 'ch_small_change', diff: 'medium', at: 150, above: ['ch_making_bank', 'ch_priceless'] },
+  { key: 'ch_making_bank', diff: 'medium', at: 400, above: ['ch_priceless'] },
+  { key: 'ch_priceless', diff: 'medium', at: 525, above: [] },
+  { key: 'ch_peak', diff: 'hard', at: 200, above: ['ch_sky', 'ch_moon'] },
+  { key: 'ch_sky', diff: 'hard', at: 550, above: ['ch_moon'] },
+  { key: 'ch_moon', diff: 'hard', at: 750, above: [] },
+];
+const OTHER_DIFFS = { easy: ['medium', 'hard'], medium: ['easy', 'hard'], hard: ['easy', 'medium'] };
+
+for (const r of LADDER) {
+  earns(r.key, `a ${r.at}-point ${r.diff} run`, (s) => challenge(s, { diff: r.diff, score: r.at }),
+    { not: r.above });
+  stopsShort(r.key, `a ${r.at - 1}-point ${r.diff} run`, (s) => challenge(s, { diff: r.diff, score: r.at - 1 }));
+  for (const other of OTHER_DIFFS[r.diff]) {
+    stopsShort(r.key, `a ${r.at}-point ${other} run (wrong tier)`,
+      (s) => challenge(s, { diff: other, score: r.at }));
+  }
+}
 
 earns('ch_nice', 'a score of exactly 69', (s) => challenge(s, { score: 69 }));
 stopsShort('ch_nice', 'a score of 70', (s) => challenge(s, { score: 70 }));
 
 // The rule the whole boost design exists to protect: a boosted run must not buy an achievement the
-// run itself did not earn. 96 raw boosts to over 100, so this is the exact case that would break.
-stopsShort('ch_peak', 'a 96-point run boosted over 100', (s) => {
-  const after = challenge(braining(s), { diff: 'easy', score: 96 });
+// run itself did not earn. 120 raw boosts to 126, so this straddles Sprout's 125 exactly.
+stopsShort('ch_sprout', 'a 120-point run boosted over 125', (s) => {
+  const after = challenge(braining(s), { diff: 'easy', score: 120 });
   const entry = after.db.easy.sessions[0];
-  if (!(entry.score >= 100 && entry.rawScore === 96)) {
-    throw new Error('fixture no longer straddles 100 (' + entry.rawScore + ' → ' + entry.score + ')');
+  if (!(entry.score >= 125 && entry.rawScore === 120)) {
+    throw new Error('fixture no longer straddles 125 (' + entry.rawScore + ' → ' + entry.score + ')');
   }
   return after;
 });
@@ -436,17 +458,20 @@ console.log('\nOrder');
   }
   if (!ok) failed++;
   console.log((ok ? 'ok    ' : 'FAIL  ') + '· order'.padEnd(18)
-    + 'all 59 present once, common→legendary, families grouped inside each tier' + (ok ? '' : ' — ' + why));
+    + `all ${ACHIEVEMENTS.length} present once, common→legendary, families grouped inside each tier`
+    + (ok ? '' : ' — ' + why));
 }
 
 // ── Did this file actually test everything it claims to? ──────────────────────
 //
-// The point of the session was 29 specific achievements. A test file that quietly stopped covering
-// one of them would still pass every check above.
+// The point of that session was 29 specific achievements, and the score-ladder rebuild added six
+// more. A test file that quietly stopped covering one of them would still pass every check above.
 console.log('');
 const EXPECTED = [
   'streak_rebirth', 'streak_record',
   'ch_challenger', 'ch_four_for_four', 'ch_peak', 'ch_sky', 'ch_moon', 'ch_triple_crown', 'ch_nice',
+  // The six added when the flat score ladder became three rungs per difficulty.
+  'ch_sprout', 'ch_leaf', 'ch_evergreen', 'ch_small_change', 'ch_making_bank', 'ch_priceless',
   'pr_sharpshooter', 'pr_mix_master', 'pr_marathon', 'pr_all_mixed', 'pr_first',
   'q_100', 'q_500', 'q_1000', 'q_2500', 'q_5000', 'q_pct_pro',
   'rp_first', 'rp_up', 'rp_plus50', 'rp_five', 'rp_consistent',
@@ -455,7 +480,7 @@ const EXPECTED = [
 const missing = EXPECTED.filter((k) => !covered.has(k));
 if (missing.length) {
   failed++;
-  console.log('FAIL  ' + missing.length + ' of the 29 have no earning test: ' + missing.join(' '));
+  console.log('FAIL  ' + missing.length + ' of the ' + EXPECTED.length + ' have no earning test: ' + missing.join(' '));
 } else {
   console.log('ok    all ' + EXPECTED.length + ' newly-wired achievements were triggered for real');
 }
