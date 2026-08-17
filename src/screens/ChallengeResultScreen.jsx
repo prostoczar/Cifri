@@ -48,7 +48,7 @@ export default function ChallengeResultScreen({
         {celebrate && <div className="pb-ribbon show">{t('new_pb')}</div>}
         <div className="rsco">{score}</div>
         <div className="rl">{t('weighted_score')}</div>
-        <div className="rsub">{correct} correct - {wrong} wrong</div>
+        <div className="rsub">{t('ch_result_correct_wrong', { correct, wrong })}</div>
       </div>
       <div className="rcds">
         <div className={'rcd' + (celebrate ? ' celebrate' : '')}><div className="rcn">{acc}%</div><div className="rcl">{t('accuracy')}</div></div>

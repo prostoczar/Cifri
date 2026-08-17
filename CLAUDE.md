@@ -32,11 +32,27 @@ logic rather than a copy of it.
 | `check:projection` | a day's score projected to the server differently from the screen |
 | `check:streak` | a streak that survives a gap, or dies without one |
 | `check:tricks` | a trick Test that credits a fail, or un-credits a pass |
-| `check:braining` | brain-age and the Sharper Every Day tiers |
+| `check:braining` | brain-age, the Sharper Every Day tiers, and the displayed scale disagreeing with the computed age |
 | `check:achievements` | a catalogue row that renders wrong, or unlocks a reward it should not |
 | `check:triggers` | an achievement wired to the wrong number, or firing on a near-miss |
 | `check:achievements-verified` | an achievement the Braining boost could buy, or one that needs the network |
 | `check:invariant` | the three places a day's score is computed disagreeing |
+| `check:notify` | a reminder addressed to the wrong player, or carrying something it should not |
+| `check:i18n` | user-facing text that never reached the translation table, and key parity |
+
+`check:i18n` is worth a note, because the discipline it replaces looked clean while about twenty
+strings were reaching players untranslated. Key parity only proves every key in `en` has a twin in
+`ru`; it cannot see a string that was never made a key. So the script scans the AST for literals and
+JSX text that look like prose, and it carries a **self-test** — the audit's actual findings, which it
+must still detect, and real non-copy strings, which it must still ignore. Loosen the heuristic and
+the self-test names the historical bug you just stopped catching. Its blind spots are listed in its
+own header; the main one is single-word copy.
+
+`scripts/sim-difficulty.mjs` is **not** a check script and `npm run check` does not run it. It is the
+model the difficulty multipliers and the nine score-achievement thresholds were derived from, kept
+because the previous derivation was thrown away and had to be rebuilt from figures quoted in a
+report. Run it before changing `DIFF_MULT` or a score threshold. It reports the thresholds by reading
+them out of the reducer, so it cannot drift from what actually ships.
 
 `npm run probe:anticheat` is the live counterpart to `check:anticheat`: it attacks the DEPLOYED
 functions with a real account. It needs credentials in the environment and a throwaway account —
@@ -54,6 +70,12 @@ The authoritative content specs are in **`~/Downloads`**, not in this repo —
 
 When a task says to use a spec's own wording, transcribe it and then **diff it back against the
 source with a script**. Sixty rows is well past what a careful read can confirm.
+
+**Both spec files were missing from `~/Downloads` as of 17 August 2026**, so the catalogue can no
+longer be diffed against them. The code has since deliberately diverged in three ways, all recorded
+in the header of `store/achievements.js`: six appended rows, three retuned thresholds, and the
+rarities that moved with them. If the spreadsheet turns up, the first 59 rows of `ACHIEVEMENTS` are
+still it, in its order — that is what the appended block is kept at the END of the array to protect.
 
 ## Things that will bite you
 
@@ -89,6 +111,14 @@ silently becomes per-device — a value that disagrees with itself depending on 
 **Loading replaces objects wholesale.** `Object.assign(base, parsed)` means a saved `milestones`
 from before a field existed arrives without it. Every reader must tolerate `undefined`.
 
+**`DIFF_MULT` cannot be rebalanced again without a migration plan.** It changed on 17 August 2026
+from 1.0/1.3/1.6 to 1.0/1.9/4.2, because the old figures made Hard score about half what Easy did for
+the same player. That was safe only because this branch has no real player data. It will not be safe
+again: a Hard run recorded at ×1.6 sits in the same chart, daily average and personal best as one
+recorded at ×4.2, and nothing marks which is which. **Revisit before the `main`/`react-rewrite`
+cutover, and before any later rebalance.** The nine score-achievement thresholds move with it — see
+`scripts/sim-difficulty.mjs`.
+
 **Score-based achievements read the raw score, never the boosted one.** Finishing Braining grants a
 one-shot multiplier on one Challenge run that day; the session stores both `rawScore` and `score`
 so the boost is provable. An achievement keyed off the boosted number is an achievement the boost
@@ -96,7 +126,9 @@ can buy.
 
 **The achievements array stays in spreadsheet order.** `ACHIEVEMENTS` in `store/achievements.js`
 mirrors the xlsx row for row so it can be checked against it. Display order is a *view* over it
-(`achievementsByRarity()`), not a reordering.
+(`achievementsByRarity()`), not a reordering. Anything the spreadsheet does not contain is APPENDED
+at the end rather than filed with its family: inserting into the middle shifts every row after it out
+of alignment with the source, which costs more than the tidiness is worth.
 
 **Achievement keys are permanent.** They are in players' saved data and on the server. Renaming one
 strands whoever earned it.

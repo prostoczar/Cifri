@@ -194,6 +194,10 @@ en:{
   new_pb:"New personal best",
   weighted_score:"weighted score",
   accuracy:"accuracy",
+  // The Challenge result screen's subtitle. It was raw JSX text — `{correct} correct - {wrong} wrong`
+  // — so both words stayed English for every player. Not on the 2026-08-14 audit's list; found by
+  // check:i18n, which reads JSX text nodes as well as string literals.
+  ch_result_correct_wrong:"{{correct}} correct - {{wrong}} wrong",
   streak:"streak",
   complete_streak:"Complete streak →",
   play_again:"Play again",
@@ -563,6 +567,7 @@ ru:{
   new_pb:"Новый личный рекорд",
   weighted_score:"взвешенный балл",
   accuracy:"точность",
+  ch_result_correct_wrong:"{{correct}} верно - {{wrong}} неверно",
   streak:"серия",
   complete_streak:"Завершить серию →",
   play_again:"Играть снова",
