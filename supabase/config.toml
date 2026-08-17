@@ -409,6 +409,17 @@ verify_jwt = true
 [functions.submit-attempt]
 verify_jwt = true
 
+# The reminder sender. The ONLY function here with verify_jwt = false, because its caller is the
+# scheduler rather than a player — there is no session to present, and requiring one would mean
+# minting a token for a cron job and storing it somewhere.
+#
+# What guards it instead is REMINDER_CRON_SECRET, checked inside the function against an
+# `x-cron-secret` header. That matters more here than the header alone suggests: an unprotected
+# endpoint that notifies every subscriber is a button anyone could press repeatedly, and the damage
+# is done to players' phones rather than to any data.
+[functions.send-reminders]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

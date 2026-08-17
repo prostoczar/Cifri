@@ -6,6 +6,34 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+    <!-- ── Installable web app ──────────────────────────────────────────────────────────────
+         This block exists for push notifications, not for looks. Apple only delivers web push
+         to a site that has been added to the Home Screen and opened from there, and it only
+         treats a site as installable if it serves a manifest with `display: standalone`. So on
+         iPhone — the platform this app is designed for — no manifest means no notifications at
+         all, for anyone, ever.
+
+         Deliberately NOT added: `viewport-fit=cover`. It would let the app paint under the notch,
+         which looks better, but the header is `position: fixed; top: 0` and the bottom nav is
+         pinned the same way — both would slide under the system UI until every one of those
+         screens learned about safe-area insets. Without it iOS simply letterboxes the app in
+         `theme_color`, which is correct on every device and changes no existing layout. -->
+    <link rel="manifest" href="/manifest.json">
+    <!-- Painted behind the status bar in standalone mode. Kept in step with the dark-mode setting
+         from App.jsx rather than a `prefers-color-scheme` media query, because dark is a stored
+         user preference here — the system is only consulted once, to seed it on first run. -->
+    <meta name="theme-color" content="#ffffff">
+    <link rel="apple-touch-icon" href="/icons/icon-180.png">
+    <!-- `mobile-web-app-capable` is the current spelling; the `apple-` one is superseded but still
+         honoured by older iOS, and costs one line to keep them both working. -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Cifri">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+
     <title>Cifri</title>
   </head>
   <body>

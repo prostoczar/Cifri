@@ -12,6 +12,7 @@ import {
 } from './store/selectors.js';
 import { ACHIEVEMENT_BY_KEY, earnedCount } from './store/achievements.js';
 import { track } from './lib/analytics.js';
+import { initNotifications, syncTags } from './lib/notifications.js';
 import { brAge, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
@@ -30,6 +31,8 @@ import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import QuitModal from './components/QuitModal.jsx';
 import AchievementPopup from './components/AchievementPopup.jsx';
+import NotifOptInCard from './components/NotifOptInCard.jsx';
+import { useNotificationStatus } from './hooks/useNotificationStatus.js';
 import ProfileSheet from './components/ProfileSheet.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
@@ -63,6 +66,10 @@ function AppShell() {
   const [activeTab, setActiveTab] = useState('challenge');
   // challenge|braining|practice|tricks|countdown|game|result|br-countdown|br-game|br-result
   const [screen, setScreen] = useState('challenge');
+  // Reminder opt-in. `notifStatus` reads what this device can actually do; the card is only ever
+  // opened by the effect below, never directly by anything the player taps.
+  const [notifCardOpen, setNotifCardOpen] = useState(false);
+  const notifStatus = useNotificationStatus();
   const [countdownInfo, setCountdownInfo] = useState(null); // {diff,isPrac,pcfg,origin,label}
 
   // ── The prefetched question set ─────────────────────────────────────────────
@@ -214,6 +221,12 @@ function AppShell() {
   // Apply dark mode + font size to <body>, matching applyTheme()/applyFontSize().
   useEffect(() => {
     document.body.classList.toggle('dark', !!state.settings.dark);
+    // Installed to the Home Screen, iOS paints the status bar area in `theme_color` rather than
+    // in whatever the page happens to be showing. A static value in manifest.json would leave a
+    // dark-mode player with a white bar above a near-black app, so the meta tag is kept in step
+    // with the setting here. The two colours are --bg from index.css, light and dark.
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute('content', state.settings.dark ? '#161513' : '#ffffff');
   }, [state.settings.dark]);
   useEffect(() => {
     document.body.classList.remove('fs-small', 'fs-large');
@@ -615,6 +628,92 @@ function AppShell() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.streak, state.pendingRestore, state.streakCreditedForDay]);
+
+  // ── Push notifications ────────────────────────────────────────────────────────────────────
+  //
+  // Loading the SDK asks for nothing and subscribes nobody. It only makes the capability checks
+  // answerable, so the settings screen can say something true about this device instead of
+  // guessing. The permission dialog is only ever opened from a tap on our own opt-in card.
+  useEffect(() => {
+    initNotifications();
+  }, []);
+
+  // Publish what the sender is allowed to know, whenever the state behind it settles.
+  //
+  // Read-only, like the analytics effects above and for the same reason: it watches state and
+  // never changes it, so no game rule can come to depend on a network call having succeeded.
+  // `syncTags` derives everything through the pure builder in notificationTags.js, which is what
+  // `npm run check:notify` drives against the real reducer.
+  //
+  // The dependency list is every input that builder reads. `settings` covers both the reminder
+  // preference and the language a notification should be written in.
+  useEffect(() => {
+    syncTags(state);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.streak,
+    state.streakCreditedForDay,
+    state.brBoostDay,
+    state.pendingRestore,
+    state.settings,
+  ]);
+
+  // ── The reminder opt-in ───────────────────────────────────────────────────────────────────
+  //
+  // Where it is allowed to appear. An ALLOWLIST rather than a list of screens to avoid, for the
+  // reason analytics.js gives about production hostnames: a screen added later and forgotten
+  // should default to silence, not to interrupting whatever it turned out to be. Interrupting a
+  // running Challenge with a permission dialog would cost the player the run.
+  const NOTIF_ASK_SCREENS = ['challenge', 'braining', 'result', 'br-result'];
+
+  useEffect(() => {
+    // Asked once on this device, ever. Not once a day: a browser "Block" cannot be undone from
+    // inside the app, so a second ask has nothing to win and the settings row is the way back for
+    // anyone who says no and later changes their mind.
+    if (state.notifAskedDay) return;
+    if (state.settings.notif && state.settings.notif.enabled) return;
+    // A day has to be banked first — the card's whole claim is that there is now a streak worth
+    // protecting, and before that it would be asking on behalf of nothing.
+    if (!(state.streak > 0)) return;
+    if (notifStatus.capability === 'unsupported' || notifStatus.blocked) return;
+    // Never stack on top of something else that is already talking.
+    if (trickAchievementQueue.length || ambientAchievementQueue.length) return;
+    if (state.pendingRestore) return;
+    if (NOTIF_ASK_SCREENS.indexOf(screen) === -1) return;
+    setNotifCardOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.streak,
+    state.notifAskedDay,
+    state.settings.notif,
+    state.pendingRestore,
+    notifStatus.capability,
+    notifStatus.blocked,
+    trickAchievementQueue,
+    ambientAchievementQueue,
+    screen,
+  ]);
+
+  // Both answers record that the asking happened, so neither one leaves the card able to return.
+  function closeNotifCard(outcome) {
+    setNotifCardOpen(false);
+    track('notif_prompt_answered', { outcome, streak: state.streak });
+    dispatch({ type: 'NOTIF_ASKED' });
+  }
+
+  async function handleNotifAllow() {
+    const ok = await notifStatus.enable();
+    // The preference is only stored if permission actually arrived. Recording "on" after a refusal
+    // would leave the settings toggle claiming to send something this device cannot send.
+    if (ok) {
+      dispatch({
+        type: 'SET_SETTING',
+        key: 'notif',
+        value: { ...(state.settings.notif || { hour: 19 }), enabled: true },
+      });
+    }
+    closeNotifCard(ok ? 'granted' : 'denied');
+  }
 
   // No daily cap and no first-trial guard: Challenge can be started as many times as the player
   // wants, and each run is folded into today's average. (Braining keeps its own guard, in
@@ -1351,6 +1450,15 @@ function AppShell() {
       </div>
       <BottomNav activeTab={activeTab} onSelectTab={handleSelectTab} chDone={chDone} brDone={brDone} visible={showNav} />
       <QuitModal open={quitOpen} onKeepGoing={() => setQuitOpen(false)} onQuit={handleQuitConfirm} />
+      <NotifOptInCard
+        open={notifCardOpen}
+        // On an iPhone that has not been added to the Home Screen there is no permission to grant,
+        // so the card shows Apple's install steps instead of a button that could not work.
+        needsInstall={notifStatus.capability === 'needs-install'}
+        busy={notifStatus.busy}
+        onAllow={handleNotifAllow}
+        onDismiss={() => closeNotifCard(notifStatus.capability === 'needs-install' ? 'needs_install' : 'dismissed')}
+      />
       <AchievementPopup
         queue={trickAchievementQueue}
         onDone={handleTrickAchievementsDone}
@@ -1413,6 +1521,14 @@ function AppShell() {
         onSetLanguage={(l) => {
           track('setting_changed', { setting: 'lang', value: l });
           dispatch({ type: 'SET_SETTING', key: 'lang', value: l });
+        }}
+        // Merged rather than replaced, so changing the hour cannot silently switch reminders off.
+        // The default is spelled out here because saved data from before this field existed
+        // arrives with no `notif` at all — loading replaces the settings object wholesale.
+        onSetNotif={(patch) => {
+          const next = { ...(state.settings.notif || { enabled: false, hour: 19 }), ...patch };
+          track('setting_changed', { setting: 'notif', value: next.enabled ? 'on_' + next.hour : 'off' });
+          dispatch({ type: 'SET_SETTING', key: 'notif', value: next });
         }}
         onLogout={() => { setProfileOpen(false); setConfirm('logout'); }}
         onReset={() => { setProfileOpen(false); setConfirm('reset'); }}

@@ -9,6 +9,10 @@ import { projectDailyRows } from '../lib/dailyResults.js';
 import { clearBaseline, fingerprint, readBaseline, writeBaseline } from '../lib/syncBaseline.js';
 import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
 import { identifyPlayer, resetIdentity, setPlayerContext } from '../lib/analytics.js';
+// Aliased on import so the two identity systems read as a pair at every call site rather than as
+// one obvious call and one mystery. Like analytics, these are called from the provider's effects
+// and never from the reducer — the reducer stays a pure function the check scripts can drive.
+import { identify as identifyPush, forget as forgetPush } from '../lib/notifications.js';
 
 // Remembers which account has already had its full history projected into daily_results, so the
 // backfill runs once per account rather than on every app start.
@@ -92,7 +96,15 @@ export function defaultState() {
       testDone: {},
       testPassed: [],
     },
-    settings: { sound: true, dark: null, fontSize: 'medium', lang: null },
+    // `notif` is the reminder PREFERENCE — whether they want one and at what local hour. It sits
+    // inside `settings` because `settings` is already in SYNCED_KEYS, so a player who picks 8pm on
+    // their phone gets 8pm on their laptop for free.
+    //
+    // What deliberately does NOT live here is whether push actually works on this device. A browser
+    // permission is granted to one browser and cannot be carried to another, so syncing "on" would
+    // put a green toggle on a laptop that sends nothing. The preference syncs; the subscription is
+    // asked of the device it is on. See notifAskedDay below for the other half of that split.
+    settings: { sound: true, dark: null, fontSize: 'medium', lang: null, notif: { enabled: false, hour: 19 } },
     selDiff: 'easy',
     chRange: 7,
     brChartRange: 7,
@@ -114,6 +126,14 @@ export function defaultState() {
     savePromptShown: false,      // the 5-day fallback prompt fires once, ever
     firstOpenDate: null,         // day the onboarding username screen was completed
     guestBannerLastShownDay: null, // caps the home-screen reminder banner to once per day
+    // The day our own opt-in card was last shown on THIS device. Not synced, and that is the point:
+    // it guards a browser permission dialog, which is a per-device thing. Syncing it would mean
+    // asking on a phone and then never asking on the laptop, which is the device that would have
+    // had to be asked separately anyway.
+    //
+    // A single "asked" flag rather than a counter because a browser "Block" cannot be undone from
+    // inside the app — there is no second chance to spend, so there is nothing to count.
+    notifAskedDay: null,
     anyGuestPromptDismissed: false, // true once a dedicated conversion prompt was dismissed
     tutorialShown: false,
     avatar: { type: 'letters', value: '', color: 'green', size: 55, customized: false },
@@ -512,6 +532,12 @@ export function reducer(state, action) {
 
     case 'DISMISS_GUEST_BANNER':
       return { ...state, guestBannerLastShownDay: dayKey() };
+
+    // Our own opt-in card was shown and answered, either way. Records only that the asking
+    // happened — whether permission was actually granted is the browser's answer, not ours, and is
+    // read back from the browser rather than stored here where it could go stale.
+    case 'NOTIF_ASKED':
+      return { ...state, notifAskedDay: dayKey() };
 
     // Logging out keeps all local progress — only the "logged in" status changes — and reopens
     // a fresh conversion cycle. The player lands back on the onboarding screen with their
@@ -1436,6 +1462,11 @@ export function AppStateProvider({ children }) {
       if (uid) {
         setLogOwner(uid);
         identifyPlayer(uid);
+        // Same reasoning again for push: from here this device's subscription belongs to this
+        // account, so the same person on a phone and a laptop is one recipient rather than two.
+        // A guest deliberately gets no identity at all — a device carrying tags is enough to
+        // remind, which is what lets reminders work before anyone has signed up for anything.
+        identifyPush(uid);
       }
     }
 
@@ -1454,6 +1485,10 @@ export function AppStateProvider({ children }) {
         // cannot be merged into the account that just left.
         setLogOwner(null);
         resetIdentity();
+        // Unlinking push is not politeness. Without it the next person to open this browser
+        // inherits the previous player's subscription identity and would be sent their streak
+        // warnings — someone else's progress, pushed to their phone.
+        forgetPush();
         bootstrap.current.doneFor = null;
         sync.current.uid = null;
         clearBaseline();
@@ -1547,6 +1582,9 @@ export function AppStateProvider({ children }) {
         // The moment a signup's guest history reaches the account is also the moment its analytics
         // history should. Idempotent, so the startup path above having already run is harmless.
         identifyPlayer(uid);
+        // The guest's push subscription and its tags survive the conversion and simply gain an
+        // identity — nobody has to re-grant permission for having signed up.
+        identifyPush(uid);
 
         // Everything queued on this device, including every question answered as a guest before
         // signing up — this is the only moment that history can reach an account.

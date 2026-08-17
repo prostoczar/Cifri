@@ -336,6 +336,115 @@ When trycifri.com is cut over to the rewrite: set both variables on whichever Ve
 it and deploy without the build cache. Nothing in PostHog needs to change — those events tag
 themselves `production` from the domain, and the existing filter starts counting them.
 
+## Push notifications
+
+Reminders are delivered by **OneSignal** (app "Cifri", web platform, origin
+`https://cifri-1cju.vercel.app`). Nothing about them is allowed to touch a game rule.
+
+### Why the app had to become installable first
+
+Apple delivers web push **only** to a site added to the Home Screen and opened from there. In an
+ordinary iPhone browser tab the permission prompt cannot even be shown. So `public/manifest.json`
+and the icons beside it are not polish — without them, no iPhone player can ever receive anything.
+`public/OneSignalSDKWorker.js` is the service worker that receives pushes while the page is closed;
+**its filename is part of OneSignal's contract** and renaming it breaks push silently.
+
+The worker deliberately does no offline asset caching. The app already works offline through
+`localStorage`, so caching would buy nothing and would add a way to serve a stale bundle.
+
+`viewport-fit=cover` is deliberately absent. It would let the app paint under the notch, but the
+header and bottom nav are both `position: fixed` and would slide under the system UI until every
+screen learned about safe-area insets. iOS letterboxes in `theme_color` instead.
+
+### The rule lives in the reducer, not in the sender
+
+`supabase/functions/send-reminders/` never asks whether a streak is about to break. The device
+answers that with the reducer — the only copy of the rule — and publishes the answer as absolute
+timestamps in `src/lib/notificationTags.js`. The function only compares them to `now`.
+
+A job that decided for itself who was at risk would be a second implementation of the streak rule,
+failing the same quiet way everything else here fails: by telling somebody their streak is safe on
+the evening it dies. `npm run check:notify` drives the real reducer and asserts the two agree at
+every gap length.
+
+Timestamps rather than date strings, because a OneSignal segment compares a tag against a **fixed**
+value and "today" is not fixed. Storing when a thing expires turns every question into `now > x`,
+and carries the player's local midnight inside it for free.
+
+### The four nudges, and why only one arrives
+
+Ordered by urgency; each filter excludes everything above it, so a player matches exactly one.
+
+| Kind | Fires when |
+|---|---|
+| `restore` | a broken streak's 24-hour restore offer is still open |
+| `boost` | an unspent Braining boost expires at midnight |
+| `streak` | a live streak dies tonight and nothing has been played |
+| `daily` | today is unplayed and nothing more urgent applies |
+
+The exclusions are plain ANDs, because OneSignal cannot express a negated range. That works because
+of one property, asserted by check 9 of the tag script: when today is not banked, a live streak
+always has a future deadline and a dead or absent one always has `0`. So "not at risk" is just
+`streak_deadline_ms < now`.
+
+### Guests get reminders too
+
+Targeting is entirely on tags the device publishes, never on a database query. A guest has no row
+on the server — that is the point of guests — so a query could only ever reach people who had
+signed up, and fixing that would mean mirroring guest progress server-side.
+
+Signing in additionally calls `OneSignal.login(<supabase user id>)` so one person on two devices is
+one recipient; signing out calls `logout()`, without which the next person to use that browser
+would inherit the previous player's streak warnings.
+
+No username, no email, no scores go to OneSignal. `check:notify` enforces a tag allowlist.
+
+### Consent
+
+The dashboard's own auto-prompt is switched **off**. A browser "Block" cannot be undone from inside
+the app, so it is only ever spent after the player says yes to `NotifOptInCard`, which appears once
+a first day is banked — never in onboarding, where nobody has played yet and where on iPhone the
+prompt could not appear at all. Asked once per device, ever; the settings row is the way back.
+
+The preference (`settings.notif`) is in `SYNCED_KEYS` and follows the player. The **subscription is
+per-device and never synced** — a browser permission belongs to one browser, so the settings toggle
+reads on only when the preference *and* this device's subscription agree.
+
+### Dashboard settings that matter
+
+| Setting | Value | Why |
+|---|---|---|
+| Permission prompt | exists, **Auto Prompt off** | OneSignal requires at least one to exist; ours does the asking |
+| Welcome notification | off | fires on subscribe, says nothing, and cannot be localised |
+| Click behaviour | **Origin + Focus** | the app has no router, so "navigate" would reload and discard a game in progress, and a new tab would mean two reducers writing one `localStorage` key |
+| Persistence | off | a reminder is a nudge, not an alarm |
+| Identity Verification | off | would need a signed token per player per login; revisit if notifications ever carry anything private |
+
+### Deploying it
+
+```bash
+npx supabase functions deploy send-reminders
+```
+
+Secrets it needs (dashboard → Project Settings → Edge Functions → Secrets):
+
+| Name | Notes |
+|---|---|
+| `ONESIGNAL_REST_API_KEY` | secret. New-style key, sent as `Authorization: Key …` — the legacy keys used `Basic` |
+| `ONESIGNAL_APP_ID` | public, but the function needs its own copy |
+| `REMINDER_CRON_SECRET` | any long random string; checked against an `x-cron-secret` header |
+| `APP_URL` | optional, where a tapped notification opens |
+
+`verify_jwt = false` for this one function — its caller is a scheduler, not a player. The cron
+secret is what guards it, and it matters: an open endpoint that notifies every subscriber is a
+button anyone could press.
+
+Send a `{"dryRun": true}` body to get the exact filters back without anything being delivered.
+
+**Push subscriptions do not survive a domain change.** They are bound to one origin, so whenever
+the rewrite is cut over to trycifri.com every subscriber re-subscribes from scratch. Costless now,
+expensive later — an argument for cutting over before there are many.
+
 ## The reference prototype
 
 `reference/original-prototype.html` is the complete, tested prototype the rewrite was ported
