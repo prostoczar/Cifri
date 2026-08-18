@@ -29,6 +29,21 @@
 // keys are already in players' saved data and on the server. New entries were free to pick any
 // name; the fifteen that existed kept theirs.
 
+// THE RUSSIAN HERE IS FORMAL «Вы», AND STAYS THAT WAY. The notifications and the newer short UI
+// copy use informal «ты», so this file reads as the odd one out — it is not, and the inconsistency
+// is deliberate rather than a pass somebody forgot to finish.
+//
+// The reason is grammar, not tone. Nearly every description here is past tense — «Вы прошли»,
+// «Вы набрали», «Вы играли» — and Russian past tense agrees with gender. Formal «Вы» takes the
+// plural form and sidesteps that entirely; «ты» would force «прошёл» or «прошла» on about fifty
+// rows, and the app has no idea which is right because it never asks a player's gender and should
+// not start. Informal address is therefore scoped to copy that can avoid past tense — imperatives
+// and impersonal phrasing — which is how the notification strings in
+// supabase/functions/_shared/notificationCopy.js are written.
+//
+// Polite «Вы»/«Ваш» is capitalised here even mid-sentence, which is the convention for addressing
+// one person politely, and is applied consistently across every row.
+
 // Ordered weakest to strongest. Used for grouping and for anything that wants to sort by scarcity.
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
@@ -54,7 +69,7 @@ export const ACHIEVEMENTS = [
   // for the tiered rule the wording now describes.
   { key: 'br_sharper', rarity: 'rare', mode: 'braining', reward: { type: 'symbol', value: 'Δ' },
     en: { name: 'Sharper Every Day', desc: 'Your brain age has dropped significantly since your very first result — by 20 years, below 25, or all the way to 20, depending on where you started.' },
-    ru: { name: 'Острее день ото дня', desc: 'Ваш возраст мозга заметно снизился по сравнению с самым первым результатом — на 20 лет, ниже 25 или до всех 20, в зависимости от того, с чего вы начинали.' } },
+    ru: { name: 'Острее день ото дня', desc: 'Ваш возраст мозга заметно снизился по сравнению с самым первым результатом — на 20 лет, ниже 25 или до всех 20, в зависимости от того, с чего Вы начинали.' } },
   { key: 'br_steady', rarity: 'epic', mode: 'braining', reward: { type: 'icon', value: 'brain' },
     en: { name: 'Steady Mind', desc: 'You reached Brain Age 20 five times.' },
     ru: { name: 'Твёрдый ум', desc: 'Вы пять раз достигли возраста мозга 20.' } },
@@ -124,7 +139,7 @@ export const ACHIEVEMENTS = [
     ru: { name: 'Разносторонний', desc: 'Вы прошли Challenge, тренировку мозга, Practice и один трюк в один и тот же день.' } },
   { key: 'x_one_year', rarity: 'legendary', mode: 'cross', reward: { type: 'icon', value: 'castle' },
     en: { name: 'One Year Strong', desc: "It's been 365 days since you started using Cifri." },
-    ru: { name: 'Год с Cifri', desc: 'Прошло 365 дней с тех пор, как вы начали пользоваться Cifri.' } },
+    ru: { name: 'Год с Cifri', desc: 'Прошло 365 дней с тех пор, как Вы начали пользоваться Cifri.' } },
   { key: 'x_explorer', rarity: 'uncommon', mode: 'cross', reward: { type: 'icon', value: 'compass' },
     en: { name: 'Explorer', desc: 'You tried all four modes — Challenge, Braining, Practice, and Tricks — at least once.' },
     ru: { name: 'Исследователь', desc: 'Вы попробовали все четыре режима — Challenge, тренировку мозга, Practice и Tricks — хотя бы раз.' } },
@@ -161,10 +176,10 @@ export const ACHIEVEMENTS = [
     ru: { name: 'Попытаю удачу', desc: 'Вы впервые сыграли Challenge повторно после того, как результат дня уже был зафиксирован.' } },
   { key: 'rp_up', rarity: 'uncommon', mode: 'replay', reward: { type: 'icon', value: 'shield' },
     en: { name: 'Nerves of Steel', desc: 'You replayed Challenge and your average went up, not down.' },
-    ru: { name: 'Стальные нервы', desc: 'Вы сыграли Challenge повторно, и ваш средний балл вырос, а не упал.' } },
+    ru: { name: 'Стальные нервы', desc: 'Вы сыграли Challenge повторно, и Ваш средний балл вырос, а не упал.' } },
   { key: 'rp_plus50', rarity: 'rare', mode: 'replay', reward: { type: 'icon', value: 'gift' },
     en: { name: 'Paid Off', desc: 'A replay raised your daily average by 50 points or more.' },
-    ru: { name: 'Окупилось', desc: 'Повторная игра подняла ваш дневной средний балл на 50 очков и более.' } },
+    ru: { name: 'Окупилось', desc: 'Повторная игра подняла Ваш дневной средний балл на 50 очков и более.' } },
   // The spreadsheet asks for five replays. Under the averaging model a replay is a cheap thing to
   // do — every Challenge play counts, so five extra runs is one determined evening — and five put
   // this well below the Rare tier it sits in. Raised to seven, with the wording moved to match:

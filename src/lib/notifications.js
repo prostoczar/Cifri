@@ -12,6 +12,21 @@
 //
 // It also computes nothing. What we tell OneSignal comes from `notificationTags.js`, which is a
 // pure read of state the reducer has already settled.
+//
+// ── THE ORDERING RULE, learned the hard way ───────────────────────────────────────────────────
+//
+// `OneSignalDeferred` is a queue the SDK drains IN ORDER once it loads, and `OneSignal.init()`
+// must be the first thing in it. The first version of this file queued `init` inside
+// `loadSdk().then(...)` — so it was pushed only after the script had downloaded, while the
+// tag-publishing effect pushed its callback immediately on mount. The queue came out as
+// [addTags, init], addTags ran against an uninitialised SDK, threw, and was swallowed by the
+// very error handling that is meant to protect the game. The result was a subscriber with no
+// tags: notifications could be delivered by hand, but no filter could ever match them, and
+// nothing anywhere reported a problem.
+//
+// So `ensureInit()` queues init SYNCHRONOUSLY, and every public function below calls it before
+// pushing anything of its own. Do not make init conditional on the script having loaded — the
+// queue is what makes pushing early safe, and it is the whole point of it.
 
 import { notificationTags } from './notificationTags.js';
 
@@ -23,7 +38,35 @@ const APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
 // the live OneSignal app.
 const configured = !!APP_ID;
 
-let initStarted = false;
+let initQueued = false;
+
+// ── Diagnostics ───────────────────────────────────────────────────────────────────────────────
+//
+// Swallowing every error is right — a push failure must never reach the game — but it is also how
+// the ordering bug above stayed invisible. These record what actually happened so it can be read
+// back from the console on a real device, where the failure was, without changing behaviour.
+let lastError = null;
+let lastTagsSent = null;
+let lastTagsAt = null;
+
+/** Read from the browser console: `window.__cifriNotif()`. Never used by the app itself. */
+export function notificationDiagnostics() {
+  return {
+    configured,
+    initQueued,
+    sdkPresent: typeof window !== 'undefined' && !!window.OneSignal,
+    capability: pushCapability(),
+    installed: isInstalled(),
+    permission: typeof Notification !== 'undefined' ? Notification.permission : 'n/a',
+    lastTagsSent,
+    lastTagsAt,
+    lastError: lastError ? String(lastError) : null,
+  };
+}
+
+function note(e) {
+  lastError = e;
+}
 
 // The SDK is loaded on demand rather than from a <script> tag in index.html. A tag would fetch it
 // on every page load for every visitor, including the ones who will never be asked for permission,
@@ -48,11 +91,57 @@ function loadSdk() {
   });
 }
 
-// The SDK's own queue. Anything pushed here runs once `init` has completed, so callers never have
-// to know whether the script has finished loading.
+// The SDK's own queue. Anything pushed here runs once the script has loaded, in push order.
 function withOneSignal(fn) {
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   window.OneSignalDeferred.push(fn);
+}
+
+/**
+ * Queue `init` and start the download. Idempotent, and called by every entry point below rather
+ * than only from App.jsx — React runs hook effects in declaration order, and a hook that reads
+ * this module can therefore run before the effect that would have initialised it. Making every
+ * caller responsible for ensuring init removes that ordering from the list of things that have to
+ * stay true.
+ *
+ * Initialising asks for nothing and subscribes nobody. The dashboard's own prompt is switched off
+ * deliberately: a browser permission dialog, once denied, cannot be reopened from inside the app,
+ * so it must never be spent on someone who has not already said yes to a question of ours that
+ * they could answer with "not now".
+ */
+function ensureInit() {
+  if (!configured) return false;
+  if (initQueued) return true;
+  initQueued = true;
+
+  // Pushed synchronously, BEFORE the script is even requested, so nothing can jump ahead of it.
+  withOneSignal(async (OneSignal) => {
+    try {
+      await OneSignal.init({
+        appId: APP_ID,
+        // Lets the SDK run against the dev server. Without it every check below reports
+        // "unsupported" on localhost and none of this can be tested before deploying.
+        allowLocalhostAsSecureOrigin: true,
+        // Matches what the dashboard was set to, and is the setting that keeps a second copy of
+        // the app from opening. This app has no router — every screen is the same URL with the
+        // view switched in state — so "navigate" would reload whatever tab it found and throw
+        // away a game in progress, and a new tab would mean two reducers writing the same
+        // localStorage key. Focus an existing tab, change nothing.
+        notificationClickHandlerMatch: 'origin',
+        notificationClickHandlerAction: 'focus',
+      });
+    } catch (e) {
+      note(e);
+    }
+  });
+
+  loadSdk().catch(note);
+  return true;
+}
+
+/** Public name for the same thing, called once from App.jsx on mount. */
+export function initNotifications() {
+  ensureInit();
 }
 
 /**
@@ -93,51 +182,13 @@ export function isInstalled() {
 }
 
 /**
- * Load and initialise the SDK. Safe to call more than once.
- *
- * Initialising does NOT ask for permission and does not subscribe anybody. The dashboard's own
- * prompt is switched off deliberately: a browser permission dialog, once denied, cannot be
- * reopened from inside the app, so it must never be spent on someone who has not already said yes
- * to a question of ours that they could answer with "not now".
- */
-export function initNotifications() {
-  if (!configured || initStarted) return;
-  initStarted = true;
-  loadSdk()
-    .then(() => {
-      withOneSignal(async (OneSignal) => {
-        try {
-          await OneSignal.init({
-            appId: APP_ID,
-            // Lets the SDK run against the dev server. Without it every check below reports
-            // "unsupported" on localhost and none of this can be tested before deploying.
-            allowLocalhostAsSecureOrigin: true,
-            // Matches what the dashboard was set to, and is the setting that keeps a second copy
-            // of the app from opening. This app has no router — every screen is the same URL with
-            // the view switched in state — so "navigate" would reload whatever tab it found and
-            // throw away a game in progress, and a new tab would mean two reducers writing the
-            // same localStorage key. Focus an existing tab, change nothing.
-            notificationClickHandlerMatch: 'origin',
-            notificationClickHandlerAction: 'focus',
-          });
-        } catch (e) {
-          /* never let a push failure reach the game */
-        }
-      });
-    })
-    .catch(() => {
-      /* blocked, offline, or the CDN is down — the app carries on regardless */
-    });
-}
-
-/**
  * Ask the browser for permission. Only ever call this from a real tap on our own opt-in card,
- * after the player has already said yes to us — see initNotifications() for why.
+ * after the player has already said yes to us — see ensureInit() for why.
  *
  * Resolves to true if the player is now subscribed.
  */
 export async function requestPermission() {
-  if (!configured) return false;
+  if (!ensureInit()) return false;
   return new Promise((resolve) => {
     withOneSignal(async (OneSignal) => {
       try {
@@ -149,6 +200,7 @@ export async function requestPermission() {
         }
         resolve(!!OneSignal.Notifications.permission);
       } catch (e) {
+        note(e);
         resolve(false);
       }
     });
@@ -157,12 +209,13 @@ export async function requestPermission() {
 
 /** Whether this DEVICE currently has a live push subscription. Never synced — see below. */
 export async function isSubscribed() {
-  if (!configured) return false;
+  if (!ensureInit()) return false;
   return new Promise((resolve) => {
     withOneSignal((OneSignal) => {
       try {
         resolve(!!OneSignal.Notifications.permission && !!OneSignal.User.PushSubscription.optedIn);
       } catch (e) {
+        note(e);
         resolve(false);
       }
     });
@@ -171,24 +224,24 @@ export async function isSubscribed() {
 
 /** Stop sending to this device, without touching the browser permission. Reversible. */
 export function optOut() {
-  if (!configured) return;
+  if (!ensureInit()) return;
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.User.PushSubscription.optOut();
     } catch (e) {
-      /* ignore */
+      note(e);
     }
   });
 }
 
 /** Resume sending to a device that had opted out. */
 export function optIn() {
-  if (!configured) return;
+  if (!ensureInit()) return;
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.User.PushSubscription.optIn();
     } catch (e) {
-      /* ignore */
+      note(e);
     }
   });
 }
@@ -203,7 +256,7 @@ export function optIn() {
  * just publishes it.
  */
 export function syncTags(state) {
-  if (!configured) return;
+  if (!ensureInit()) return;
   withOneSignal(async (OneSignal) => {
     try {
       const tags = notificationTags(state);
@@ -221,8 +274,10 @@ export function syncTags(state) {
       for (const k of Object.keys(tags)) out[k] = String(tags[k]);
       if (tz) out.tz = tz;
       await OneSignal.User.addTags(out);
+      lastTagsSent = out;
+      lastTagsAt = new Date().toISOString();
     } catch (e) {
-      /* ignore */
+      note(e);
     }
   });
 }
@@ -233,12 +288,12 @@ export function syncTags(state) {
  * that is enough to remind them.
  */
 export function identify(userId) {
-  if (!configured || !userId) return;
+  if (!userId || !ensureInit()) return;
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.login(String(userId));
     } catch (e) {
-      /* ignore */
+      note(e);
     }
   });
 }
@@ -248,12 +303,12 @@ export function identify(userId) {
  * inherits the previous player's identity, and would be sent their streak warnings.
  */
 export function forget() {
-  if (!configured) return;
+  if (!ensureInit()) return;
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.logout();
     } catch (e) {
-      /* ignore */
+      note(e);
     }
   });
 }

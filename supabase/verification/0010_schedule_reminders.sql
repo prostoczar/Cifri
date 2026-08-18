@@ -47,7 +47,13 @@ select cron.schedule(
       -- ↓↓↓ REPLACE THIS with your REMINDER_CRON_SECRET ↓↓↓
       'x-cron-secret', 'PASTE_YOUR_CRON_SECRET_HERE'
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    -- pg_net defaults to five seconds and records a NULL status code when it gives up. The
+    -- function has since been made to fire its sends in parallel and comes back well inside that,
+    -- but the default left no margin at all: a slow reply from OneSignal produced a row that could
+    -- not be told apart from a failure, on the one job nobody is watching. Thirty seconds is not
+    -- expected to be needed — it is there so that a slow run is still a run we can SEE.
+    timeout_milliseconds := 30000
   );
   $$
 );

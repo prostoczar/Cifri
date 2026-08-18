@@ -120,11 +120,19 @@ Deno.serve(async (req) => {
   const nowMs = Date.now();
   const utcHour = new Date(nowMs).getUTCHours();
 
-  const results: Array<Record<string, unknown>> = [];
+  // Every send, fired at once.
+  //
+  // This was sequential to begin with, on the theory that the ORDER of the sends was what kept a
+  // player to one notification. That was simply wrong: the filters are mutually exclusive by
+  // construction, so a player matches exactly one kind regardless of which request lands first.
+  // The ordering bought nothing.
+  //
+  // What it cost was real. Eight sequential round-trips to OneSignal put the function either side
+  // of pg_net's five-second default timeout, so roughly every other scheduled run came back with a
+  // null status code — the sends had probably happened, but there was no longer any way to know.
+  // A monitoring blind spot on the one job nobody watches is the worst possible place for one.
+  const jobs: Array<Promise<Record<string, unknown>>> = [];
 
-  // Ordered most urgent first. Sent sequentially rather than in parallel: the ordering is the
-  // thing that keeps one player to one notification, and firing them at once would make the
-  // outcome depend on which request happened to land first.
   for (const kind of NUDGE_ORDER) {
     for (const lang of LANGS) {
       const copy = NOTIFICATION_COPY[kind][lang];
@@ -142,12 +150,12 @@ Deno.serve(async (req) => {
       };
 
       if (dryRun) {
-        results.push({ kind, lang, dryRun: true, filters: payload.filters });
+        jobs.push(Promise.resolve({ kind, lang, dryRun: true, filters: payload.filters }));
         continue;
       }
 
-      try {
-        const res = await fetch(ONESIGNAL_API, {
+      jobs.push(
+        fetch(ONESIGNAL_API, {
           method: 'POST',
           headers: {
             // New-style API keys use `Key`; the legacy REST keys used `Basic`. Getting this wrong
@@ -156,26 +164,33 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(payload),
-        });
-        const out = await res.json().catch(() => ({}));
-        // "All included players are not subscribed" is OneSignal's reply when a segment is empty,
-        // and an empty segment is the normal, correct outcome for most hours of most days. Recorded
-        // rather than treated as a failure, so the logs stay readable enough to spot a real one.
-        results.push({
-          kind,
-          lang,
-          status: res.status,
-          recipients: out.recipients ?? 0,
-          id: out.id ?? null,
-          errors: out.errors ?? null,
-        });
-      } catch (e) {
-        // One kind failing must not stop the rest. A network blip during the restore send should
-        // not also cost everybody their daily reminder.
-        results.push({ kind, lang, error: String(e) });
-      }
+        })
+          .then(async (res) => {
+            const out = await res.json().catch(() => ({}));
+            // "All included players are not subscribed" is OneSignal's reply to an empty segment,
+            // and an empty segment is the normal, correct outcome for most hours of most days.
+            // Recorded rather than treated as a failure, so the logs stay readable enough that a
+            // real one stands out.
+            return {
+              kind,
+              lang,
+              status: res.status,
+              recipients: out.recipients ?? 0,
+              id: out.id ?? null,
+              errors: out.errors ?? null,
+            };
+          })
+          // One send failing must not take the others with it. A blip on the restore send should
+          // not also cost everybody their daily reminder.
+          .catch((e) => ({ kind, lang, error: String(e) }))
+      );
     }
   }
+
+  // allSettled rather than all, though every promise above already swallows its own failure — it
+  // costs nothing and means a future edit that forgets a .catch cannot silently drop the response.
+  const settled = await Promise.allSettled(jobs);
+  const results = settled.map((s) => (s.status === 'fulfilled' ? s.value : { error: String(s.reason) }));
 
   return json({ ok: true, utcHour, nowMs, dryRun, results });
 });

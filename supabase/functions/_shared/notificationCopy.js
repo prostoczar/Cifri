@@ -24,30 +24,38 @@
 // nothing in `npm run check` can prove the substitution renders, and the failure mode is the raw
 // template arriving on a player's lock screen. Worth adding once it has been seen working once.
 
+// Read from the scoring module rather than typed into the copy. The boost percentage is a game
+// number that lives in exactly one place, and a notification promising +5% after someone changed
+// the constant would be the app lying about its own rules on a player's lock screen.
+import { BRAINING_BOOST_PCT } from './scoring.js';
+
+const PCT = '+' + BRAINING_BOOST_PCT + '%';
+
+// The Russian throughout uses informal «ты», matching the rest of the app.
 export const NOTIFICATION_COPY = {
   // A streak that broke and can still be brought back, with the 24-hour offer running out.
   // Ranked above everything else because it is the only one that is genuinely last-chance: the
   // others come round again tomorrow, this does not.
   restore: {
-    en: { title: 'Your streak can still come back', body: 'The restore offer runs out tonight.' },
-    ru: { title: 'Серию ещё можно вернуть', body: 'Предложение восстановления истекает сегодня.' },
+    en: { title: "Your flame hasn't gone out yet", body: 'Solve a few equations to relight it' },
+    ru: { title: 'Огонёк ещё не погас', body: 'Реши пару примеров — он снова разгорится' },
   },
   // An unspent Braining boost. The one nobody else could send: it is specific to something the
   // player earned today and loses at midnight. Fires in a gap the others cannot, because finishing
   // Braining already banked the day, which silences both streak messages below.
   boost: {
-    en: { title: 'Your boost expires tonight', body: 'You earned a Challenge boost in Braining today — spend it before midnight.' },
-    ru: { title: 'Бонус сгорит сегодня', body: 'Вы заработали бонус к Челленджу за Брейнинг — используйте его до полуночи.' },
+    en: { title: "Don't let your boost fade", body: "You've got " + PCT + ' on Challenge — use it by midnight' },
+    ru: { title: 'Не дай бонусу сгореть', body: PCT + ' к Челленджу ждут — используй до полуночи' },
   },
   // A live streak that dies at local midnight unless something is played today.
   streak: {
-    en: { title: 'Your streak ends at midnight', body: 'One round of Challenge or Braining keeps it alive.' },
-    ru: { title: 'Серия прервётся в полночь', body: 'Один раунд Челленджа или Брейнинга сохранит её.' },
+    en: { title: "Don't let your flame go out", body: 'One round of Challenge or Braining keeps it burning' },
+    ru: { title: 'Не дай огню погаснуть', body: 'Один раунд Челленджа или Брейнинга — и серия жива' },
   },
   // The plain nudge, for everyone with no streak on the line.
   daily: {
-    en: { title: 'Time to train', body: "Today's Cifri hasn't happened yet." },
-    ru: { title: 'Пора заниматься', body: 'Вы сегодня ещё не занимались в Cifri.' },
+    en: { title: 'Sharpen your mind today', body: 'One math game a day paves the way' },
+    ru: { title: 'Наточи свой ум сегодня', body: 'Пара минут в Cifri — и день не прошёл зря' },
   },
 };
 

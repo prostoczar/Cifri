@@ -12,7 +12,7 @@ import {
 } from './store/selectors.js';
 import { ACHIEVEMENT_BY_KEY, earnedCount } from './store/achievements.js';
 import { track } from './lib/analytics.js';
-import { initNotifications, syncTags } from './lib/notifications.js';
+import { initNotifications, syncTags, notificationDiagnostics } from './lib/notifications.js';
 import { brAge, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
@@ -636,6 +636,11 @@ function AppShell() {
   // guessing. The permission dialog is only ever opened from a tap on our own opt-in card.
   useEffect(() => {
     initNotifications();
+    // Readable from the browser console as `__cifriNotif()`, on a real phone, where the interesting
+    // failures happen. Push errors are deliberately swallowed so they can never reach the game —
+    // which is also how an ordering bug once left a subscriber with no tags at all and nothing
+    // anywhere to say so. This costs one global and makes that class of failure answerable.
+    window.__cifriNotif = notificationDiagnostics;
   }, []);
 
   // Publish what the sender is allowed to know, whenever the state behind it settles.
