@@ -18,60 +18,41 @@
 //   It never recomputes a game rule. Anything numeric an event reports is read back from state
 //   the reducer has already settled. CLAUDE.md warns about the three places a day's score is
 //   computed disagreeing; analytics must not become a fourth.
-
-// ── posthog-js is NOT imported statically ─────────────────────────────────────
 //
-// It is 236 kB raw / 78 kB gzipped, which the 2026-08-14 audit measured as 29% of the whole gzipped
-// bundle. A static import puts all of it on the critical path of every cold load, on a phone, before
-// anything renders — to send one pageview. So it is fetched with a dynamic import after first paint,
-// and Vite gives it its own chunk for free.
+// ── Why posthog-js is imported dynamically ────────────────────────────────────
 //
-// THE PART THAT IS EASY TO GET WRONG. Every function below is synchronous and called from all over
-// the app, including a useEffect that runs on mount — well before the import can resolve. If they
-// simply no-opped until the module landed, the change would not "delay analytics", it would silently
-// DROP the first events of every session, including the super-properties that every later event is
-// supposed to carry. So calls made before the module arrives are QUEUED as closures and replayed in
-// order once it is ready. The only thing that actually moves is when the network request goes out.
+// posthog-js is ~248 kB raw / ~80 kB gzipped — roughly 30% of the shipped JavaScript for a
+// mobile-first app. Imported statically it sat in the entry chunk, so a player on a phone
+// downloaded and parsed the whole analytics SDK before the first question could be drawn.
+// It is now its own chunk, fetched once the first paint is done.
 //
-// What genuinely does change, and is accepted: the initial $pageview fires a few hundred
-// milliseconds later, so somebody who bounces inside that window is not recorded. A side benefit
-// worth knowing — by the time PostHog initialises, authRedirect.js has already scrubbed any auth
-// token out of the address bar, so $current_url is clean before before_send even looks at it.
+// Deferring a module whose entire job is to record what happens at startup is only safe if
+// nothing that happens before it arrives is lost. So every entry point below is callable from
+// the first tick and records into `pending` until the real module lands. The lighter entry
+// points posthog ships (dist/module.slim.js et al) were measured and rejected — see the note
+// above `loadPosthog` for the numbers.
 
 const KEY = import.meta.env.VITE_POSTHOG_KEY;
 const HOST = import.meta.env.VITE_POSTHOG_HOST;
 
-// The loaded module. Null until the dynamic import resolves.
-let ph = null;
+// Whether this build was given keys at all — a contributor's checkout, or a build where they
+// were not configured. Everything below then becomes a no-op rather than an error. Checked
+// synchronously so an unconfigured build never even requests the chunk.
+const configured = Boolean(KEY && HOST);
 
-// True only once the module has loaded AND init() succeeded. False when the keys are absent — a
-// contributor's checkout, or a build where they were not configured — and everything below then
-// becomes a no-op rather than an error, exactly as before.
+// The module, once it has arrived AND initialised without throwing. Null means "not yet, or
+// never" — the two are deliberately indistinguishable to callers, because the correct
+// behaviour is the same for both: buffer, and never let the player notice.
+let posthog = null;
+
+// False until init() has actually succeeded. Kept separate from `posthog` being non-null so a
+// module that loads but fails to initialise cannot be captured into.
 let enabled = false;
 
-// Set when loading or initialising failed. Distinct from `!enabled`, because it is the signal to
-// stop queueing: without it a blocked or offline PostHog would grow the queue for the whole session.
+// Set when the chunk failed to load, or loaded and failed to initialise. Distinct from `!enabled`,
+// which also covers "not yet". This one means "never", and it is what stops `pending` refilling to
+// its cap for the rest of a session that can no longer send anything.
 let unavailable = false;
-
-// Calls made before the module arrived, replayed in order. Bounded, because an unbounded queue is a
-// memory leak wearing a helpful hat — if PostHog is being blocked by an extension the load may never
-// resolve or reject at all.
-const pending = [];
-const PENDING_MAX = 200;
-
-// The single gate every public function goes through: run it now, or hold it until we can.
-function withPosthog(fn) {
-  if (enabled) {
-    try {
-      fn(ph);
-    } catch (e) {
-      /* never let analytics interrupt a game */
-    }
-    return;
-  }
-  if (unavailable || !KEY || !HOST) return;
-  if (pending.length < PENDING_MAX) pending.push(fn);
-}
 
 // ── Which app sent this? ──────────────────────────────────────────────────────
 //
@@ -152,43 +133,119 @@ function scrubUrlProperties(props) {
   }
 }
 
-// Resolves once the browser has painted, so the import's network request cannot compete with the
-// first render. rAF fires before a paint and the inner timeout lands just after it;
-// `requestIdleCallback` would be the expressive way to say this and is still not in Safari, which is
-// most of this app's traffic.
+// ── Buffering the startup events ──────────────────────────────────────────────
 //
-// THE TIMER IS NOT BELT-AND-BRACES, IT IS THE FIX FOR A REAL BUG. requestAnimationFrame does not fire
-// at all in a background tab, and a browser restoring a previous session opens every tab but one in
-// exactly that state. The first version of this waited on rAF alone, so a player whose tab started
-// hidden never initialised analytics — not "later", never — and the queue below quietly filled to its
-// cap and dropped everything after. Found by running it in a hidden pane, which is the only reason it
-// was found at all. So the two race, and whichever comes first wins.
-const INIT_DEADLINE_MS = 1500;
+// One ordered queue, not one per operation. identify(), reset() and capture() are only
+// meaningful relative to each other: a reset that replayed after the captures it was supposed
+// to precede would attribute the previous player's games to the next one — the exact bug the
+// resetIdentity() comment below exists to prevent. Order is the correctness property here, so
+// there is a single list of thunks and it is replayed front to back.
+const pending = [];
 
-function afterFirstPaint() {
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => setTimeout(done, 0));
-    }
-    setTimeout(done, INIT_DEADLINE_MS);
-  });
+// A player whose chunk never arrives — offline, blocked by an extension, a failed deploy —
+// would otherwise grow this list for the whole session. The cap is far above a realistic
+// session (a long day of play is dozens of events, not hundreds) so in practice it never
+// binds; it is a memory guard, not a sampling policy. Once full, later events are dropped
+// rather than earlier ones: the startup events are the ones the deferral put at risk, so they
+// are the ones worth keeping.
+const MAX_PENDING = 250;
+
+function enqueue(op) {
+  // Nothing will ever flush once the chunk is known to be gone, so holding events past that point
+  // only grows a list nobody will read. Without this the queue refills to MAX_PENDING and stays
+  // there for the rest of the session.
+  if (unavailable) return;
+  if (pending.length < MAX_PENDING) pending.push(op);
 }
 
-// Returns a promise so a caller can wait for analytics to be live. Nothing in the app does — main.jsx
-// deliberately does not await it, or the load would be back on the critical path — but a check or a
-// console session can, and a function whose completion is unobservable is a function that cannot be
-// tested.
-export async function initAnalytics() {
-  if (!KEY || !HOST) return false;
+function flushPending() {
+  // Spliced out before replaying: an op that somehow re-enters one of the entry points must
+  // append to a fresh queue rather than mutating the list being iterated.
+  const ops = pending.splice(0, pending.length);
+  for (const op of ops) {
+    try {
+      op();
+    } catch (e) {
+      /* one un-replayable event must not cost the rest of the queue */
+    }
+  }
+}
+
+// After the first paint, without ever waiting for a paint that may not come.
+//
+// requestIdleCallback is the whole mechanism: idle periods only begin once the browser has
+// finished rendering, so it already means "after the paint", and its timeout is the ceiling for
+// a player who starts answering immediately and never leaves the main thread idle.
+//
+// requestAnimationFrame was tried here first and is wrong. A tab that starts hidden — a link
+// opened in the background, a restored session, a page reload while the player is in another
+// app — never runs a rAF callback at all, so the SDK would never be requested, and every event
+// would sit in `pending` until the session ended. That is precisely the silent data loss this
+// buffering exists to prevent, so the paint is inferred from idleness instead of waited on.
+function afterFirstPaint(fn) {
+  if (typeof window === 'undefined') return;
+
+  // A hidden tab has no render work to yield to, so there is nothing to schedule around. Start
+  // the fetch now: import() is asynchronous regardless, so this still cannot block a render.
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    fn();
+    return;
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(fn, { timeout: 2000 });
+    return;
+  }
+
+  // Safari only shipped requestIdleCallback in 16.4 and this app's audience is heavily iOS, so
+  // this is a main path rather than an edge case. A plain delay is the closest honest
+  // approximation: long enough to be clear of the first render, short enough that a player who
+  // bounces in the first second still has their events sent.
+  setTimeout(fn, 1000);
+}
+
+// The lighter entry points were measured, not assumed. On posthog-js 1.415.4:
+//
+//   posthog-js (dist/module.js)                      904.88 kB raw / 267.26 kB gzipped
+//   dist/module.slim.js alone                        785.82 kB raw / 230.47 kB gzipped
+//   dist/module.slim.js + dist/extension-bundles.js  915.17 kB raw / 270.86 kB gzipped
+//
+// The slim entry point drops src/autocapture.ts and src/extensions/web-vitals/index.ts — the
+// only two extensions this app actually turns on — so the middle row is not a shippable
+// configuration. Putting them back via extension-bundles.js costs more than slim saved,
+// because dist/*.js are separately pre-bundled artifacts: the two files duplicate posthog's
+// shared runtime and the minified bundle does not tree-shake down to the one group used.
+// The documented `posthog-js/slim` subpath that would avoid this does not exist in 1.415.4
+// (package.json has no `exports` map, and `files` ships no top-level slim/ directory), and
+// the unbundled lib/ tree is CommonJS, so it cannot tree-shake either. Worth re-measuring
+// when posthog-js ships real subpath exports; until then the win is in the deferral, not the
+// entry point.
+let requested = false;
+
+function loadPosthog() {
+  if (requested) return;
+  requested = true;
+  import('posthog-js')
+    .then((mod) => {
+      initPosthog(mod.default);
+      flushPending();
+    })
+    .catch((e) => {
+      // The chunk did not arrive. Everything buffered is now unsendable, so let it go rather
+      // than hold it for a session that will never flush.
+      unavailable = true;
+      pending.length = 0;
+      if (import.meta.env.DEV) console.warn('[analytics] posthog-js chunk failed to load:', e);
+    });
+}
+
+export function initAnalytics() {
+  if (!configured) return;
+  afterFirstPaint(loadPosthog);
+}
+
+function initPosthog(ph) {
   try {
-    await afterFirstPaint();
-    ph = (await import('posthog-js')).default;
     ph.init(KEY, {
       api_host: HOST,
 
@@ -220,6 +277,12 @@ export async function initAnalytics() {
       // event instead. Synthesising $pageview per screen was rejected — they would all carry the
       // same URL, and would corrupt bounce rate and session duration by looking like navigation
       // that did not happen.
+      //
+      // posthog raises this one itself at init, so unlike the events routed through track() it
+      // cannot be timestamped from when it truly happened — it now lands just after the first
+      // paint rather than just before it. It is still exactly one pageview per load, which is
+      // what the bounce and session metrics are counting; only its clock moved, by about the
+      // length of one paint.
       capture_pageview: true,
       capture_pageleave: true,
 
@@ -230,9 +293,9 @@ export async function initAnalytics() {
           // Stamped here rather than registered as a super property, because the initial
           // $pageview is captured DURING init — before any register() call could possibly run.
           // An environment tag that the one guaranteed event is missing is not a filter, it is a
-          // leak, so it goes where nothing can be captured ahead of it. This matters MORE now that
-          // init is deferred: setPlayerContext() is queued and replays after init, so the $pageview
-          // is captured strictly before the first register() lands.
+          // leak, so it goes where nothing can be captured ahead of it. Deferring init does not
+          // change that ordering: setPlayerContext() is buffered and replays after init, so the
+          // $pageview still lands strictly before the first register().
           if (event.properties) event.properties.environment = ENVIRONMENT;
         } catch (e) {
           // A property bag that cannot be scrubbed is a property bag that cannot be shown to be
@@ -243,46 +306,39 @@ export async function initAnalytics() {
         return event;
       },
     });
-
-    // Set BEFORE the queue is drained, or every replayed call would find `enabled` false and simply
-    // queue itself again.
+    posthog = ph;
     enabled = true;
-
-    // Replayed in call order, which is what makes the queue faithful rather than merely lossless:
-    // register() before the capture()s that are supposed to carry its properties, identify() before
-    // the events that belong to the identified person.
-    const queued = pending.splice(0, pending.length);
-    for (const fn of queued) {
-      try {
-        fn(ph);
-      } catch (e) {
-        /* one bad replay must not stop the rest */
-      }
-    }
-    return true;
   } catch (e) {
+    posthog = null;
     enabled = false;
+    // The module arrived but will never work, which is as final as it never arriving.
     unavailable = true;
-    // Anything still waiting will never be sent, and holding it would only leak.
     pending.length = 0;
     // Silent in production — a player must never see or feel this. Loud in dev, because a
     // swallowed init failure is indistinguishable from "analytics is working" right up until the
     // day someone goes looking for data that was never collected.
     if (import.meta.env.DEV) console.warn('[analytics] init failed — no events will be sent:', e);
-    return false;
   }
-}
-
-// For verification only: whether analytics is live, and how much is still queued. Not used by the
-// app. It exists because the whole point of the queue is behaviour that is invisible from outside.
-export function analyticsStatus() {
-  return { enabled, unavailable, pending: pending.length, configured: !!(KEY && HOST) };
 }
 
 // ── Capturing ─────────────────────────────────────────────────────────────────
 
 export function track(event, props) {
-  withPosthog((p) => p.capture(event, props));
+  if (!configured) return;
+  if (!enabled) {
+    // Stamped now, sent later. Without this every event a player produced before the chunk
+    // landed would arrive bearing the load time instead of its own, and the first minute of a
+    // session — the part the deferral touches, and the part drop-off analysis reads — would
+    // collapse into a single instant.
+    const at = new Date();
+    enqueue(() => posthog.capture(event, props, { timestamp: at }));
+    return;
+  }
+  try {
+    posthog.capture(event, props);
+  } catch (e) {
+    /* never let analytics interrupt a game */
+  }
 }
 
 // ── Identity ──────────────────────────────────────────────────────────────────
@@ -296,28 +352,54 @@ export function track(event, props) {
 // make this data personally identifying, and it buys nothing that a UUID does not.
 
 export function identifyPlayer(userId, personProps) {
-  if (!userId) return;
-  // Merges the anonymous person into this one, so everything played as a guest — possibly days
-  // of it — is retroactively attributed to the account. This is the whole guest→account link.
-  // PostHog refuses to merge an anonymous id that has already been merged elsewhere, which is
-  // what stops two accounts on one device from being conflated.
-  withPosthog((p) => p.identify(userId, personProps));
+  if (!configured || !userId) return;
+  if (!enabled) {
+    enqueue(() => posthog.identify(userId, personProps));
+    return;
+  }
+  try {
+    // Merges the anonymous person into this one, so everything played as a guest — possibly days
+    // of it — is retroactively attributed to the account. This is the whole guest→account link.
+    // PostHog refuses to merge an anonymous id that has already been merged elsewhere, which is
+    // what stops two accounts on one device from being conflated.
+    posthog.identify(userId, personProps);
+  } catch (e) {
+    /* as above */
+  }
 }
 
 // Logging out mints a fresh anonymous id. Without this the next guest on this device would keep
 // the previous player's identity and be silently merged into their account on signup — the same
 // bug setLogOwner(null) exists to prevent, one layer up.
 export function resetIdentity() {
-  withPosthog((p) => p.reset());
+  if (!configured) return;
+  if (!enabled) {
+    enqueue(() => posthog.reset());
+    return;
+  }
+  try {
+    posthog.reset();
+  } catch (e) {
+    /* as above */
+  }
 }
 
 // Context carried on every event from here on, plus the same values pinned to the person so they
 // can be segmented rather than only filtered. Registered rather than passed per call, because a
 // property that has to be remembered at ~30 call sites is a property that will be forgotten at one.
 export function setPlayerContext(props) {
-  if (!props) return;
-  withPosthog((p) => {
-    p.register(props);
-    p.setPersonProperties(props);
-  });
+  if (!configured || !props) return;
+  if (!enabled) {
+    enqueue(() => {
+      posthog.register(props);
+      posthog.setPersonProperties(props);
+    });
+    return;
+  }
+  try {
+    posthog.register(props);
+    posthog.setPersonProperties(props);
+  } catch (e) {
+    /* as above */
+  }
 }
