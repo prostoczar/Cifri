@@ -39,6 +39,7 @@ logic rather than a copy of it.
 | `check:invariant` | the three places a day's score is computed disagreeing |
 | `check:notify` | a reminder addressed to the wrong player, or carrying something it should not |
 | `check:i18n` | user-facing text that never reached the translation table, and key parity |
+| `check:worktrees` | work parked on a branch or worktree that `react-rewrite` cannot see |
 
 `check:i18n` is worth a note, because the discipline it replaces looked clean while about twenty
 strings were reaching players untranslated. Key parity only proves every key in `en` has a twin in
@@ -47,6 +48,22 @@ JSX text that look like prose, and it carries a **self-test** — the audit's ac
 must still detect, and real non-copy strings, which it must still ignore. Loosen the heuristic and
 the self-test names the historical bug you just stopped catching. Its blind spots are listed in its
 own header; the main one is single-word copy.
+
+`check:worktrees` is the odd one out: it checks the repository rather than the game. Work has been
+stranded twice on a `claude/*` worktree branch nobody merged — most recently a complete, better
+implementation of a task that was then done a second time from scratch. It fails when any branch or
+worktree holds commits unreachable from `react-rewrite`, and prints the merge/discard/defer options.
+`CIFRI_ALLOW_WORKTREES=1 npm run check` defers it for one command, for genuinely parallel sessions.
+
+Note that this rule cannot live *only* here. A session starting in a worktree off an older commit
+reads that older CLAUDE.md — after the decision the rule was meant to govern — and a rule about
+worktrees tends to get written while working in one, which lands it on the branch that then goes
+unmerged. That is how the previous attempt vanished. The durable copy is in user-level memory; this
+paragraph and the check script are the backstop.
+
+**Never `git add -A` here.** Another session's uncommitted work often sits in the same checkout —
+a `git add -A` on 18 August 2026 swept a half-finished Russian formality pass into an unrelated
+commit. Stage explicit paths.
 
 `scripts/sim-difficulty.mjs` is **not** a check script and `npm run check` does not run it. It is the
 model the difficulty multipliers and the nine score-achievement thresholds were derived from, kept
