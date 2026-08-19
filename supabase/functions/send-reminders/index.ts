@@ -104,8 +104,19 @@ Deno.serve(async (req) => {
 
   // Only the scheduler may fire this. Without the check, the URL is a button anybody could press
   // to notify every subscriber Cifri has, as often as they liked.
+  //
+  // FAIL CLOSED. This used to read `if (secret && ...)`, which skipped the check entirely when the
+  // variable was absent — so the one endpoint that can notify everybody was one deleted Edge
+  // Function secret away from being open to the internet, and nothing would have looked wrong: the
+  // scheduled call keeps working either way, because it sends a header nobody was checking. An
+  // unset secret is now a refusal, not a waiver.
+  //
+  // 500 rather than 403 because the two are different problems: 403 means "you are not the
+  // scheduler", 500 means "this deployment is misconfigured and nobody can call it". Answering 403
+  // to a missing secret would send whoever is debugging it hunting for the wrong thing.
   const secret = Deno.env.get('REMINDER_CRON_SECRET');
-  if (secret && req.headers.get('x-cron-secret') !== secret) return json({ error: 'forbidden' }, 403);
+  if (!secret) return json({ error: 'not_configured' }, 500);
+  if (req.headers.get('x-cron-secret') !== secret) return json({ error: 'forbidden' }, 403);
 
   // `dryRun` builds and returns the exact payloads without sending, so the targeting can be read
   // and checked against real subscriber counts before anybody's phone lights up.
