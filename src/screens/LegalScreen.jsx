@@ -36,10 +36,15 @@ export function AchievementsListScreen({ open, milestones, onClose }) {
   const ordered = achievementsByRarity();
   return (
     <div className={'legal-screen' + (open ? ' on' : '')}>
-      <div className="ip-hdr" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <button className="prof-edit-btn" onClick={onClose}>{t('back')}</button>
+      {/* The same red ✕ the profile sheet closes with, rather than a "Back" text link — this list
+          is opened from that sheet and returns to it, so it is a panel being dismissed, not a page
+          being navigated away from. Pinned (`ms-hdr`) because the list is sixty-odd rows long and
+          the way out was otherwise a scroll back to the top. The spacer matches the button's width
+          so the title stays optically centred. */}
+      <div className="ip-hdr ms-hdr" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ width: 30 }}></span>
         <div className="ip-title">{t('prof_sec_achievements')}</div>
-        <span style={{ width: 40 }}></span>
+        <button className="sheet-close" onClick={onClose}>✕</button>
       </div>
       <div className="ip-body legal-body" style={{ paddingBottom: 40 }}>
         <div className="ms-list-count">

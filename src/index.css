@@ -710,6 +710,10 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .icon-picker-screen{display:none;position:fixed;inset:0;z-index:600;background:var(--bg);flex-direction:column;overflow-y:auto}
 .icon-picker-screen.on{display:flex}
 .ip-hdr{padding:20px 20px 4px;flex-shrink:0;text-align:center}
+/* Achievements only. .legal-screen is the scroll container, so a sticky direct child pins to it.
+   Needs its own opaque background — sixty rows scrolling under a transparent header would show
+   through. Bottom padding grows to 10px because rows now pass right beneath it. */
+.ip-hdr.ms-hdr{position:sticky;top:0;z-index:2;background:var(--bg);padding-bottom:10px}
 .ip-title{font-size:calc(16px * var(--fs-mult));font-weight:900;color:var(--txt)}
 .ip-body{padding:8px 20px 110px;flex:1}
 .ip-preview-wrap{display:flex;justify-content:center;margin:10px 0 20px}
