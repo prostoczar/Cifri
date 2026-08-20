@@ -273,7 +273,11 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
    mode still needs to be done today to extend the streak */
 .complete-streak-btn{display:none;width:100%;padding:14px;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;margin-bottom:8px;background:var(--YL);color:#000;box-shadow:0 3px 0 #c49030}
 .complete-streak-btn:active{transform:translateY(2px);box-shadow:none}
-.bbtn{width:100%;padding:11px;background:var(--card);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));cursor:pointer;font-weight:700}
+/* The way off the summary screen, in both modes (.br-btn-out is Braining's). Same neutral 3px
+   lift as .logout-btn — they were the only full-width buttons in the app sitting flat, which read
+   as disabled next to the raised "Play again" directly above. */
+.bbtn{width:100%;padding:11px;background:var(--card);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));cursor:pointer;font-weight:700;box-shadow:0 3px 0 var(--border2)}
+.bbtn:active{transform:translateY(2px);box-shadow:none}
 
 /* TRICKS */
 .tscr{padding:0 16px 80px}
@@ -396,7 +400,8 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .br-btn-g:active{background:var(--GD);transform:translateY(2px);box-shadow:none}
 .br-btn-grey{width:100%;padding:13px;background:var(--card);color:var(--txt3);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-bottom:8px;transition:background .15s}
 .br-btn-grey:active{background:var(--GL2)}
-.br-btn-out{width:100%;padding:11px;background:var(--card);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer}
+.br-btn-out{width:100%;padding:11px;background:var(--card);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;box-shadow:0 3px 0 var(--border2)}
+.br-btn-out:active{transform:translateY(2px);box-shadow:none}
 .br-lbl{text-align:center;font-size:calc(11px * var(--fs-mult));color:var(--txt3);min-height:16px;margin-top:2px}
 /* Countdown */
 .br-cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:78vh;gap:20px;padding:20px}
