@@ -4,6 +4,10 @@ import { useI18n } from '../store/useI18n.js';
 import { dayAverage } from '../store/selectors.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
+// The personal-best marker. Same yellow / dark-yellow pair as the streak pill and the Trick of the
+// Day card, so "your best" is one colour across the whole app. The label goes to --YLT's brown
+// rather than the white used on the green bubbles, which would be unreadable on yellow.
+const YL = '#ffd166', YLD = '#c49030', YLT = '#7a4f00';
 
 // Ported from the reference prototype's drawSpk() — draws directly into an <svg> via the DOM
 // API (createElementNS) rather than JSX, since the layout math is easiest expressed that way
@@ -75,11 +79,17 @@ export default function ChallengeChart({ db, diff, range }) {
     const pad = days > 14 ? 8 : 14, bw = (W - pad * 2) / days;
     const ys = (v) => H - botPad - (v / maxV) * (H - botPad - topPad);
 
-    let hiAvg = null, loAvg = null, hiIdx = -1, loIdx = -1;
+    // Which days get a spelled-out bubble in the 30-day view. Thirty numerals across 315px is
+    // unreadable, so it is these three: the best, the worst, and the most recent. `latestIdx` is
+    // the newest day that was actually PLAYED — days run oldest-first, so the last one to pass
+    // this test is the latest, and missed days never do. Where the latest day is also the best or
+    // the worst the two collapse into one bubble, which is the honest picture: one day, one point.
+    let hiAvg = null, loAvg = null, hiIdx = -1, loIdx = -1, latestIdx = -1;
     pts.forEach((p, idx) => {
       if (p.avg !== null) {
         if (hiAvg === null || p.avg > hiAvg) { hiAvg = p.avg; hiIdx = idx; }
         if (loAvg === null || p.avg < loAvg) { loAvg = p.avg; loIdx = idx; }
+        latestIdx = idx;
       }
     });
 
@@ -127,10 +137,21 @@ export default function ChallengeChart({ db, diff, range }) {
         }
 
         const cy = ys(p.avg);
-        if (days <= 14 || idx === hiIdx || idx === loIdx) {
-          svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: GD }));
-          svg.appendChild(ns('circle', { cx, cy, r: 10, fill: G }));
-          const scoreLbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: '#fff' });
+        // The best day is the highest AVERAGE, not the day holding the best single run. The
+        // bubbles draw averages, so marking anything else would put the badge on a number that
+        // is not the one printed inside it. (The home screen's "personal best" is the single-run
+        // figure, and the two legitimately differ.)
+        const isBest = idx === hiIdx;
+        if (days <= 14 || idx === hiIdx || idx === loIdx || idx === latestIdx) {
+          svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: isBest ? YLD : GD }));
+          // The best bubble gets a background-coloured ring, which the green ones do not need: the
+          // spread candle behind it is the same yellow, and without the ring the two merge into
+          // one blob and the day's spread stops being readable.
+          svg.appendChild(ns('circle', Object.assign(
+            { cx, cy, r: 10, fill: isBest ? YL : G },
+            isBest ? { stroke: 'var(--bg)', 'stroke-width': '1.5' } : {},
+          )));
+          const scoreLbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? YLT : '#fff' });
           scoreLbl.textContent = p.avg;
           svg.appendChild(scoreLbl);
         } else {

@@ -4,6 +4,10 @@ import { brFmtSec } from '../store/braining.js';
 import { useI18n } from '../store/useI18n.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
+// The personal-best marker, same pair as the Challenge chart — see the note there. What "best"
+// means is the one thing that differs: both Braining views are races to the bottom, so it is the
+// LOWEST point that gets the badge, not the highest.
+const YL = '#ffd166', YLD = '#c49030', YLT = '#7a4f00';
 
 // Ported from the reference prototype's brDrawChart().
 export default function BrainingChart({ brState, range, type }) {
@@ -70,11 +74,15 @@ export default function BrainingChart({ brState, range, type }) {
     const pad = days > 14 ? 8 : 14, bw = (W - pad * 2) / days;
     const ys = (v) => H - botPad - (v / maxV) * (H - botPad - topPad);
 
-    let hiVal = null, loVal = null, hiIdx = -1, loIdx = -1;
+    // Which days are spelled out in the 30-day view: the best, the worst, and the most recent one
+    // actually played. Days run oldest-first, so the last index to pass here is the latest, and a
+    // missed day never does. See the matching note in ChallengeChart.
+    let hiVal = null, loVal = null, hiIdx = -1, loIdx = -1, latestIdx = -1;
     pts.forEach((p, idx) => {
       if (!p.empty) {
         if (hiVal === null || p.val > hiVal) { hiVal = p.val; hiIdx = idx; }
         if (loVal === null || p.val < loVal) { loVal = p.val; loIdx = idx; }
+        latestIdx = idx;
       }
     });
 
@@ -94,19 +102,28 @@ export default function BrainingChart({ brState, range, type }) {
       const cx = pad + i * bw + bw / 2;
       if (!p.empty) {
         const cy = ys(p.val);
+        // A younger brain age and a shorter time are both wins, so the best day is the minimum.
+        const isBest = i === loIdx;
+        const marked = days <= 14 || i === hiIdx || i === loIdx || i === latestIdx;
         if (type === 'time') {
           // Time keeps the original small dot with the value in plain text above it — "4:32"
-          // doesn't fit legibly inside a circle.
-          svg.appendChild(ns('circle', { cx, cy, r: 4, fill: G }));
-          if (days <= 14 || i === hiIdx || i === loIdx) {
-            const tlbl = ns('text', { x: cx, y: cy - 7, 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', fill: 'var(--txt)' });
+          // doesn't fit legibly inside a circle. The best time still gets the yellow, scaled down
+          // to the dot: same two-circle drop shadow as the age bubbles, just smaller.
+          if (isBest) {
+            svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 5, fill: YLD }));
+            svg.appendChild(ns('circle', { cx, cy, r: 5, fill: YL }));
+          } else {
+            svg.appendChild(ns('circle', { cx, cy, r: 4, fill: G }));
+          }
+          if (marked) {
+            const tlbl = ns('text', { x: cx, y: cy - 9, 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', fill: 'var(--txt)' });
             tlbl.textContent = brFmtSec(p.val, t);
             svg.appendChild(tlbl);
           }
-        } else if (days <= 14 || i === hiIdx || i === loIdx) {
-          svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: GD }));
-          svg.appendChild(ns('circle', { cx, cy, r: 10, fill: G }));
-          const lbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: '#fff' });
+        } else if (marked) {
+          svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: isBest ? YLD : GD }));
+          svg.appendChild(ns('circle', { cx, cy, r: 10, fill: isBest ? YL : G }));
+          const lbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? YLT : '#fff' });
           lbl.textContent = p.val;
           svg.appendChild(lbl);
         } else {
