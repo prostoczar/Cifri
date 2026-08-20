@@ -65,6 +65,20 @@ export default function IconPickerScreen({ open, avatar, username, milestones, o
         </div>
 
         <div className="ip-card">
+          <div className="prof-section-title" style={{ marginBottom: 10 }}>{t('ip_color')}</div>
+          <div className="ip-swatch-row">
+            {Object.keys(AVATAR_COLORS).map((key) => (
+              <button
+                key={key}
+                className={'ip-swatch' + (draft.color === key ? ' on' : '')}
+                style={{ background: AVATAR_COLORS[key].bg }}
+                onClick={() => setDraft((d) => ({ ...d, color: key }))}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="ip-card">
           <div className="ip-tabs">
             <button className={'ip-tab' + (tab === 'letters' ? ' on' : '')} onClick={() => setTab('letters')}>{t('ip_letters')}</button>
             <button className={'ip-tab' + (tab === 'symbol' ? ' on' : '')} onClick={() => setTab('symbol')}>{t('ip_symbols')}</button>
@@ -118,20 +132,6 @@ export default function IconPickerScreen({ open, avatar, username, milestones, o
                 />
               ))}
             </div>
-          </div>
-        </div>
-
-        <div className="ip-card">
-          <div className="prof-section-title" style={{ marginBottom: 10 }}>{t('ip_color')}</div>
-          <div className="ip-swatch-row">
-            {Object.keys(AVATAR_COLORS).map((key) => (
-              <button
-                key={key}
-                className={'ip-swatch' + (draft.color === key ? ' on' : '')}
-                style={{ background: AVATAR_COLORS[key].bg }}
-                onClick={() => setDraft((d) => ({ ...d, color: key }))}
-              />
-            ))}
           </div>
         </div>
       </div>

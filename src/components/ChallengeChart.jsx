@@ -143,14 +143,15 @@ export default function ChallengeChart({ db, diff, range }) {
         // figure, and the two legitimately differ.)
         const isBest = idx === hiIdx;
         if (days <= 14 || idx === hiIdx || idx === loIdx || idx === latestIdx) {
+          // Identical to the best bubble in BrainingChart: the darker yellow offset down by 2,
+          // the flat yellow on top, and nothing else. The ring this used to carry — a
+          // background-coloured stroke, to stop the bubble merging with the yellow spread candle
+          // behind it — was removed deliberately on 20 August 2026, because it made the same
+          // marker look like two different things across the app's two charts. The candle is
+          // still separable: the YLD circle underneath shows as a dark arc along the bottom of
+          // the bubble, which is exactly what Braining relies on.
           svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: isBest ? YLD : GD }));
-          // The best bubble gets a background-coloured ring, which the green ones do not need: the
-          // spread candle behind it is the same yellow, and without the ring the two merge into
-          // one blob and the day's spread stops being readable.
-          svg.appendChild(ns('circle', Object.assign(
-            { cx, cy, r: 10, fill: isBest ? YL : G },
-            isBest ? { stroke: 'var(--bg)', 'stroke-width': '1.5' } : {},
-          )));
+          svg.appendChild(ns('circle', { cx, cy, r: 10, fill: isBest ? YL : G }));
           const scoreLbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? YLT : '#fff' });
           scoreLbl.textContent = p.avg;
           svg.appendChild(scoreLbl);

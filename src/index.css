@@ -264,9 +264,17 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .rsco{font-size:calc(56px * var(--fs-mult));font-weight:900;line-height:1;color:var(--txt)}
 .rl{font-size:calc(12px * var(--fs-mult));color:var(--txt3);margin-top:4px;font-weight:500}
 .rsub{font-size:calc(12px * var(--fs-mult));color:var(--txt2);margin-top:6px;font-weight:600}
-.rcds{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
-.rcd{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center;transition:background .3s,box-shadow .3s}
-.rcn{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt)}.rcl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px;font-weight:500}
+/* One row of four, not two rows of two. The 2×2 grid pushed the button stack below the fold on a
+   phone, so Share and Back could only be reached by scrolling — on the screen whose whole job is
+   to be looked at once and acted on. The four keep their original left-to-right order.
+   Everything below is what four-across costs: on a 375px phone each box is ~80px wide, so the
+   number drops 20px→18px, the padding goes to 11px/4px, and the label drops 10px→9px with a
+   tight line-height, because Russian labels ("результат за день") legitimately need two lines.
+   The boxes are flex columns so a one-line label and a two-line one still centre against each
+   other rather than floating at different heights. */
+.rcds{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}
+.rcd{background:var(--card);border-radius:var(--rs);padding:11px 4px;text-align:center;transition:background .3s,box-shadow .3s;display:flex;flex-direction:column;justify-content:center}
+.rcn{font-size:calc(18px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1.1}.rcl{font-size:calc(9px * var(--fs-mult));color:var(--txt3);margin-top:4px;font-weight:500;line-height:1.25;overflow-wrap:break-word}
 /* v14.9 item 3: personal-best celebration — stat boxes turn yellow with shadow instead of the
    old full-screen header/nav wash */
 .rcd.celebrate{background:var(--YL);box-shadow:0 2px 0 #c49030}
@@ -939,6 +947,15 @@ body.dark .ms-rarity.r-epic{background:#3a2d52;color:#c9a8f0}
 /* What happened, when what happened is not self-evident: a native share sheet is its own feedback,
    but a download on desktop is silent. Clears itself after a few seconds. */
 .share-note{text-align:center;font-size:calc(11px * var(--fs-mult));color:var(--txt3);font-weight:700;margin:-2px 0 8px}
+/* On the two result screens it goes yellow. Yellow is the app's "your best / celebrate" colour
+   (.sc.yl, .rcd.celebrate, the streak pill when both modes are done), and a result screen is the
+   one place that reading is right — it is the screen you have just earned something on. It also
+   keeps its distance from the pale-green .result-acct-btn directly beneath it, which is what the
+   beige was for; yellow does that better and is easier to find. Black text, matching every other
+   yellow surface in the app (.nb.on, .streak-pill.both). */
+.rscr .share-btn,.br-rscr .share-btn{background:var(--YL);color:#000;box-shadow:0 3px 0 #c49030}
+.rscr .share-btn:active,.br-rscr .share-btn:active{box-shadow:none}
+
 /* Inside the popup it goes light green instead. The milestone card is cream (#fff6df) and the
    beige above would all but vanish against it; there is also nothing to collide with here, since
    the account CTA on this card is SOLID green. It sits below that CTA — on the streak-lit card,

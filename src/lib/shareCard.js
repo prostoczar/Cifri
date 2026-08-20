@@ -36,6 +36,12 @@
 // on someone else's background. One consistent card is a brand asset; two is a support question.
 
 import { AVATAR_ICONS } from '../store/avatar.js';
+// The app icon's own artwork, from the canonical brand assets rather than a copy under src/ —
+// same reasoning as OnboardingScreen.jsx, see assets/README.md. `?raw` inlines the SVG source as
+// a string at build time rather than emitting a URL to fetch: the drawing path below needs the
+// markup anyway (to give the root explicit dimensions), and inlining 1.8 kB removes a network
+// request from the moment a result screen appears.
+import logoMarkup from '../../assets/source/cifri-icon-1024-appstore-final.svg?raw';
 import { appUrlLabel } from './appUrl.js';
 
 // 4:5 portrait — the aspect ratio feed and story apps crop most kindly, and the only one that
@@ -223,10 +229,18 @@ function drawPill(ctx, text, cx, top, h, padX, size, weight, bg, fg, spacing) {
 // Encoded as a `data:` URI rather than a blob URL because a data URI does not taint the canvas,
 // and a tainted canvas fails toBlob() silently — which would look exactly like "sharing is
 // broken" with nothing in the console.
-function iconImage(markup, color, size) {
-  const svg = markup
-    .replace(/currentColor/g, color)
-    .replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '"');
+function svgImage(markup, size) {
+  // The root tag's attributes are REBUILT rather than prepended to. Blindly inserting an xmlns
+  // was the first attempt and silently broke the app icon: that file already declares one, and a
+  // duplicate attribute makes the document invalid XML, so it fails to decode and draws nothing.
+  // (The Lucide icons declare no xmlns, which is why they worked and hid the bug.) Any existing
+  // width/height goes for the same reason — two of each is no better than two xmlns.
+  const svg = markup.replace(/^([\s\S]*?)<svg([^>]*)>/, (whole, before, attrs) => (
+    before
+    + '<svg xmlns="http://www.w3.org/2000/svg"'
+    + attrs.replace(/\s(?:width|height|xmlns)="[^"]*"/g, '')
+    + ' width="' + size + '" height="' + size + '">'
+  ));
   const img = new Image();
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   if (typeof img.decode === 'function') {
@@ -236,6 +250,13 @@ function iconImage(markup, color, size) {
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
   });
+}
+
+// An achievement's reward icon. Only difference from the logo: `currentColor` has nothing to
+// inherit from inside a standalone SVG, so it would resolve to black and the icon would lose the
+// brown it wears in the popup.
+function iconImage(markup, color, size) {
+  return svgImage(markup.replace(/currentColor/g, color), size);
 }
 
 // ── The hero panel's contents ─────────────────────────────────────────────────
@@ -371,19 +392,38 @@ function drawChips(ctx, chips, pal) {
   });
 }
 
-// ── The wordmark ──────────────────────────────────────────────────────────────
+// ── The branding row ──────────────────────────────────────────────────────────
 //
-// The text-based branding, deliberately isolated in its own function. The real logo is still in
-// design; when it arrives this draws an image instead and NOTHING else in the card moves — the
-// panel, the chips and the footer are all positioned from constants, not from this.
-function drawWordmark(ctx, pal) {
+// Wordmark on the left, app icon on the right, on one baseline. Isolated in its own function so
+// that changing the branding cannot move anything else on the card: the panel, the chips and the
+// footer are positioned from constants, not from this.
+//
+// The icon is CLIPPED to a rounded square before it is drawn, and that is not decoration. The
+// artwork is the App Store master, which is deliberately full-bleed and square-cornered because
+// iOS applies its own mask to it (see assets/README.md) — the darker beige in its true corners is
+// the reveal that mask is supposed to cut away. Drawn unmasked it would read as a beige block with
+// an odd dark fringe; masked here, the card shows the same icon a player sees on their home
+// screen. 0.2237 is the standard iOS corner ratio.
+const LOGO_SIZE = 96;
+const BRAND_Y = 121;
+
+function drawBranding(ctx, pal, logo) {
   ctx.letterSpacing = '1px';
   setFont(ctx, 900, 50);
   ctx.fillStyle = pal.txt;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Cifri', PAD, 121);
+  ctx.fillText('Cifri', PAD, BRAND_Y);
   ctx.letterSpacing = '0px';
+
+  if (!logo) return;
+  const x = CARD_W - PAD - LOGO_SIZE;
+  const y = BRAND_Y - LOGO_SIZE / 2;
+  ctx.save();
+  roundRectPath(ctx, x, y, LOGO_SIZE, LOGO_SIZE, LOGO_SIZE * 0.2237);
+  ctx.clip();
+  ctx.drawImage(logo, x, y, LOGO_SIZE, LOGO_SIZE);
+  ctx.restore();
 }
 
 /**
@@ -411,12 +451,17 @@ export async function renderShareCard(card) {
 
     const hero = card.hero || {};
     const markup = hero.iconName ? AVATAR_ICONS[hero.iconName] : null;
-    const icon = markup ? await iconImage(markup, pal.YLT, 120) : null;
+    // Both decoded before anything is painted. Drawing is synchronous from here on, so the whole
+    // card either exists or does not — there is no state where a half-drawn canvas gets exported.
+    const [icon, logo] = await Promise.all([
+      markup ? iconImage(markup, pal.YLT, 120) : null,
+      svgImage(logoMarkup, LOGO_SIZE),
+    ]);
 
     ctx.fillStyle = pal.bg;
     ctx.fillRect(0, 0, CARD_W, CARD_H);
 
-    drawWordmark(ctx, pal);
+    drawBranding(ctx, pal, logo);
 
     raisedRect(ctx, PAD, PANEL_Y, INNER_W, PANEL_H, PANEL_R, pal.card, pal.border2);
 
