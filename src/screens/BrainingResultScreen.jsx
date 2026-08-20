@@ -5,6 +5,8 @@ import { computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
 import AchievementPopup from '../components/AchievementPopup.jsx';
+import ShareButton from '../components/ShareButton.jsx';
+import { appUrl } from '../lib/appUrl.js';
 
 // Ported from the reference prototype's #scr-br-result markup + the display half of brFinish().
 export default function BrainingResultScreen({
@@ -51,6 +53,18 @@ export default function BrainingResultScreen({
 
   const opSummary = computeOpSummary(result.opTimes);
   const showCompleteStreak = !isPrac && isFirst && !chDone;
+
+  // ── Who gets a share button ─────────────────────────────────────────────────
+  //
+  // The day's counting trial, and only that — the same `!isPrac && isFirst` pair the reducer uses
+  // to decide whether a trial is recorded at all, so the button is on screen exactly when the
+  // result behind it is part of the player's history.
+  //
+  // A practice brain age is not a false number: it is computed by the same rule as any other. The
+  // reason it is not shareable is that practice is unlimited, and "brain age 20" chosen from the
+  // ninth attempt of the evening would quietly turn a one-trial-a-day design into a best-of. That
+  // is the same thing the verified results table exists to protect.
+  const canShare = !isPrac && isFirst;
 
   return (
     <div className="br-rscr" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -111,6 +125,39 @@ export default function BrainingResultScreen({
         </button>
       )}
       <button className="br-btn-g" onClick={onTryAgain}>{t('try_again_not_counted')}</button>
+      {canShare && (
+        <ShareButton
+          cacheKey={'br:' + (result.reqId || '') + ':' + Math.round(sec)}
+          analytics={{
+            content_type: 'result',
+            mode: 'braining',
+            brain_age: age,
+            duration_sec: Math.round(sec),
+            is_personal_best: !!isPR,
+          }}
+          build={() => ({
+            slug: 'braining-age-' + age,
+            text: t('share_cap_braining', { age, url: appUrl() }),
+            card: {
+              hero: {
+                ribbon: isPR ? t('new_pb') : null,
+                value: age,
+                // The scale's own colour for this age, so the card agrees with the screen it came
+                // from rather than deciding on its own what a good result looks like.
+                valueColor: brAgeColor(age),
+                label: t('br_age_label'),
+                body: t('br_completed_in', { time: brFmtSec(sec, t) }),
+              },
+              chips: [
+                { value: brFmtSec(sec, t), label: t('completion_time') },
+                { value: brState.bestAge || age, label: t('stat_best_age') },
+                { value: streak || 1, label: t('day_streak'), tone: 'gold' },
+              ],
+              tagline: t('ob_tagline'),
+            },
+          })}
+        />
+      )}
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="br-btn-out" onClick={onBack}>{t('back_to_braining')}</button>
 

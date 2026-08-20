@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
-import { opName } from '../store/questionEngine.js';
+import { diffLabel, opName } from '../store/questionEngine.js';
 import { todayChallengeAvg, computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
 import AchievementPopup from '../components/AchievementPopup.jsx';
 import ScoreBreakdown from '../components/ScoreBreakdown.jsx';
+import ShareButton from '../components/ShareButton.jsx';
+import { appUrl } from '../lib/appUrl.js';
 
 // Ported from the reference prototype's #scr-result markup + the relevant parts of endGame()/
 // triggerResultCelebration().
@@ -42,6 +44,16 @@ export default function ChallengeResultScreen({
 
   const opSummary = computeOpSummary(result.opTimes);
 
+  // ── Who gets a share button ─────────────────────────────────────────────────
+  //
+  // Counted runs only, which here means exactly the condition the reducer itself uses to decide
+  // whether a session is real (`real: !isPrac`), plus the difficulty that the Practice tab does
+  // not have. A Practice score is not a smaller version of a Challenge score, it is a different
+  // measurement: Practice has no difficulty and can be set to unlimited questions, so the card
+  // could not even print the line that makes the number mean something. Sharing it would put a
+  // figure into the world that nobody — including the player — can compare to anything.
+  const canShare = !isPrac && !!diff;
+
   return (
     <div className="rscr" style={{ position: 'relative', overflow: 'hidden' }}>
       <div className="rh">
@@ -73,6 +85,41 @@ export default function ChallengeResultScreen({
           another counting run that moves today's average, and a plain "Play again" here made the
           one place where the risk is freshest sound like the safer of the two. */}
       <button className="abtn" onClick={onPlayAgain}>{t('ch_play_again')}</button>
+      {canShare && (
+        <ShareButton
+          cacheKey={'ch:' + (result.reqId || '') + ':' + score}
+          analytics={{
+            content_type: 'result',
+            mode: 'challenge',
+            difficulty: diff,
+            score,
+            is_personal_best: !!result.isNewBest,
+            boosted: !!result.boosted,
+          }}
+          build={() => ({
+            slug: 'challenge-' + diff + '-' + score,
+            text: t('share_cap_challenge', { score, diff: diffLabel(lang, diff), url: appUrl() }),
+            card: {
+              hero: {
+                ribbon: result.isNewBest ? t('new_pb') : null,
+                value: score,
+                label: t('weighted_score'),
+                body: diffLabel(lang, diff) + ' · ' + t('ch_result_correct_wrong', { correct, wrong }),
+                // Stated on the card for the same reason the breakdown states it on the screen:
+                // a boosted score is a real score, and one that quietly hid where it came from
+                // would be the one number in the app that is not what it appears to be.
+                note: result.boosted ? t('sb_boost') : null,
+              },
+              chips: [
+                { value: acc + '%', label: t('accuracy') },
+                { value: streak || 1, label: t('day_streak'), tone: 'gold' },
+                { value: avgText, label: t('stat_today_score') },
+              ],
+              tagline: t('ob_tagline'),
+            },
+          })}
+        />
+      )}
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="bbtn" onClick={onBack}>{t('back')}</button>
       {celebrate && <ConfettiBurst />}

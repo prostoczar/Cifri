@@ -22,14 +22,13 @@
 // about it, and nothing in the app can detect that. The README records the list that has to be
 // kept in step, under "Where auth emails send people back to".
 
-export function authRedirectUrl() {
-  // Returning undefined rather than a guess: supabase-js treats a missing redirect the same as no
-  // option at all and falls back to the Site URL, which is the safest thing to do off a browser.
-  if (typeof window === 'undefined') return undefined;
+import { appUrl } from './appUrl.js';
 
-  // Vite allows the app to be served from a sub-path (BASE_URL), and dropping it would send the
-  // player to the domain root, where the app is not. It is '/' today, which makes this line a
-  // no-op — the point is that it stays correct if that ever changes.
-  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
-  return window.location.origin + base;
+// The derivation itself now lives in lib/appUrl.js, because the share card prints the same
+// address onto every image a player sends out and a second copy of this line could only ever
+// disagree with this one. Everything above still applies — it is the reasoning for WHY this is
+// derived, and the Supabase allowlist half of the problem is specific to auth emails and lives
+// nowhere else.
+export function authRedirectUrl() {
+  return appUrl();
 }

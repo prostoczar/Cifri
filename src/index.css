@@ -924,3 +924,25 @@ body.dark .ms-rarity.r-epic{background:#3a2d52;color:#c9a8f0}
 .tg-done-btn{margin-top:12px;width:100%;padding:12px;border:none;border-radius:var(--rs);background:var(--card-grey);color:var(--txt);font-family:inherit;font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 2px 0 var(--border2)}
 .tg-done-btn.primary{background:var(--G);color:#fff;box-shadow:0 2px 0 var(--GD)}
 .tg-done-btn:active{transform:translateY(1px);box-shadow:none}
+
+/* ── Share buttons — result screens and the achievement popup ─────────────────────────────────
+   Beige with the standard bottom shadow, and black text so it still reads as something to press.
+   It is deliberately NOT the light-green "positive secondary" pattern, even though that is where
+   this started: .result-acct-btn is already exactly that colour, and on the result screens the two
+   buttons ended up sitting one above the other looking identical — which flattened the account CTA,
+   the one button on that screen with a job more important than sharing. Beige sits between the
+   solid-green primary (Play again) and the muted .bbtn / .br-btn-out Back, which is where sharing
+   belongs: easy to find, outranking nothing. */
+.share-btn{width:100%;padding:13px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--card);color:var(--txt);border:none;border-radius:var(--r);font-size:calc(14px * var(--fs-mult));font-weight:800;cursor:pointer;margin-bottom:8px;box-shadow:0 3px 0 var(--border2)}
+.share-btn:active{transform:translateY(2px);box-shadow:none}
+.share-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+/* What happened, when what happened is not self-evident: a native share sheet is its own feedback,
+   but a download on desktop is silent. Clears itself after a few seconds. */
+.share-note{text-align:center;font-size:calc(11px * var(--fs-mult));color:var(--txt3);font-weight:700;margin:-2px 0 8px}
+/* Inside the popup it goes light green instead. The milestone card is cream (#fff6df) and the
+   beige above would all but vanish against it; there is also nothing to collide with here, since
+   the account CTA on this card is SOLID green. It sits below that CTA — on the streak-lit card,
+   which is the whole conversion moment, the account offer must be the first button reached. */
+.milestone-card .share-btn{margin:12px 0 0;background:var(--GL2);color:var(--GDK);box-shadow:0 3px 0 #a8d8cc;position:relative;z-index:2}
+.milestone-card .share-btn:active{box-shadow:none}
+.milestone-card .share-note{margin:8px 0 0}

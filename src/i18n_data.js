@@ -197,6 +197,22 @@ en:{
   new_pb:"New personal best",
   weighted_score:"weighted score",
   accuracy:"accuracy",
+  // ── Sharing a result or an achievement ──────────────────────────────────────
+  // "Share" promises the phone's share sheet, so the button only says it where one exists;
+  // desktop gets the honest label for what actually happens.
+  share_btn:"Share",
+  share_save_btn:"Save image",
+  share_saved:"Image saved",
+  share_saved_copied:"Image saved · link copied",
+  share_failed:"Couldn't create the image",
+  share_chip_achievements:"achievements",
+  // The caption that travels beside the image. No first-person verb in any of the three: Russian
+  // past tense agrees with gender and the app never asks a player theirs, which is the same reason
+  // the achievement catalogue is written in formal «Вы». The address is carried as text rather
+  // than in the share sheet's url field — see lib/shareImage.js.
+  share_cap_achievement:"Unlocked “{{name}}” in Cifri — {{url}}",
+  share_cap_challenge:"Scored {{score}} on {{diff}} in Cifri — {{url}}",
+  share_cap_braining:"Brain age {{age}} in Cifri — {{url}}",
   // The Challenge result screen's subtitle. It was raw JSX text — `{correct} correct - {wrong} wrong`
   // — so both words stayed English for every player. Not on the 2026-08-14 audit's list; found by
   // check:i18n, which reads JSX text nodes as well as string literals.
@@ -573,6 +589,15 @@ ru:{
   new_pb:"Новый личный рекорд",
   weighted_score:"взвешенный балл",
   accuracy:"точность",
+  share_btn:"Поделиться",
+  share_save_btn:"Сохранить картинку",
+  share_saved:"Картинка сохранена",
+  share_saved_copied:"Картинка сохранена · ссылка скопирована",
+  share_failed:"Не удалось создать картинку",
+  share_chip_achievements:"достижений",
+  share_cap_achievement:"Достижение «{{name}}» в Cifri — {{url}}",
+  share_cap_challenge:"Результат {{score}} на уровне {{diff}} в Cifri — {{url}}",
+  share_cap_braining:"Возраст мозга {{age}} в Cifri — {{url}}",
   ch_result_correct_wrong:"{{correct}} верно - {{wrong}} неверно",
   streak:"серия",
   complete_streak:"Завершить серию →",
