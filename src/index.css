@@ -158,8 +158,10 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ti.totd{background:var(--YL);box-shadow:0 2px 0 #c49030}
 .cl{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
 .cl button{background:none;border:none;cursor:pointer;font-size:calc(11px * var(--fs-mult));color:var(--G);display:flex;align-items:center;gap:3px;font-weight:700}
-/* Taller than the Braining chart below: Challenge draws a numeral above and below each day's
-   candle, and those need vertical room the single-value Braining chart does not. */
+/* Both charts stand 104px tall. Challenge needs it for the numerals above and below each day's
+   candle; Braining does not draw those, but at the 68px it used to have it read as a squeezed
+   afterthought next to Challenge rather than the other half of the same pair. The extra room
+   goes into its margins — see topPad/botPad in BrainingChart.jsx. */
 .spk{width:100%;height:104px;display:block;overflow:visible}
 
 /* INFO POPUP */
@@ -389,7 +391,7 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
    which let the card's beige colour show through once the mode was done for the day. Removed so
    it falls back to .br-ctab's own solid white background, matching the 7d/30d pills exactly. */
 .br-ctab.gn{color:var(--GD)}
-.br-spk{width:100%;height:68px;display:block;overflow:visible}
+.br-spk{width:100%;height:104px;display:block;overflow:visible}
 .br-btn-g{width:100%;padding:14px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:700;cursor:pointer;margin-bottom:10px;transition:background .15s;box-shadow:0 3px 0 var(--GD)}
 .br-btn-g:active{background:var(--GD);transform:translateY(2px);box-shadow:none}
 .br-btn-grey{width:100%;padding:13px;background:var(--card);color:var(--txt3);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-bottom:8px;transition:background .15s}

@@ -15,7 +15,11 @@ export default function BrainingChart({ brState, range, type }) {
     const svg = svgRef.current;
     if (!svg) return;
     svg.innerHTML = '';
-    const W = svg.clientWidth || 320, H = 68, days = range;
+    // Height read from the element rather than hardcoded, so the CSS stays the single place the
+    // number is set — the same way the Challenge chart does it. It was a literal 68 here, which
+    // meant the drawing ignored .br-spk entirely and the chart could only ever be as cramped as
+    // that constant, whatever the stylesheet said.
+    const W = svg.clientWidth || 320, H = svg.clientHeight || 104, days = range;
     const ns = (tag, attrs) => {
       const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
       Object.keys(attrs).forEach((k) => el.setAttribute(k, attrs[k]));
@@ -59,8 +63,12 @@ export default function BrainingChart({ brState, range, type }) {
     pts.forEach((p) => { if (!p.empty) allVals.push(p.min, p.max); });
     let maxV = Math.max.apply(null, allVals);
     if (maxV <= 0) maxV = 10;
+    // Named rather than folded into the ys() arithmetic, because each end has to clear something
+    // specific: topPad clears the time label that sits 7px above the highest dot, botPad clears a
+    // value-zero age bubble (r=10, plus its 2px drop shadow) from the weekday letters underneath.
+    const topPad = 16, botPad = 24;
     const pad = days > 14 ? 8 : 14, bw = (W - pad * 2) / days;
-    const ys = (v) => H - 16 - (v / maxV) * (H - 28);
+    const ys = (v) => H - botPad - (v / maxV) * (H - botPad - topPad);
 
     let hiVal = null, loVal = null, hiIdx = -1, loIdx = -1;
     pts.forEach((p, idx) => {
