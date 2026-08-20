@@ -1535,6 +1535,7 @@ function AppShell() {
           track('setting_changed', { setting: 'notif', value: next.enabled ? 'on_' + next.hour : 'off' });
           dispatch({ type: 'SET_SETTING', key: 'notif', value: next });
         }}
+        onLogin={() => { setProfileOpen(false); setLoginOpen(true); }}
         onLogout={() => { setProfileOpen(false); setConfirm('logout'); }}
         onReset={() => { setProfileOpen(false); setConfirm('reset'); }}
         onDeleteAccount={() => { setProfileOpen(false); setConfirm('delete'); }}

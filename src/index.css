@@ -538,7 +538,14 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .sheet{background:var(--bg);border-radius:22px;width:100%;max-width:420px;overflow-y:auto;padding:0 0 32px}
 @keyframes sheetSlideDown{0%{transform:translateY(-24px);opacity:0}100%{transform:translateY(0);opacity:1}}
 .sheet-bg.on .sheet{animation:sheetSlideDown .25s ease}
-.sheet-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:12px auto 0}
+/* The title and the way out stay put while the body scrolls. This sheet is long — stats,
+   settings, legal, then the account buttons — and closing it used to mean scrolling all the way
+   back up first. The handle is wrapped in with it so the grab bar cannot slide out from under a
+   header that stays. */
+.sheet-top{position:sticky;top:0;z-index:2;background:var(--bg);border-radius:22px 22px 0 0;padding-top:12px}
+/* The 12px is the wrapper's padding, not this element's margin. As a margin it collapsed straight
+   through the wrapper, which then jumped up by exactly that much the instant it stuck. */
+.sheet-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto}
 .sheet-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 10px}
 .sheet-title{font-size:calc(17px * var(--fs-mult));font-weight:900;color:var(--txt)}
 /* v14.9 item 11: close buttons restyled app-wide — light red/terracotta background with shadow,
@@ -546,10 +553,11 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .sheet-close{width:30px;height:30px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:calc(16px * var(--fs-mult));color:var(--TC);box-shadow:0 2px 0 #d4b0a4;transition:all .15s}
 .sheet-close:active{transform:scale(.9)}
 .sheet-body{padding:0 20px}
-/* The three beige cards on this sheet carry the same bottom-only shadow the rest of the app
-   uses, so they read as raised surfaces rather than dissolving into the white background.
-   --border2 rather than a literal colour: it is the shadow base for every neutral surface
-   (.k.spec, .logout-btn) and it is redefined for dark mode, where a baked-in beige would glow. */
+/* Only two cards here are raised: this identity card and the tappable achievements row below.
+   The stat boxes are deliberately left flat — a shadow on every box at once cancels itself out,
+   and reads as texture rather than as depth. --border2 rather than a literal colour: it is the
+   shadow base for every neutral surface (.k.spec, .logout-btn) and it is redefined for dark
+   mode, where a baked-in beige would glow instead of reading as a lip. */
 .prof-name-row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;box-shadow:0 2px 0 var(--border2)}
 .prof-avatar{width:44px;height:44px;border-radius:50%;background:var(--GL2);display:flex;align-items:center;justify-content:center;font-size:calc(18px * var(--fs-mult));font-weight:900;color:var(--GDK);flex-shrink:0}
 .prof-name-info{flex:1}
@@ -576,12 +584,19 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ms-list-item.achieved .ms-list-name{color:#c98a12}
 .ms-list-item:not(.achieved) .ms-list-name{color:var(--txt)}
 .ms-list-desc{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-top:2px;line-height:1.4}
-.prof-stat{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center;box-shadow:0 2px 0 var(--border2)}
+.prof-stat{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center}
 .prof-stat-n{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1}
 .prof-stat-l{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px}
 .prof-divider{height:1px;background:var(--border);margin:16px 0}
 .danger-btn{width:100%;padding:13px;background:#fcebeb;color:var(--TC);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:8px;box-shadow:0 3px 0 #d4b0a4}
 .danger-btn:active{transform:translateY(2px);box-shadow:none}
+/* Guest-only pair, sitting with "Reset all data" at the foot of the sheet. The "Create account"
+   link up in the name row is easy to miss — it reads as a label rather than a button — and there
+   was no route to "Log in" from here at all, so a player who had signed out had nowhere to sign
+   back in from. */
+.prof-acct-btn{width:100%;padding:13px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;margin-top:16px;box-shadow:0 3px 0 var(--GD)}
+.prof-login-btn{width:100%;padding:13px;background:var(--card-grey);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:8px;box-shadow:0 3px 0 var(--border2)}
+.prof-acct-btn:active,.prof-login-btn:active{transform:translateY(2px);box-shadow:none}
 .logout-btn{width:100%;padding:13px;background:var(--card-grey);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:16px;box-shadow:0 3px 0 var(--border2)}
 .logout-btn:active{transform:translateY(2px);box-shadow:none}
 .danger-btn:active{background:var(--TCL)}

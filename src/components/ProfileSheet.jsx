@@ -27,7 +27,7 @@ function fmtHour(h, lang) {
 // Ported from the reference prototype's profile sheet + openProfile().
 export default function ProfileSheet({
   open, state, onClose, onEditPrimary, onEditPicture, onOpenAchievements,
-  onOpenLegal, onSetting, onSetFontSize, onSetLanguage, onSetNotif, onLogout, onReset, onDeleteAccount,
+  onOpenLegal, onSetting, onSetFontSize, onSetLanguage, onSetNotif, onLogin, onLogout, onReset, onDeleteAccount,
 }) {
   const { t, lang } = useI18n();
   const sheetRef = useRef(null);
@@ -105,10 +105,13 @@ export default function ProfileSheet({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="sheet" ref={sheetRef} onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-handle"></div>
-        <div className="sheet-hdr">
-          <div className="sheet-title">{t('prof_title')}</div>
-          <button className="sheet-close" onClick={onClose}>✕</button>
+        {/* Handle and header wrapped together so both stay pinned while the body scrolls. */}
+        <div className="sheet-top">
+          <div className="sheet-handle"></div>
+          <div className="sheet-hdr">
+            <div className="sheet-title">{t('prof_title')}</div>
+            <button className="sheet-close" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="sheet-body">
           <div className="prof-name-row">
@@ -261,6 +264,15 @@ export default function ProfileSheet({
               guest there is no server-side account to delete, so the button led nowhere. Wiping
               local progress is what `set_reset` is for, and that stays available to everyone. */}
           {acctCreated && <button className="logout-btn" onClick={onLogout}>{t('set_logout')}</button>}
+          {/* A guest gets the mirror image: the two ways INTO an account. Both routes already
+              existed, but only from places a guest had to know to look — the name-row link and
+              the onboarding screen — so someone who had signed out could not sign back in. */}
+          {!acctCreated && (
+            <>
+              <button className="prof-acct-btn" onClick={onEditPrimary}>{t('create_account')}</button>
+              <button className="prof-login-btn" onClick={onLogin}>{t('login_btn')}</button>
+            </>
+          )}
           <button className="danger-btn" onClick={onReset}>{t('set_reset')}</button>
           {acctCreated && <button className="danger-btn" onClick={onDeleteAccount}>{t('set_delete_account')}</button>}
         </div>
