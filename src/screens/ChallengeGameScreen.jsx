@@ -46,8 +46,13 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
       <div className={'qc' + (qcFlash ? ' fok' : '')}>
         <div className="ob">{question.opLabel}</div>
         <div className="qt">{question.text}</div>
+        {/* Inside the card, the way Braining's .br-hint already sits inside .br-qc. As a sibling
+            band between the card and the answer box it pushed them 32px apart, against 8px
+            everywhere else on the screen. It keeps its reserved height either way — the text
+            appears and clears on every answer, and a line that collapsed when empty would bounce
+            the keypad under the player's thumb mid-run. */}
+        <div className={feedback.cls}>{feedback.text}</div>
       </div>
-      <div className={feedback.cls}>{feedback.text}</div>
       <input type="text" className={inputClass} placeholder="?" autoComplete="off" inputMode="decimal" readOnly value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submitAnswer(); }} />
       {/* ph-no-capture keeps analytics autocapture off the keypad. Autocapture records the TEXT of
