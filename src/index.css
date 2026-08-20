@@ -546,7 +546,11 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .sheet-close{width:30px;height:30px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:calc(16px * var(--fs-mult));color:var(--TC);box-shadow:0 2px 0 #d4b0a4;transition:all .15s}
 .sheet-close:active{transform:scale(.9)}
 .sheet-body{padding:0 20px}
-.prof-name-row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px}
+/* The three beige cards on this sheet carry the same bottom-only shadow the rest of the app
+   uses, so they read as raised surfaces rather than dissolving into the white background.
+   --border2 rather than a literal colour: it is the shadow base for every neutral surface
+   (.k.spec, .logout-btn) and it is redefined for dark mode, where a baked-in beige would glow. */
+.prof-name-row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;box-shadow:0 2px 0 var(--border2)}
 .prof-avatar{width:44px;height:44px;border-radius:50%;background:var(--GL2);display:flex;align-items:center;justify-content:center;font-size:calc(18px * var(--fs-mult));font-weight:900;color:var(--GDK);flex-shrink:0}
 .prof-name-info{flex:1}
 .prof-username{font-size:calc(16px * var(--fs-mult));font-weight:800;color:var(--txt)}
@@ -556,7 +560,7 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .prof-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
 
 /* v18.2: Milestones summary row in the profile sheet */
-.prof-ms-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;cursor:pointer}
+.prof-ms-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;cursor:pointer;box-shadow:0 2px 0 var(--border2)}
 .prof-ms-pct{font-size:calc(20px * var(--fs-mult));font-weight:900;color:var(--txt)}
 .prof-ms-pct-label,.prof-ms-latest-label{font-size:calc(9.5px * var(--fs-mult));color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .prof-ms-latest-wrap{text-align:right}
@@ -572,7 +576,7 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .ms-list-item.achieved .ms-list-name{color:#c98a12}
 .ms-list-item:not(.achieved) .ms-list-name{color:var(--txt)}
 .ms-list-desc{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-top:2px;line-height:1.4}
-.prof-stat{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center}
+.prof-stat{background:var(--card);border-radius:var(--rs);padding:12px;text-align:center;box-shadow:0 2px 0 var(--border2)}
 .prof-stat-n{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1}
 .prof-stat-l{font-size:calc(10px * var(--fs-mult));color:var(--txt3);margin-top:3px}
 .prof-divider{height:1px;background:var(--border);margin:16px 0}
