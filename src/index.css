@@ -323,6 +323,9 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
    while the profile sheet is still showing. */
 #edit-name-mdl{z-index:250}
 .mbg.on{display:flex}
+/* Above .ob-screen's 500. The sign-out notice appears in the same instant onboarding takes over
+   the screen, so at the shared z-index of 100 it was opening behind it and never being seen. */
+.mbg.topmost{z-index:520}
 .mdl{background:var(--bg);border-radius:var(--r);padding:20px;width:300px;max-width:90vw}
 .mdl h3{font-size:calc(16px * var(--fs-mult));font-weight:800;margin-bottom:10px;color:var(--txt)}
 .mdl p{font-size:calc(13px * var(--fs-mult));color:var(--txt2);margin-bottom:6px;line-height:1.65}

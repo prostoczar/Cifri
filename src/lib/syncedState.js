@@ -45,6 +45,21 @@ export const SYNCED_KEYS = [
 //   guest-conversion flags   — only ever read while `!acctCreated`, so meaningless on an account
 //   anything starting with _ — transient per-render values (_lastSessionResult and friends)
 
+// What stays on the device when an account signs out. Everything else in SYNCED_KEYS goes.
+//
+// Derived from SYNCED_KEYS rather than written out as its own list, so a new piece of synced
+// progress cannot be added later and then quietly survive a sign-out. If it belongs to the
+// account — which is what putting it in SYNCED_KEYS says — then it leaves with the account.
+//
+// `settings` is the one exception, and it is a real one: dark mode, text size and language
+// describe the phone in someone's hand, not the person holding it. Flipping a Russian speaker's
+// app back to English because they signed out would be a bug wearing a privacy feature's costume.
+export const KEEP_ON_SIGN_OUT = ['settings'];
+
+export function signOutResetKeys() {
+  return SYNCED_KEYS.filter((k) => !KEEP_ON_SIGN_OUT.includes(k));
+}
+
 // The payload to store on the server for this state.
 export function toSyncPayload(state) {
   const out = {};

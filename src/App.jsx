@@ -59,7 +59,7 @@ import BrainingGameScreen from './screens/BrainingGameScreen.jsx';
 import BrainingResultScreen from './screens/BrainingResultScreen.jsx';
 
 function AppShell() {
-  const { state, dispatch, beginSync } = useAppState();
+  const { state, dispatch, beginSync, confirmProgressSaved } = useAppState();
   const { t, lang } = useI18n();
   const soundOn = state.settings.sound;
 
@@ -121,6 +121,8 @@ function AppShell() {
   const [deleteError, setDeleteError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  // Set when a sign-out could not confirm the upload, so the device was left as it was.
+  const [logoutKeptData, setLogoutKeptData] = useState(false);
   // Opened by a password-reset email. Seeded synchronously from the URL because supabase-js
   // strips the token as it starts up; the PASSWORD_RECOVERY listener below is the second route
   // in, for the auth flow where the token is not visible in the address bar at all.
@@ -990,11 +992,18 @@ function AppShell() {
   // is a local copy now, no longer syncing anywhere.
   async function handleLogout() {
     setConfirm(null);
+    // Ask BEFORE signOut(), while the session still exists — the final upload needs it. Whether
+    // this device may be wiped is entirely this answer: true only if the server is confirmed to
+    // hold everything here, false if it could not be reached. Never assumed.
+    const saved = await confirmProgressSaved();
     // Sent before signOut(), which is what triggers resetIdentity() — after it this event would
     // be attributed to a fresh anonymous person rather than to whoever actually left.
-    track('logged_out');
+    track('logged_out', { progress_saved: saved });
     await signOut();
-    dispatch({ type: 'ACCOUNT_SIGNED_OUT' });
+    dispatch({ type: 'ACCOUNT_SIGNED_OUT', wipeProgress: saved });
+    // Said out loud rather than left to be discovered. A player who expects a clean device and
+    // finds their history still on it deserves to know why, and that it is not yet backed up.
+    if (!saved) setLogoutKeptData(true);
   }
 
   // Backing out without submitting counts as dismissing a dedicated conversion ask, so later
@@ -1596,6 +1605,12 @@ function AppShell() {
         title={t('logout_title')} desc={t('logout_desc')} confirmLabel={t('set_logout')}
         onCancel={() => setConfirm(null)}
         onConfirm={handleLogout}
+      />
+      <ConfirmModal
+        open={logoutKeptData} notice topmost
+        title={t('logout_kept_title')} desc={t('logout_kept_desc')} confirmLabel={t('logout_kept_ok')}
+        onCancel={() => setLogoutKeptData(false)}
+        onConfirm={() => setLogoutKeptData(false)}
       />
       <ConfirmModal
         open={confirm === 'reset'} danger

@@ -4,7 +4,7 @@ import { ACHIEVEMENTS, earnedCount, streakAchievementKey, streakMilestoneThresho
 import { applyBrainingBoost } from './scoring.js';
 import { brainAge20Count, isSharperEveryDay } from './braining.js';
 import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
-import { sameSyncPayload, toSyncPayload } from '../lib/syncedState.js';
+import { sameSyncPayload, signOutResetKeys, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
 import { clearBaseline, fingerprint, readBaseline, writeBaseline } from '../lib/syncBaseline.js';
 import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
@@ -547,14 +547,42 @@ export function reducer(state, action) {
     // The real session has already been ended by the time this runs, so the retained progress
     // is a local copy only: it is no longer being synced anywhere, and logging in as anyone
     // else replaces it outright with that account's own history.
-    case 'ACCOUNT_SIGNED_OUT':
-      return {
+    // Signing out. `wipeProgress` is decided by the caller, not here, and it is only ever true
+    // once the server has been CONFIRMED to hold everything on this device — see
+    // confirmProgressSaved() below. Without that confirmation the data stays put, because a
+    // sign-out that happens to be offline would otherwise be indistinguishable from a delete.
+    //
+    // When it is true the device really does start over: the next player types a new name into
+    // onboarding and gets a blank app, rather than inheriting the previous account's streak,
+    // scores and achievements — which is what used to happen, and what made a second nickname on
+    // one phone look like a nine-day veteran.
+    case 'ACCOUNT_SIGNED_OUT': {
+      const signedOut = {
         ...state,
         acctCreated: false,
         guestConvoStarted: false,
         _loggedOut: true,
         acctData: { email: '', fullName: '' },
       };
+      if (!action.wipeProgress) return signedOut;
+
+      const fresh = defaultState();
+      const wiped = { ...signedOut };
+      for (const k of signOutResetKeys()) wiped[k] = fresh[k];
+      // Not synced, so not covered by the list above, but just as much the departing account's:
+      // a new name wearing the last player's avatar is the same inherited-identity bug.
+      wiped.username = fresh.username;
+      wiped.avatar = fresh.avatar;
+      // The guest-conversion flags reset too, so the next player gets the normal run of prompts
+      // rather than a funnel already marked as dismissed by somebody else.
+      wiped.savePromptShown = fresh.savePromptShown;
+      wiped.anyGuestPromptDismissed = fresh.anyGuestPromptDismissed;
+      wiped.guestBannerLastShownDay = fresh.guestBannerLastShownDay;
+      // `notifAskedDay` deliberately survives. It guards a browser permission dialog, which is a
+      // per-device thing that can only be spent once — a "Block" cannot be undone from in here,
+      // so forgetting we already asked would burn the one chance this browser had.
+      return wiped;
+    }
 
     case 'SET_AVATAR':
       return { ...state, avatar: { ...action.avatar, customized: true } };
@@ -1657,7 +1685,38 @@ export function AppStateProvider({ children }) {
     });
   }, []);
 
-  const value = useMemo(() => ({ state, dispatch, beginSync }), [state, beginSync]);
+  // Is it safe to wipe this device on sign-out?
+  //
+  // Only "yes" if the server is KNOWN to hold what is here. That is a question the device can
+  // answer on its own: the baseline is a fingerprint of the last payload an upload was confirmed
+  // to have accepted, so a matching fingerprint means everything here has already landed.
+  //
+  // When it does not match — a game finished inside the sync debounce, or a whole session played
+  // on a train — one final upload is attempted and the answer is whether THAT succeeded. If it
+  // did not, this returns false and the caller leaves the data alone. Getting this wrong in the
+  // optimistic direction is not a stale mirror, it is a player's history deleted off the only
+  // device holding it, so the failure is deliberately loud rather than assumed away.
+  const confirmProgressSaved = useCallback(async () => {
+    const uid = sync.current.uid;
+    if (!uid) return false;
+    const payload = toSyncPayload(stateRef.current);
+    if (fingerprint(payload) === readBaseline(uid)) return true;
+
+    const res = await pushPlayerState(payload);
+    if (!res.ok) return false;
+    sync.current.lastPushed = payload;
+    writeBaseline(uid, payload);
+    // Today's rows are the half of the mirror the leaderboard reads, and they are cheap. A
+    // failure here is not fatal to the wipe: the state payload above is the record that matters,
+    // and daily_results is rebuilt from it on the next sign-in.
+    await pushDailyResults(projectDailyRows(stateRef.current, { todayOnly: true }));
+    return true;
+  }, []);
+
+  const value = useMemo(
+    () => ({ state, dispatch, beginSync, confirmProgressSaved }),
+    [state, beginSync, confirmProgressSaved],
+  );
 
   return <AppStateStoreContext.Provider value={value}>{children}</AppStateStoreContext.Provider>;
 }
