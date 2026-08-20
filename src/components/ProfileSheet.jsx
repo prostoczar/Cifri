@@ -257,10 +257,12 @@ export default function ProfileSheet({
             <div className="set-info"><div className="set-lbl">{t('legal_privacy_link')}</div></div>
           </div>
 
-          {/* Logging out only makes sense once an account exists. */}
+          {/* Logging out only makes sense once an account exists. Neither does deleting one: for a
+              guest there is no server-side account to delete, so the button led nowhere. Wiping
+              local progress is what `set_reset` is for, and that stays available to everyone. */}
           {acctCreated && <button className="logout-btn" onClick={onLogout}>{t('set_logout')}</button>}
           <button className="danger-btn" onClick={onReset}>{t('set_reset')}</button>
-          <button className="danger-btn" onClick={onDeleteAccount}>{t('set_delete_account')}</button>
+          {acctCreated && <button className="danger-btn" onClick={onDeleteAccount}>{t('set_delete_account')}</button>}
         </div>
       </div>
     </div>
