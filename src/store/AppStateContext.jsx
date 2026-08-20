@@ -572,7 +572,12 @@ export function reducer(state, action) {
     // which is what makes Trick Explorer a "10 distinct days" achievement rather than 10 taps.
     case 'VIEW_TRICK_OF_DAY': {
       const today = dayKey();
-      if (state.totdLastViewed === today) return { ...state, _lastTrickUnlocked: null };
+      // Already opened today: nothing to count, but the request still has to be answered. The
+      // navigation to the trick hangs off this signal, so nulling it here left the card visibly
+      // tappable and permanently inert after the first tap. Report "handled, nothing unlocked".
+      if (state.totdLastViewed === today) {
+        return { ...state, _lastTrickUnlocked: { reqId: action.reqId, unlocked: [] } };
+      }
       const m = { ...state.milestones, achievedLog: [...state.milestones.achievedLog] };
       const unlocked = [];
       m.trickCount = (m.trickCount || 0) + 1;
