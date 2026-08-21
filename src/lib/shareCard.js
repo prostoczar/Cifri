@@ -35,7 +35,7 @@
 // Confirmed as a product decision, not an oversight: a shared image lands in someone else's app,
 // on someone else's background. One consistent card is a brand asset; two is a support question.
 
-import { AVATAR_ICONS } from '../store/avatar.js';
+import { AVATAR_COLORS, AVATAR_ICONS, avatarContentPx, avatarIconStrokeWidth } from '../store/avatar.js';
 // The app icon's own artwork, from the canonical brand assets rather than a copy under src/ —
 // same reasoning as OnboardingScreen.jsx, see assets/README.md. `?raw` inlines the SVG source as
 // a string at build time rather than emitting a URL to fetch: the drawing path below needs the
@@ -56,6 +56,14 @@ const INNER_W = CARD_W - PAD * 2;
 // `box-shadow: 0 2px 0` / `0 3px 0` used on every button, chip and stat box in index.css,
 // scaled up to this canvas.
 const SHADOW_DROP = 11;
+
+// The identity row at the top of the hero panel. 76px reads clearly at the size a card is actually
+// looked at — a thumbnail in a chat list — without competing with the number underneath it, which
+// is still the thing the card is about.
+const AVATAR_D = 76;
+const IDENTITY_GAP = 20;
+// avatarStyle()'s `0 2px 0`, carried up to this canvas by the ratio the 3px surfaces already use.
+const AVATAR_SHADOW = Math.round((SHADOW_DROP * 2) / 3);
 
 const PANEL_Y = 189;
 const PANEL_H = 666;
@@ -100,6 +108,31 @@ function palette() {
     GL2: read('--GL2', fallback.GL2),
     GDK: read('--GDK', fallback.GDK),
   };
+}
+
+// The avatar's four colour combinations are read out of AVATAR_COLORS rather than restated here,
+// for the same reason the palette above is read out of index.css: a fifth combination, or a change
+// to an existing one, must reach the card without anyone remembering that the card exists.
+//
+// They are stored as CSS `var(--X)` references because that is what the DOM avatar consumes, and
+// canvas cannot resolve those — so each one is looked up in the same :root the palette comes from.
+// The shadows are already literal hex (except grey's) and fall through untouched.
+const VAR_FALLBACKS = {
+  '--GL2': '#ebf7f3', '--GDK': '#075c3d',
+  '--YL': '#ffd166', '--YLT': '#7a4f00',
+  '--TCL': '#f5e0d8', '--TC': '#d65a3a',
+  '--card-grey': '#fdf8f3', '--txt': '#000000', '--border2': '#d8d0c6',
+};
+
+function resolveVarColor(value) {
+  const ref = /^var\((--[a-z0-9-]+)\)$/i.exec(String(value).trim());
+  if (!ref) return value;
+  const name = ref[1];
+  if (typeof window !== 'undefined' && window.getComputedStyle) {
+    const got = (window.getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim();
+    if (got) return got;
+  }
+  return VAR_FALLBACKS[name] || '#000000';
 }
 
 // ── Fonts ─────────────────────────────────────────────────────────────────────
@@ -193,6 +226,22 @@ function fitLines(ctx, text, maxWidth, sizes, maxLines, weight) {
   return { size: chosen.size, lines };
 }
 
+// fitLines() wraps on whitespace, which a nickname may not contain — "Konstantinopolitanskiy" is
+// one word and would simply run past the panel at every size it was offered. This shrinks the same
+// way and then cuts by character, so there is no input that overflows.
+function fitOneLine(ctx, text, maxWidth, sizes, weight) {
+  const str = String(text).trim();
+  for (const size of sizes) {
+    setFont(ctx, weight, size);
+    if (ctx.measureText(str).width <= maxWidth) return { size, text: str };
+  }
+  const size = sizes[sizes.length - 1];
+  setFont(ctx, weight, size);
+  let cut = str;
+  while (cut.length > 1 && ctx.measureText(cut + '…').width > maxWidth) cut = cut.slice(0, -1);
+  return { size, text: cut + '…' };
+}
+
 function drawLines(ctx, lines, cx, top, size, lineHeight, weight, color) {
   setFont(ctx, weight, size);
   ctx.fillStyle = color;
@@ -266,16 +315,77 @@ function iconImage(markup, color, size) {
 // wrong: a two-line Russian achievement name and a one-line English one would sit at the same
 // height and leave visibly different amounts of air below. Centring the stack means every card
 // looks composed regardless of how much text it turned out to carry.
-function heroBlocks(ctx, hero, pal, icon) {
+function heroBlocks(ctx, hero, identity, pal, icon, avatarIcon) {
   const cx = CARD_W / 2;
   const maxW = INNER_W - 96;
   const blocks = [];
+
+  // ── Who this belongs to ─────────────────────────────────────────────────────
+  //
+  // Name and avatar, as one centred pair at the top of the panel. It exists because a card that
+  // says only "brain age 28" is a fact about nobody — the point of sending one is that it is YOUR
+  // 28, and the avatar is the thing the player actually chose and can recognise at thumbnail size.
+  //
+  // Drawn from the same avatar spec the header button uses, resolved by the same avatarSpecFor()
+  // in the caller, so the face on the card is the face in the app rather than a second idea of it.
+  //
+  // Nothing is added when there is no name — a player who has not finished onboarding gets the
+  // card exactly as it was, rather than a row containing a placeholder.
+  if (identity && identity.name && identity.spec) {
+    const spec = identity.spec;
+    const c = AVATAR_COLORS[spec.color] || AVATAR_COLORS.green;
+    const bg = resolveVarColor(c.bg);
+    const fg = resolveVarColor(c.fg);
+    const shadow = resolveVarColor(c.shadow);
+    const contentPx = avatarContentPx(spec, AVATAR_D);
+    // The name is given whatever the avatar and the gap leave, so a long nickname shrinks rather
+    // than pushing the avatar out of the panel.
+    const fit = fitOneLine(ctx, identity.name, maxW - AVATAR_D - IDENTITY_GAP, [40, 35, 30], 800);
+    setFont(ctx, 800, fit.size);
+    const nameW = ctx.measureText(fit.text).width;
+    const rowW = nameW + IDENTITY_GAP + AVATAR_D;
+    blocks.push({
+      h: AVATAR_D,
+      gap: 0,
+      draw: (y) => {
+        const left = cx - rowW / 2;
+        const midY = y + AVATAR_D / 2;
+
+        setFont(ctx, 800, fit.size);
+        // Green, and specifically the app's dark green (--GDK): the colour it already uses for a
+        // player's own good news — a new best, the default avatar, the "ties best" cell.
+        ctx.fillStyle = pal.GDK;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fit.text, left, midY);
+
+        const ax = left + nameW + IDENTITY_GAP;
+        // `box-shadow: 0 2px 0` from avatarStyle(), at this canvas's scale — the same relation to
+        // SHADOW_DROP that the 3px surfaces elsewhere on the card keep, rather than a new number.
+        ctx.fillStyle = shadow;
+        ctx.beginPath();
+        ctx.arc(ax + AVATAR_D / 2, y + AVATAR_D / 2 + AVATAR_SHADOW, AVATAR_D / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        ctx.arc(ax + AVATAR_D / 2, midY, AVATAR_D / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (avatarIcon) {
+          ctx.drawImage(avatarIcon, ax + (AVATAR_D - contentPx) / 2, y + (AVATAR_D - contentPx) / 2, contentPx, contentPx);
+        } else {
+          // Letters and symbols alike: the spec's own value, at the size the picker chose for it.
+          drawLines(ctx, [spec.value || '?'], ax + AVATAR_D / 2, y, contentPx, AVATAR_D, 900, fg);
+        }
+      },
+    });
+  }
 
   if (icon) {
     const size = 120;
     blocks.push({
       h: size,
-      gap: 0,
+      gap: blocks.length ? 34 : 0,
       draw: (y) => {
         // The popup's yellow glow, flattened to a soft disc. The popup animates it; a still image
         // keeps the halo but not the pulse.
@@ -294,7 +404,7 @@ function heroBlocks(ctx, hero, pal, icon) {
     // popup renders them.
     blocks.push({
       h: 120,
-      gap: 0,
+      gap: blocks.length ? 34 : 0,
       draw: (y) => {
         const grad = ctx.createRadialGradient(cx, y + 60, 0, cx, y + 60, 118);
         grad.addColorStop(0, 'rgba(255,209,102,0.55)');
@@ -311,7 +421,7 @@ function heroBlocks(ctx, hero, pal, icon) {
   if (hero.ribbon) {
     blocks.push({
       h: 58,
-      gap: 0,
+      gap: blocks.length ? 30 : 0,
       draw: (y) => drawPill(ctx, hero.ribbon.toLocaleUpperCase(), cx, y, 58, 34, 26, 900, '#000000', pal.YL, '2px'),
     });
   }
@@ -432,6 +542,7 @@ function drawBranding(ctx, pal, logo) {
  * @param card {{
  *   hero: { symbol?, iconName?, ribbon?, value?, valueColor?, rarity?: {key,label},
  *           title?, label?, body?, note? },
+ *   identity?: { name: string, spec: AvatarSpec } — omitted, and the row with it, when unknown
  *   chips: Array<{ value, label, tone? }>,
  *   tagline: string
  * }}
@@ -451,11 +562,29 @@ export async function renderShareCard(card) {
 
     const hero = card.hero || {};
     const markup = hero.iconName ? AVATAR_ICONS[hero.iconName] : null;
-    // Both decoded before anything is painted. Drawing is synchronous from here on, so the whole
+
+    // The player's avatar, when it is an icon rather than letters or a symbol. Sized and coloured
+    // here for the same two reasons Avatar.jsx does it: an SVG shrunk to 44px takes its stroke down
+    // with it and reads grey, and `currentColor` inside a standalone SVG has nothing to inherit.
+    // The existing stroke-width is REPLACED rather than a second one appended — a duplicate
+    // attribute is fatal to the XML parse, which is the trap svgImage() documents for xmlns.
+    const identity = card.identity || null;
+    const avatarSpec = identity && identity.spec ? identity.spec : null;
+    const avatarMarkup = avatarSpec && avatarSpec.type === 'icon' ? AVATAR_ICONS[avatarSpec.value] : null;
+    const avatarPx = avatarSpec ? avatarContentPx(avatarSpec, AVATAR_D) : 0;
+
+    // All decoded before anything is painted. Drawing is synchronous from here on, so the whole
     // card either exists or does not — there is no state where a half-drawn canvas gets exported.
-    const [icon, logo] = await Promise.all([
+    const [icon, logo, avatarIcon] = await Promise.all([
       markup ? iconImage(markup, pal.YLT, 120) : null,
       svgImage(logoMarkup, LOGO_SIZE),
+      avatarMarkup
+        ? iconImage(
+            avatarMarkup.replace(/stroke-width="[^"]*"/, 'stroke-width="' + avatarIconStrokeWidth(avatarPx) + '"'),
+            resolveVarColor((AVATAR_COLORS[avatarSpec.color] || AVATAR_COLORS.green).fg),
+            avatarPx,
+          )
+        : null,
     ]);
 
     ctx.fillStyle = pal.bg;
@@ -465,7 +594,7 @@ export async function renderShareCard(card) {
 
     raisedRect(ctx, PAD, PANEL_Y, INNER_W, PANEL_H, PANEL_R, pal.card, pal.border2);
 
-    const blocks = heroBlocks(ctx, hero, pal, icon);
+    const blocks = heroBlocks(ctx, hero, identity, pal, icon, avatarIcon);
     const total = blocks.reduce((sum, b) => sum + b.gap + b.h, 0);
     let y = PANEL_Y + (PANEL_H - total) / 2;
     for (const block of blocks) {

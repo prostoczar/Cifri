@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
+import { useAppState } from '../store/AppStateContext.jsx';
+import { avatarSpecFor } from '../store/avatar.js';
 import { renderShareCard } from '../lib/shareCard.js';
 import { canShareImages, shareFilename, shareImage } from '../lib/shareImage.js';
 import { track } from '../lib/analytics.js';
@@ -35,15 +37,38 @@ function scheduleIdle(fn) {
 
 export default function ShareButton({ cacheKey, build, analytics, className }) {
   const { t } = useI18n();
+  const { state } = useAppState();
   const blobRef = useRef(null);
   const buildRef = useRef(build);
   buildRef.current = build;
+  const identityRef = useRef(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(false);
 
   // Asked once. The answer cannot change during a session, and it decides what the button calls
   // itself — "Share" promises a share sheet, and a desktop browser must not make that promise.
   const shareable = useMemo(() => canShareImages(), []);
+
+  // ── Who the card says it is from ────────────────────────────────────────────
+  //
+  // Added HERE rather than by each caller's build(). Three screens produce cards — both results
+  // and the achievement popup — and the player's name is the one thing on the card that is the
+  // same on all three regardless of what happened. Threading it through three sets of props gives
+  // three chances for them to disagree about which avatar is current; taking it from state once,
+  // in the component every card already goes through, gives none.
+  //
+  // avatarSpecFor() is the same resolver the header button uses, so an uncustomised avatar shows
+  // the initial the player already sees rather than a placeholder — and a name that is still empty
+  // (onboarding unfinished) yields null, which the renderer treats as "draw the card as before".
+  const identity = useMemo(() => {
+    const name = (state.username || '').trim();
+    return name ? { name, spec: avatarSpecFor(state.avatar, name) } : null;
+  }, [state.username, state.avatar]);
+
+  // Part of what identifies a drawn card, for the same reason `cacheKey` is: change the avatar in
+  // the profile sheet with a result screen still mounted and the cached PNG is now out of date.
+  const identityKey = identity ? identity.name + ':' + JSON.stringify(identity.spec) : '';
+  identityRef.current = identity;
 
   useEffect(() => {
     let alive = true;
@@ -55,7 +80,7 @@ export default function ShareButton({ cacheKey, build, analytics, className }) {
       } catch (e) {
         return;
       }
-      renderShareCard(spec.card).then((blob) => {
+      renderShareCard({ ...spec.card, identity: identityRef.current }).then((blob) => {
         if (alive) blobRef.current = blob;
       });
     });
@@ -63,7 +88,7 @@ export default function ShareButton({ cacheKey, build, analytics, className }) {
       alive = false;
       cancel();
     };
-  }, [cacheKey]);
+  }, [cacheKey, identityKey]);
 
   useEffect(() => {
     if (!note) return undefined;
@@ -94,7 +119,7 @@ export default function ShareButton({ cacheKey, build, analytics, className }) {
       // activation on iOS — shareImage() catches that and saves the file instead, which is worse
       // than a share sheet and much better than nothing.
       setBusy(true);
-      blob = await renderShareCard(spec.card);
+      blob = await renderShareCard({ ...spec.card, identity: identityRef.current });
       blobRef.current = blob;
       setBusy(false);
     }
