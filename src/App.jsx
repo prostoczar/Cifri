@@ -154,7 +154,6 @@ function AppShell() {
   const pendingBrReqId = useRef(0);
   const scrollRef = useRef(null);
   const slideElsRef = useRef({ from: null, to: null });
-  const slideWrapRef = useRef(null);
   const soundOnRef = useRef(soundOn);
   soundOnRef.current = soundOn;
 
@@ -534,13 +533,6 @@ function AppShell() {
     const enterFrom = slide.dir === 'left' ? 100 : -100;
     const exitTo = slide.dir === 'left' ? -100 : 100;
     const EASE = 'transform .32s cubic-bezier(.32,.72,0,1)'; // iOS-style: quick out, soft settle
-
-    // A percentage min-height does not resolve against a flex-sized scroll container, so the
-    // wrapper is sized from the container's own measured height instead. Without this it
-    // collapses to zero the moment both screens go out of flow.
-    if (slideWrapRef.current && scrollRef.current) {
-      slideWrapRef.current.style.height = scrollRef.current.clientHeight + 'px';
-    }
 
     [fromEl, toEl].forEach((el) => { el.style.willChange = 'transform'; });
     toEl.style.transition = 'none';
@@ -1333,8 +1325,6 @@ function AppShell() {
           onSelDiff={(d) => dispatch({ type: 'SET_SEL_DIFF', diff: d })}
           chRange={state.chRange}
           onChRange={(r) => dispatch({ type: 'SET_CH_RANGE', range: r })}
-          streak={state.streak}
-          bestStreakEver={state.bestStreakEver}
           onStartChallenge={handleStartChallenge}
           totdLastViewed={state.totdLastViewed}
           onOpenTrickOfDay={handleOpenTrickOfDay}
@@ -1346,8 +1336,6 @@ function AppShell() {
       return (
         <BrainingHomeScreen
           brState={state.brState}
-          streak={state.streak}
-          bestStreakEver={state.bestStreakEver}
           chartRange={state.brChartRange}
           chartType={state.brChartType}
           onChartRange={(r) => dispatch({ type: 'SET_BR_CHART_RANGE', range: r })}
@@ -1384,7 +1372,7 @@ function AppShell() {
         username={state.username} avatar={state.avatar}
         onOpenProfile={() => setProfileOpen(true)}
       />
-      <div className="scroll" ref={scrollRef} style={{ paddingBottom: showNav ? 80 : 0 }}>
+      <div className="scroll" ref={scrollRef}>
         {slide ? (
           // Mid-swipe: both screens are on-screen and absolutely positioned (.swiping), sliding
           // horizontally past each other.
@@ -1393,7 +1381,10 @@ function AppShell() {
           // scroll container with nothing to size against, it collapses, and the page visibly
           // jumps. The wrapper keeps the viewport's height for the duration, and clips the
           // outgoing screen so it can't widen the page as it leaves.
-          <div ref={slideWrapRef} style={{ position: 'relative', overflow: 'hidden' }}>
+          // height:100% (rather than the measured pixel height this used to need) works now that
+          // .scroll has a definite height — and it is the only version that stays exactly the
+          // visible area, so a swipe cannot itself introduce a scroll. See v16 item 1 in the CSS.
+          <div style={{ position: 'relative', overflow: 'hidden', height: '100%' }}>
             <div className="scr on swiping" ref={(el) => (slideElsRef.current.from = el)}>
               {renderTabContent(slide.from)}
             </div>

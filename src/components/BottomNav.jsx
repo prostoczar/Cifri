@@ -95,17 +95,33 @@ export default function BottomNav({ activeTab, onSelectTab, chDone, brDone, visi
   );
 }
 
+// The four tab glyphs, inlined rather than imported: .nb svg supplies stroke/fill/caps, so each
+// icon here is only its shapes. All four are Lucide at the same 24x24 / stroke-2 / round-cap spec
+// as the rest of the app's icon set (see AVATAR_ICONS in store/avatar.js) — `brain` below is that
+// file's `brain` verbatim, so if one is ever corrected the other should be corrected with it.
 function TabIcon({ id }) {
+  // v16 items 3 & 4: Challenge was a star and Braining a lightning bolt — both decorative rather
+  // than descriptive, and both already spoken for elsewhere (the star is an achievement icon, the
+  // bolt an avatar one). A stopwatch and a brain say what each mode actually is.
   if (id === 'challenge')
     return (
       <svg viewBox="0 0 24 24" strokeWidth="2">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        <line x1="10" x2="14" y1="2" y2="2" />
+        <line x1="12" x2="15" y1="14" y2="11" />
+        <circle cx="12" cy="14" r="8" />
       </svg>
     );
   if (id === 'braining')
     return (
       <svg viewBox="0 0 24 24" strokeWidth="2">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        <path d="M12 18V5" />
+        <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
+        <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
+        <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
+        <path d="M18 18a4 4 0 0 0 2-7.464" />
+        <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
+        <path d="M6 18a4 4 0 0 1-2-7.464" />
+        <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
       </svg>
     );
   if (id === 'practice')

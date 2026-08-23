@@ -5,9 +5,11 @@ import { dayAverage } from '../store/selectors.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
 // The personal-best marker. Same yellow / dark-yellow pair as the streak pill and the Trick of the
-// Day card, so "your best" is one colour across the whole app. The label goes to --YLT's brown
-// rather than the white used on the green bubbles, which would be unreadable on yellow.
-const YL = '#ffd166', YLD = '#c49030', YLT = '#7a4f00';
+// Day card, so "your best" is one colour across the whole app. v16 item 6: the number inside is
+// now plain black. It used to be the brown #7a4f00, which reads as a muddy dark yellow against the
+// #ffd166 fill — close enough in hue that the digits lost their edges at 9px on a phone. Black is
+// the same choice the yellow streak pill and the Trick of the Day card already make.
+const YL = '#ffd166', YLD = '#c49030', BEST_TXT = '#000';
 
 // Ported from the reference prototype's drawSpk() — draws directly into an <svg> via the DOM
 // API (createElementNS) rather than JSX, since the layout math is easiest expressed that way
@@ -152,7 +154,7 @@ export default function ChallengeChart({ db, diff, range }) {
           // the bubble, which is exactly what Braining relies on.
           svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: isBest ? YLD : GD }));
           svg.appendChild(ns('circle', { cx, cy, r: 10, fill: isBest ? YL : G }));
-          const scoreLbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? YLT : '#fff' });
+          const scoreLbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? BEST_TXT : '#fff' });
           scoreLbl.textContent = p.avg;
           svg.appendChild(scoreLbl);
         } else {

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
+import ScribblePad from '../components/ScribblePad.jsx';
+import TrickInfoModal from '../components/TrickInfoModal.jsx';
 import { TRICKS, setTricksLang } from '../store/tricksData.js';
 import { trGroupName, trTrick } from '../store/tricks.js';
 import { fn } from '../store/questionEngine.js';
@@ -36,8 +38,12 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
   const [index, setIndex] = useState(0);          // how many questions are behind you
   const [firstTry, setFirstTry] = useState(0);    // ...of which, right at the first attempt
   const [done, setDone] = useState(null);         // the end card, once the run is over
+  const [scribbleOpen, setScribbleOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const answerRef = useRef(null);
+  // Questions already asked in THIS practice run, so none is asked twice. Cleared with the run.
+  const askedRef = useRef(new Set());
   const alockRef = useRef(false);
   const inputRef = useRef('');
   const missedRef = useRef(false);                // has this question already been got wrong?
@@ -65,7 +71,21 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
       if (!testSetRef.current) testSetRef.current = testQuestions(gi, ti, lang);
       res = testSetRef.current[indexRef.current] || testSetRef.current[0];
     } else {
-      res = trick.gen();
+      // v16 item 8: practice draws WITHOUT replacement within a run. Widening the generators
+      // fixed the pools, but not this: independent draws from a 90-question pool still repeat
+      // inside a 20-question run about nine times out of ten, which is exactly what "practice
+      // repeats heavily" felt like. Re-rolling until the question is new to this run costs
+      // nothing and removes it entirely.
+      //
+      // The cap matters. Four tricks are inherently narrow — Rule of 70 has 22 questions in
+      // total — so a run can legitimately exhaust what a trick has to offer, and an uncapped
+      // loop would hang on the trick with the smallest pool. After 40 tries it accepts a repeat,
+      // which is the honest outcome: there was nothing else to ask.
+      for (let tries = 0; tries < 40; tries++) {
+        res = trick.gen();
+        if (!askedRef.current.has(res.q)) break;
+      }
+      askedRef.current.add(res.q);
     }
     answerRef.current = res.ans;
     setQuestion({ text: res.q });
@@ -82,6 +102,7 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
     indexRef.current = 0;
     firstTryRef.current = 0;
     testSetRef.current = null;
+    askedRef.current = new Set();
     setIndex(0);
     setFirstTry(0);
     setDone(null);
@@ -158,7 +179,7 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
   if (done) {
     const passed = done.passed;
     return (
-      <div className="tgpad">
+      <div className="tgpad tgpad-done">
         <div className="tgtop">
           <div className="ttl">{trickName}</div>
           <button className="qbtn" onClick={onExit}>
@@ -187,9 +208,12 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
   }
 
   return (
-    <div className="tgpad">
+    <div className={'tgpad' + (scribbleOpen ? ' scribbling' : '')}>
       <div className="tgtop">
-        <div className="ttl">{trickName}</div>
+        <div
+          className={'ttl' + (isTest ? '' : ' tappable')}
+          onClick={isTest ? undefined : () => setInfoOpen(true)}
+        >{trickName}</div>
         <button className="qbtn" onClick={onExit}>
           <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
@@ -214,6 +238,8 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
         value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
       />
+      <TrickInfoModal open={infoOpen} trick={trick} groupName={group.group} onClose={() => setInfoOpen(false)} />
+      <ScribblePad open={scribbleOpen} onToggle={setScribbleOpen} resetKey={index} />
       {/* ph-no-capture — see the note on the identical keypad in ChallengeGameScreen. */}
       <div className="np ph-no-capture">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (

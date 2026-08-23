@@ -137,6 +137,10 @@ en:{
   diff_medium:"Medium",
   diff_hard:"Hard",
   stat_best_streak:"best streak",
+  stat_ch_streak:"challenge streak",
+  scribble_open:"Open the scribble pad",
+  scribble_close:"Close the scribble pad",
+  stat_br_streak:"braining streak",
   stat_today_avg:"today avg",
   // Challenge's third stat box: the best SINGLE run today, which is not the day's score (that is
   // the average of every run, shown on the chart) and not the personal best beside it.
@@ -319,6 +323,11 @@ en:{
   mdl_streak_title:"Best streak",
   mdl_streak_body1:"Your longest run of days with <strong>Challenge or Braining</strong> played is <strong>{{n}}</strong> {{unit}}.",
   mdl_streak_body2:"Your current streak is {{n}}. Either mode counts the day on its own — one Challenge play on any difficulty, or your Braining test. Replaying moves your score, never your streak. Only a day with neither mode played breaks it.",
+  mdl_chstreak_title:"Challenge streak",
+  mdl_chstreak_body1:"You have played <strong>Challenge</strong> <strong>{{n}}</strong> {{unit}} in a row.",
+  mdl_chstreak_body0:"Your Challenge streak is <strong>0</strong>. Play a Challenge today to start one.",
+  mdl_chstreak_body2:"Your longest Challenge run is <strong>{{n}}</strong> {{unit}}.",
+  mdl_modestreak_body3:"The flame at the top of the screen is your overall streak, which either mode keeps alive on its own — so these two numbers can differ.",
   days_word:"days",
   day_word:"day",
   mdl_today_title:"Today - {{diff}}",
@@ -357,6 +366,7 @@ en:{
   practice_this_trick:"Practice this trick",
   word_of:"of",
   rule_of_70_q:"At {{r}}% growth per year, money doubles in how many years?",
+  rule_of_70_inv_q:"Money doubles in {{y}} years. What is the growth rate, in %?",
   as_decimal_q:"{{frac}} as a decimal = ?",
   digit_sum_check_q:"Digit sum check: {{a}} + {{b}} = {{total}}. Digit sum?",
   correct_excl:"Correct!",
@@ -536,6 +546,10 @@ ru:{
   diff_medium:"Средне",
   diff_hard:"Сложно",
   stat_best_streak:"лучшая серия",
+  stat_ch_streak:"серия челленджа",
+  scribble_open:"Открыть черновик",
+  scribble_close:"Закрыть черновик",
+  stat_br_streak:"серия брейнинга",
   stat_today_avg:"среднее сегодня",
   stat_today_high:"максимум сегодня",
   stat_today_score:"результат за день",
@@ -687,6 +701,11 @@ ru:{
   mdl_streak_title:"Лучшая серия",
   mdl_streak_body1:"Ваша самая длинная серия дней, в которые сыгран <strong>Челлендж или Брейнинг</strong> — <strong>{{n}}</strong> {{unit}}.",
   mdl_streak_body2:"Ваша текущая серия — {{n}}. День засчитывает любой режим по отдельности: одна игра в Челлендж на любой сложности или тест Брейнинг. Повторные попытки меняют результат, но не серию. Серия обрывается только в день, когда не сыгран ни один режим.",
+  mdl_chstreak_title:"Серия Челленджа",
+  mdl_chstreak_body1:"Вы играли в <strong>Челлендж</strong> <strong>{{n}}</strong> {{unit}} подряд.",
+  mdl_chstreak_body0:"Ваша серия Челленджа — <strong>0</strong>. Сыграйте в Челлендж сегодня, чтобы начать новую.",
+  mdl_chstreak_body2:"Ваша самая длинная серия Челленджа — <strong>{{n}}</strong> {{unit}}.",
+  mdl_modestreak_body3:"Огонёк вверху экрана — ваша общая серия: её продлевает любой из режимов по отдельности, поэтому эти числа могут отличаться.",
   days_word:"дней",
   day_word:"день",
   mdl_today_title:"Сегодня - {{diff}}",
@@ -729,6 +748,7 @@ ru:{
   practice_this_trick:"Отработать этот приём",
   word_of:"от",
   rule_of_70_q:"При росте {{r}}% в год, за сколько лет деньги удвоятся?",
+  rule_of_70_inv_q:"Деньги удваиваются за {{y}} лет. Каков рост в процентах?",
   as_decimal_q:"{{frac}} в виде десятичной дроби = ?",
   digit_sum_check_q:"Проверка суммой цифр: {{a}} + {{b}} = {{total}}. Сумма цифр?",
   correct_excl:"Верно!",
@@ -800,6 +820,20 @@ export function attemptWord(lang, n) {
   if (mod10 === 1 && mod100 !== 11) return 'попытка';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'попытки';
   return 'попыток';
+}
+
+// The word "day", agreeing with the number in front of it. Same problem as attemptWord above,
+// and the same three Russian forms: 1 день, 2 дня, 5 дней, with 11-14 taking the third regardless.
+//
+// The older `days_word`/`day_word` pair picked with `n !== 1` is still used by the unified-streak
+// modal; it is correct in English and only two-thirds correct in Russian. New copy uses this
+// instead rather than inheriting the bug.
+export function dayWord(lang, n) {
+  if (lang !== 'ru') return n === 1 ? 'day' : 'days';
+  var mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
+  return 'дней';
 }
 
 export function t(lang, key, vars) {

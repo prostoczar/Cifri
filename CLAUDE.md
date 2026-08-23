@@ -31,7 +31,9 @@ logic rather than a copy of it.
 | `check:anticheat` | a forged score, a fabricated boost or tampered timing getting recorded |
 | `check:projection` | a day's score projected to the server differently from the screen |
 | `check:streak` | a streak that survives a gap, or dies without one |
+| `check:mode-streaks` | a per-mode streak pill claiming a day that was never played in that mode |
 | `check:tricks` | a trick Test that credits a fail, or un-credits a pass |
+| `check:trick-variety` | a trick whose 20-question Test has to repeat itself to fill up |
 | `check:braining` | brain-age, the Sharper Every Day tiers, and the displayed scale disagreeing with the computed age |
 | `check:achievements` | a catalogue row that renders wrong, or unlocks a reward it should not |
 | `check:triggers` | an achievement wired to the wrong number, or firing on a near-miss |
@@ -48,6 +50,14 @@ JSX text that look like prose, and it carries a **self-test** — the audit's ac
 must still detect, and real non-copy strings, which it must still ignore. Loosen the heuristic and
 the self-test names the historical bug you just stopped catching. Its blind spots are listed in its
 own header; the main one is single-word copy.
+
+`check:mode-streaks` and `check:trick-variety` are the two newest, and both guard rules that fail
+silently in the way this app specialises in. The per-mode streaks shown on each home screen are
+DERIVED from session history rather than stored — no migration, nothing to double-credit, nothing
+to miss at midnight — which trades a class of state bugs for exactly one reading, and that reading
+is what the script pins down. `check:trick-variety` measures every generator's real output space:
+before 22 August 2026, 14 of the 47 tricks could not produce twenty distinct questions, so Tests
+padded themselves by repeating and nothing said so.
 
 `check:worktrees` is the odd one out: it checks the repository rather than the game. Work has been
 stranded twice on a `claude/*` worktree branch nobody merged — most recently a complete, better

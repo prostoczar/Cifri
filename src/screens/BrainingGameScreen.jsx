@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
+import ScribblePad from '../components/ScribblePad.jsx';
 import { brFmtTimer } from '../store/braining.js';
 
 // Ported from the reference prototype's #scr-br-game markup.
 export default function BrainingGameScreen({ game, onShowQuit }) {
   const { t } = useI18n();
+  const [scribbleOpen, setScribbleOpen] = useState(false);
   const { session, question, input, inputBad, qcState, hint, padInput, backspace, submitAnswer } = game;
   if (!session) return null;
 
@@ -11,7 +14,7 @@ export default function BrainingGameScreen({ game, onShowQuit }) {
   const pct = Math.round((session.qIdx / session.total) * 100);
 
   return (
-    <div className="br-gpad">
+    <div className={'br-gpad' + (scribbleOpen ? ' scribbling' : '')}>
       <div className="br-gtop">
         <div className="br-tc">
           {session.todayTime != null && (
@@ -56,6 +59,7 @@ export default function BrainingGameScreen({ game, onShowQuit }) {
       />
       {/* ph-no-capture — see the note on the identical keypad in ChallengeGameScreen. Autocapture
           would otherwise send each digit tapped as element text. */}
+      <ScribblePad open={scribbleOpen} onToggle={setScribbleOpen} resetKey={session.qIdx} />
       <div className="np ph-no-capture">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <button key={n} className="k" onClick={() => padInput(n)}>{n}</button>

@@ -1,11 +1,11 @@
 import { useI18n } from '../store/useI18n.js';
 import { diffLabel } from '../store/questionEngine.js';
-import { todayChallengeAvg, todayChallengeHigh } from '../store/selectors.js';
-import { attemptWord } from '../i18n_data.js';
+import { todayChallengeAvg, todayChallengeHigh, challengeStreak } from '../store/selectors.js';
+import { attemptWord, dayWord } from '../i18n_data.js';
 
 // Ported from the reference prototype's openMdl()/#info-mdl — the streak / today-avg /
 // personal-best stat popups on the Challenge home screen.
-export default function StatInfoModal({ type, db, selDiff, streak, bestStreakEver, lang, onClose }) {
+export default function StatInfoModal({ type, db, selDiff, lang, onClose }) {
   const { t } = useI18n();
   if (!type) return null;
 
@@ -13,14 +13,21 @@ export default function StatInfoModal({ type, db, selDiff, streak, bestStreakEve
   let title = '', body = null;
 
   if (type === 'streak') {
-    const bse = bestStreakEver || 0;
-    title = t('mdl_streak_title');
+    // v16 item 2: the pill this opens from now reports the CHALLENGE-only streak, so the popup
+    // explains that number instead of the unified one. The unified streak is not dropped — it is
+    // named in the last line, because a player looking at two different streak numbers on one
+    // screen deserves to be told which is which rather than left to guess.
+    const ch = challengeStreak(db);
+    title = t('mdl_chstreak_title');
     body = (
       <>
-        <p dangerouslySetInnerHTML={{ __html: t('mdl_streak_body1', { n: bse, unit: bse !== 1 ? t('days_word') : t('day_word') }) }} />
+        {ch.current === 0
+          ? <p dangerouslySetInnerHTML={{ __html: t('mdl_chstreak_body0') }} />
+          : <p dangerouslySetInnerHTML={{ __html: t('mdl_chstreak_body1', { n: ch.current, unit: dayWord(lang, ch.current) }) }} />}
+        <p dangerouslySetInnerHTML={{ __html: t('mdl_chstreak_body2', { n: ch.best, unit: dayWord(lang, ch.best) }) }} />
         <p
           style={{ marginTop: 8, fontSize: 'calc(12px * var(--fs-mult))', color: 'var(--txt3)' }}
-          dangerouslySetInnerHTML={{ __html: t('mdl_streak_body2', { n: streak || 0 }) }}
+          dangerouslySetInnerHTML={{ __html: t('mdl_modestreak_body3') }}
         />
       </>
     );

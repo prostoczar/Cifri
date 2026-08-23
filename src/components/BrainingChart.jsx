@@ -4,10 +4,10 @@ import { brFmtSec } from '../store/braining.js';
 import { useI18n } from '../store/useI18n.js';
 
 const G = '#0f9d6c', GD = '#096e4a', TC = '#d65a3a';
-// The personal-best marker, same pair as the Challenge chart — see the note there. What "best"
-// means is the one thing that differs: both Braining views are races to the bottom, so it is the
-// LOWEST point that gets the badge, not the highest.
-const YL = '#ffd166', YLD = '#c49030', YLT = '#7a4f00';
+// The personal-best marker, same pair as the Challenge chart — see the note there, including why
+// the text on it is black. What "best" means is the one thing that differs: both Braining views
+// are races to the bottom, so it is the LOWEST point that gets the badge, not the highest.
+const YL = '#ffd166', YLD = '#c49030', BEST_TXT = '#000';
 
 // Ported from the reference prototype's brDrawChart().
 export default function BrainingChart({ brState, range, type }) {
@@ -106,24 +106,48 @@ export default function BrainingChart({ brState, range, type }) {
         const isBest = i === loIdx;
         const marked = days <= 14 || i === hiIdx || i === loIdx || i === latestIdx;
         if (type === 'time') {
-          // Time keeps the original small dot with the value in plain text above it — "4:32"
-          // doesn't fit legibly inside a circle. The best time still gets the yellow, scaled down
-          // to the dot: same two-circle drop shadow as the age bubbles, just smaller.
+          // Ordinary days keep the small dot with the value in plain text above it — "4m 32s"
+          // will not fit inside a 20px circle the way a two-digit brain age does.
+          //
+          // v16 item 6: the best day used to be only a slightly larger yellow dot, which at 10px
+          // across was almost indistinguishable from the green ones — this view was effectively
+          // unmarked. It now gets the same marker as the other two charts, stretched to fit its
+          // label: same yellow, same 2px drop shadow underneath, same black text, drawn as a
+          // fully-rounded pill instead of a circle. It replaces that day's dot AND its floating
+          // label, so the best day carries one mark rather than two.
           if (isBest) {
-            svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 5, fill: YLD }));
-            svg.appendChild(ns('circle', { cx, cy, r: 5, fill: YL }));
+            const H_PILL = 20;
+            const shadow = ns('rect', { y: cy - H_PILL / 2 + 2, height: H_PILL, rx: H_PILL / 2, fill: YLD });
+            const body = ns('rect', { y: cy - H_PILL / 2, height: H_PILL, rx: H_PILL / 2, fill: YL });
+            svg.appendChild(shadow);
+            svg.appendChild(body);
+            const plbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: BEST_TXT });
+            plbl.textContent = brFmtSec(p.val, t);
+            svg.appendChild(plbl);
+            // The pill has to be as wide as whatever the label turned out to be — which depends on
+            // the language and on the player's text-size setting, so it can only be measured, not
+            // computed. getComputedTextLength() needs the text laid out; if this ever runs while
+            // the chart is off-screen it returns 0, hence the per-character fallback.
+            let tw = plbl.getComputedTextLength ? plbl.getComputedTextLength() : 0;
+            if (!tw) tw = plbl.textContent.length * 5.4;
+            const w = Math.max(H_PILL, tw + 14);
+            // Kept inside the chart's own width. On the first or last column a centred pill would
+            // otherwise hang off the edge; nudging it in loses a little of the "sits exactly on
+            // its point" reading, but an unreadable half-clipped best time loses more.
+            const x = Math.min(Math.max(0, cx - w / 2), Math.max(0, W - w));
+            [shadow, body].forEach((r) => { r.setAttribute('x', x); r.setAttribute('width', w); });
           } else {
             svg.appendChild(ns('circle', { cx, cy, r: 4, fill: G }));
-          }
-          if (marked) {
-            const tlbl = ns('text', { x: cx, y: cy - 9, 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', fill: 'var(--txt)' });
-            tlbl.textContent = brFmtSec(p.val, t);
-            svg.appendChild(tlbl);
+            if (marked) {
+              const tlbl = ns('text', { x: cx, y: cy - 9, 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', fill: 'var(--txt)' });
+              tlbl.textContent = brFmtSec(p.val, t);
+              svg.appendChild(tlbl);
+            }
           }
         } else if (marked) {
           svg.appendChild(ns('circle', { cx, cy: cy + 2, r: 10, fill: isBest ? YLD : GD }));
           svg.appendChild(ns('circle', { cx, cy, r: 10, fill: isBest ? YL : G }));
-          const lbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? YLT : '#fff' });
+          const lbl = ns('text', { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': 'calc(9px * var(--fs-mult))', 'font-weight': '800', fill: isBest ? BEST_TXT : '#fff' });
           lbl.textContent = p.val;
           svg.appendChild(lbl);
         } else {

@@ -1,8 +1,49 @@
-// Tricks library — extracted verbatim from the reference prototype (lines 2306-2689).
+// Tricks library — 47 tricks across 7 groups, each with its own question generator, plus the full
+// Russian translation table. Originally extracted verbatim from the reference prototype (lines
+// 2306-2689), copied programmatically rather than retyped.
 //
-// Copied programmatically rather than retyped: 47 tricks across 7 groups, each with its own
-// question generator, plus the full Russian translation table. The only edits are turning the
-// `var` declarations into module exports and importing the rn/fn helpers the generators call.
+// ── THE GENERATORS HAVE DELIBERATELY DIVERGED (v16 item 8, 22 August 2026) ───────────────────
+//
+// The explanations, steps, names and Russian translations are still the prototype's. The `gen()`
+// ranges are not, and must not be reverted to it.
+//
+// The 14 August 2026 audit found that 14 of the 47 could not produce twenty distinct questions —
+// Rule of 70 had 7, Multiply by 11 had 8, Cube a number had 8 — so both the 20-question Test and
+// the 20-question practice run served the same handful over and over. The Test padded itself by
+// repeating, silently. Measured again before the change: 14 tricks under 20, 20 under 60.
+//
+// Every generator was widened to the FULL range its own stated method covers, and no further.
+// That last clause is the rule the ranges were chosen by, and the reason some stayed small:
+//   * Multiply by 11 goes 10-99, not into three digits, because its explain says "for two-digit
+//     numbers" and three-digit ×11 is a longer rule than the one that card teaches.
+//   * The two squaring tricks take no negative numbers: (−35)² is 35² wearing a minus sign, the
+//     same question with the same answer. Cube does take them — an odd power keeps the sign, so
+//     (−4)³ = −64 falls straight out of the method as written.
+//   * Rule of 70 takes no negative rates: a negative growth rate has no doubling time, so the
+//     question would have no answer rather than a hard one.
+//   * ×25 and ÷25 stay on multiples of 4 and 25, because an answer ending .25 or .75 is a
+//     rounding question rather than the trick.
+//
+// FOUR REMAIN INHERENTLY NARROW, and widening cannot fix them — they are bounded by the method
+// rather than by a chosen range:
+//   Rule of 70 (22)            one division, 70 ÷ rate, and only rates dividing 70 cleanly are
+//                              fair questions. Both directions of the relationship are now asked,
+//                              which is what got it past 20 at all.
+//   Squares ending in 5 (29)   there are only so many numbers ending in 5 worth squaring mentally.
+//                              Extending past two digits also meant correcting the explain from
+//                              "the leading digit" to "the part in front of the 5" — the method
+//                              always worked for 105, but the wording did not describe it.
+//   Fraction to decimal (31)   a recall card. Its pool is a LIST of fractions worth memorising,
+//                              not a range; it was doubled from 14 by adding the halves, tenths,
+//                              twelfths, sixteenths and twentieths from the same mental table.
+//   Cube a number (33)         cubes stay mental only up to about 20, in either sign.
+//
+// scripts/check-trick-variety.mjs measures all of this on every `npm run check` and fails if any
+// trick drops back below a distinct 20-question Test. It reports the narrow four every run so
+// they stay a known fact rather than a rediscovery.
+//
+// The only other edits to the prototype's text are turning the `var` declarations into module
+// exports and importing the rn/fn helpers the generators call.
 import { rn, fn } from './questionEngine.js';
 import { t as translate } from '../i18n_data.js';
 
@@ -42,7 +83,7 @@ export const TRICKS = [
      explain:'When two numbers add to 10, group them first — then add the rest. Much faster!',
      steps:['7 + 6 + 3 = ?','(7 + 3) + 6 = ?','10 + 6 = 16'],
      final:'16',
-     gen:function(){var a=rn(3,8),b=10-a,c=rn(2,9);return{q:a+' + '+c+' + '+b+' = ?',ans:a+b+c};}},
+     gen:function(){var a=rn(1,9),b=10-a,c=rn(2,19),o=rn(1,3);var parts=o===1?[a,c,b]:o===2?[a,b,c]:[c,a,b];return{q:parts[0]+' + '+parts[1]+' + '+parts[2]+' = ?',ans:a+b+c};}},
     {name:'Doubles + adjust',
      explain:'When two numbers are close to each other, double the midpoint and adjust. Much faster than adding directly.',
      steps:['23 + 25 = ?','Numbers close → double 24','24 × 2 = 48'],
@@ -97,32 +138,32 @@ export const TRICKS = [
      explain:'Multiply by 10 (just add a zero), then halve the result. Because 5 = 10 ÷ 2.',
      steps:['36 × 5 = ?','36 × 10 = 360','360 ÷ 2 = 180'],
      final:'180',
-     gen:function(){var a=rn(11,39)*2;return{q:fn(a)+' × 5 = ?',ans:a*5};}},
+     gen:function(){var a=rn(11,149)*(rn(1,5)===1?-1:1);return{q:fn(a)+' × 5 = ?',ans:a*5};}},
     {name:'Multiply by 9',
      explain:'Multiply by 10 then subtract the original number once. Because 9 = 10 − 1.',
      steps:['7 × 9 = ?','7 × 10 = 70','70 − 7 = 63'],
      final:'63',
-     gen:function(){var a=rn(3,12);return{q:fn(a)+' × 9 = ?',ans:a*9};}},
+     gen:function(){var a=rn(3,99)*(rn(1,6)===1?-1:1);return{q:fn(a)+' × 9 = ?',ans:a*9};}},
     {name:'Multiply by 11',
      explain:'For two-digit numbers: write the first digit, then the sum of both digits, then the last digit.',
      steps:['32 × 11 = ?','First digit: 3','Middle: 3 + 2 = 5','Last digit: 2','352'],
      final:'352',
-     gen:function(){var a=rn(11,18);return{q:fn(a)+' × 11 = ?',ans:a*11};}},
+     gen:function(){var a=rn(10,99);return{q:fn(a)+' × 11 = ?',ans:a*11};}},
     {name:'Multiply by 25',
      explain:'Multiply by 100, then divide by 4 (halve twice). Because 25 = 100 ÷ 4.',
      steps:['36 × 25 = ?','36 × 100 = 3600','3600 ÷ 4 = 900'],
      final:'900',
-     gen:function(){var a=rn(2,20)*4;return{q:fn(a)+' × 25 = ?',ans:a*25};}},
+     gen:function(){var a=rn(2,100)*4*(rn(1,6)===1?-1:1);return{q:fn(a)+' × 25 = ?',ans:a*25};}},
     {name:'Multiply by 99',
      explain:'Multiply by 100, then subtract the original number once. Because 99 = 100 − 1.',
      steps:['7 × 99 = ?','7 × 100 = 700','700 − 7 = 693'],
      final:'693',
-     gen:function(){var a=rn(3,20);return{q:fn(a)+' × 99 = ?',ans:a*99};}},
+     gen:function(){var a=rn(3,99);return{q:fn(a)+' × 99 = ?',ans:a*99};}},
     {name:'Double & halve',
      explain:'Halve one number and double the other — the product never changes. Keep going until one number becomes easy.',
      steps:['16 × 25 = ?','8 × 50','4 × 100 = 400'],
      final:'400',
-     gen:function(){var a=rn(2,8)*4,b=rn(3,12)*5;return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};}},
+     gen:function(){var a=rn(2,20)*4,b=rn(2,20)*5;return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};}},
     {name:'Multiply using factors',
      explain:'Break one number into two smaller factors. Multiply by each factor one at a time — much easier than one big step.',
      steps:['43 × 28 = ?','28 = 7 × 4','43 × 7 = 301','301 × 4 = 1204'],
@@ -145,25 +186,25 @@ export const TRICKS = [
        return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};
      }},
     {name:'Squares ending in 5',
-     explain:'For any number ending in 5: multiply the leading digit by itself plus 1, then append 25.',
+     explain:'For any number ending in 5: multiply the part in front of the 5 by itself plus 1, then append 25.',
      steps:['35 × 35 = ?','Leading digit: 3','3 × (3+1) = 3 × 4 = 12','Append 25 → 1225'],
      final:'1225',
-     gen:function(){var n=rn(1,9),a=n*10+5;return{q:fn(a)+' × '+fn(a)+' = ?',ans:a*a};}},
+     gen:function(){var n=rn(1,29),a=n*10+5;return{q:fn(a)+' × '+fn(a)+' = ?',ans:a*a};}},
     {name:'Square any 2-digit number',
      explain:'Find the nearest round ten and calculate the gap. Multiply (number + gap) × (number − gap), then add gap squared.',
      steps:['37² = ?','Nearest ten = 40, gap = 3','(40) × (34) = 1360','+ 3² = 9 → 1369'],
      final:'1369',
-     gen:function(){var n=rn(12,49);while(n%10===0||n%10===5){n=rn(12,49);}return{q:fn(n)+' × '+fn(n)+' = ?',ans:n*n};}},
+     gen:function(){var n=rn(11,99);while(n%10===0||n%10===5){n=rn(11,99);}return{q:fn(n)+' × '+fn(n)+' = ?',ans:n*n};}},
     {name:'Close-together method',
      explain:'When two numbers are close to the same round ten, use that ten as a base. Multiply base × far end, then add the two gaps multiplied together.',
      steps:['23 × 26 = ?','Base = 20, gaps = 3 and 6','20 × 29 = 580','3 × 6 = 18','580 + 18 = 598'],
      final:'598',
-     gen:function(){var base=rn(2,6)*10,g1=rn(1,7),g2=rn(1,7),a=base+g1,b=base+g2;return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};}},
+     gen:function(){var base=rn(2,9)*10,g1=rn(1,9),g2=rn(1,9),a=base+g1,b=base+g2;return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};}},
     {name:'Cube a number',
      explain:'Raise a number to the power of 3. Multiply it by itself to get the square, then multiply by the original once more.',
      steps:['7³ = ?','7 × 7 = 49','49 × 7 = 343'],
      final:'343',
-     gen:function(){var n=rn(2,9);return{q:fn(n)+'³ = ?',ans:n*n*n};}}
+     gen:function(){var n=rn(1,3)===1?-rn(2,15):rn(2,20);return{q:fn(n)+'³ = ?',ans:n*n*n};}}
   ]},
   {group:'Division',symbol:'÷',items:[
     {name:'Break & divide (chunking)',
@@ -173,7 +214,7 @@ export const TRICKS = [
      gen:function(){
        var divisors=[3,4,6,7,8,9];
        var d=divisors[rn(0,divisors.length-1)];
-       var q=rn(11,30),a=d*q;
+       var q=rn(11,120),a=d*q;
        return{q:fn(a)+' ÷ '+fn(d)+' = ?',ans:q};
      }},
     {name:'Simplify before dividing',
@@ -190,38 +231,43 @@ export const TRICKS = [
      explain:'Divide by 10 (shift decimal left), then multiply by 2. Because ÷5 = ÷10 × 2.',
      steps:['240 ÷ 5 = ?','240 ÷ 10 = 24','24 × 2 = 48'],
      final:'48',
-     gen:function(){var a=rn(2,20)*5;return{q:fn(a)+' ÷ 5 = ?',ans:a/5};}},
+     gen:function(){var a=rn(2,120)*5*(rn(1,6)===1?-1:1);return{q:fn(a)+' ÷ 5 = ?',ans:a/5};}},
     {name:'Halving chain (÷ 4)',
      explain:'To divide by 4, simply halve the number twice in a row.',
      steps:['96 ÷ 4 = ?','96 ÷ 2 = 48','48 ÷ 2 = 24'],
      final:'24',
-     gen:function(){var a=rn(4,16)*4;return{q:fn(a)+' ÷ 4 = ?',ans:a/4};}},
+     gen:function(){var a=rn(2,120)*4;return{q:fn(a)+' ÷ 4 = ?',ans:a/4};}},
     {name:'Halving chain (÷ 8)',
      explain:'To divide by 8, halve the number three times in a row.',
      steps:['480 ÷ 8 = ?','480 ÷ 2 = 240','240 ÷ 2 = 120','120 ÷ 2 = 60'],
      final:'60',
-     gen:function(){var a=rn(4,20)*8;return{q:fn(a)+' ÷ 8 = ?',ans:a/8};}},
+     gen:function(){var a=rn(2,100)*8;return{q:fn(a)+' ÷ 8 = ?',ans:a/8};}},
     {name:'Divide by 9',
      explain:'A number is divisible by 9 if its digits sum to 9 or a multiple of 9. Then divide using known multiples.',
      steps:['153 ÷ 9 = ?','1+5+3 = 9 ✓','153 ÷ 9 = 17'],
      final:'17',
-     gen:function(){var m=rn(2,11),a=m*9;return{q:fn(a)+' ÷ 9 = ?',ans:a/9};}},
+     gen:function(){var m=rn(2,100),a=m*9;return{q:fn(a)+' ÷ 9 = ?',ans:a/9};}},
     {name:'Divide by 25',
      explain:'Multiply by 4, then divide by 100. Because ÷25 = ×4 ÷100.',
      steps:['575 ÷ 25 = ?','575 × 4 = 2300','2300 ÷ 100 = 23'],
      final:'23',
-     gen:function(){var a=rn(2,20)*25;return{q:fn(a)+' ÷ 25 = ?',ans:a/25};}},
+     gen:function(){var a=rn(2,120)*25*(rn(1,6)===1?-1:1);return{q:fn(a)+' ÷ 25 = ?',ans:a/25};}},
     {name:'Fraction to decimal',
      explain:'Common fractions have fixed decimal values worth memorising. No calculation needed — just recall.',
      steps:['3/8 = ?','Know: 1/8 = 0.125','3 × 0.125 = 0.375'],
      final:'0.375',
      gen:function(){
        var fracs=[
+         {q:'1/2',a:0.5},
          {q:'1/4',a:0.25},{q:'3/4',a:0.75},
          {q:'1/5',a:0.2},{q:'2/5',a:0.4},{q:'3/5',a:0.6},{q:'4/5',a:0.8},
          {q:'1/8',a:0.125},{q:'3/8',a:0.375},{q:'5/8',a:0.625},{q:'7/8',a:0.875},
          {q:'1/3',a:0.333},{q:'2/3',a:0.667},
-         {q:'1/6',a:0.167},{q:'5/6',a:0.833}
+         {q:'1/6',a:0.167},{q:'5/6',a:0.833},
+         {q:'1/10',a:0.1},{q:'3/10',a:0.3},{q:'7/10',a:0.7},{q:'9/10',a:0.9},
+         {q:'1/16',a:0.0625},{q:'3/16',a:0.1875},{q:'5/16',a:0.3125},{q:'7/16',a:0.4375},
+         {q:'1/12',a:0.083},{q:'5/12',a:0.417},{q:'7/12',a:0.583},{q:'11/12',a:0.917},
+         {q:'1/20',a:0.05},{q:'3/20',a:0.15},{q:'7/20',a:0.35},{q:'9/20',a:0.45}
        ];
        var f=fracs[rn(0,fracs.length-1)];
        return{q:t('as_decimal_q',{frac:f.q}),ans:f.a};
@@ -242,28 +288,28 @@ export const TRICKS = [
      explain:'Find 10% (shift decimal) and 1% (shift decimal twice). Then combine them to build any percentage you need.',
      steps:['7% of 450 = ?','1% of 450 = 4.5','4.5 × 7 = 31.5'],
      final:'31.5',
-     gen:function(){var pcts=[3,6,7,8,12,13,17,18];var p=pcts[rn(0,pcts.length-1)];var a=rn(2,20)*10;return{q:fn(p)+'% '+t('word_of')+' '+fn(a)+' = ?',ans:parseFloat((a*p/100).toFixed(1))};}},
+     gen:function(){var pcts=[3,4,6,7,8,9,11,12,13,14,16,17,18,19,23,27,32,45];var p=pcts[rn(0,pcts.length-1)];var a=rn(2,60)*10;return{q:fn(p)+'% '+t('word_of')+' '+fn(a)+' = ?',ans:parseFloat((a*p/100).toFixed(1))};}},
     {name:'5% shortcut',
      explain:'Find 10% first, then halve it.',
      steps:['5% of 340 = ?','10% of 340 = 34','34 ÷ 2 = 17'],
      final:'17',
-     gen:function(){var a=rn(2,40)*10;return{q:'5% '+t('word_of')+' '+fn(a)+' = ?',ans:a*0.05};}},
+     gen:function(){var a=rn(2,250)*2;return{q:'5% '+t('word_of')+' '+fn(a)+' = ?',ans:parseFloat((a*0.05).toFixed(1))};}},
     {name:'15% shortcut',
      explain:'Find 10%, find 5% (half of 10%), then add them together.',
      steps:['15% of 60 = ?','10% = 6','5% = 3','6 + 3 = 9'],
      final:'9',
-     gen:function(){var a=rn(2,20)*10;return{q:'15% '+t('word_of')+' '+fn(a)+' = ?',ans:a*0.15};}},
+     gen:function(){var a=rn(2,200)*2;return{q:'15% '+t('word_of')+' '+fn(a)+' = ?',ans:parseFloat((a*0.15).toFixed(1))};}},
     {name:'20% shortcut',
      explain:'Find 10%, then double it.',
      steps:['20% of 350 = ?','10% of 350 = 35','35 × 2 = 70'],
      final:'70',
-     gen:function(){var a=rn(2,30)*10;return{q:'20% '+t('word_of')+' '+fn(a)+' = ?',ans:a*0.2};}},
+     gen:function(){var a=rn(10,500);return{q:'20% '+t('word_of')+' '+fn(a)+' = ?',ans:parseFloat((a*0.2).toFixed(1))};}},
     {name:'25% and 75%',
      explain:'25% = divide by 4. 75% = divide by 4 then multiply by 3.',
      steps:['75% of 800 = ?','800 ÷ 4 = 200','200 × 3 = 600'],
      final:'600',
      gen:function(){
-       var maxMult=rn(2,25);
+       var maxMult=rn(2,150);
        var b=maxMult*4;
        var p=Math.random()<.5?25:75;
        return{q:fn(p)+'% '+t('word_of')+' '+fn(b)+' = ?',ans:parseFloat((p*b/100).toFixed(1))};
@@ -272,15 +318,17 @@ export const TRICKS = [
      explain:'X% of Y equals Y% of X. Always pick whichever direction is easier.',
      steps:['4% of 75 = ?','Swap: 75% of 4','75% of 4 = 3'],
      final:'3',
-     gen:function(){var ps=[5,10,20,25,50],p=ps[rn(0,ps.length-1)],b=rn(2,20)*(100/p);return{q:fn(p)+'% '+t('word_of')+' '+fn(b)+' = ?',ans:parseFloat((p*b/100).toFixed(1))};}},
+     gen:function(){var ps=[5,10,20,25,50],p=ps[rn(0,ps.length-1)],b=rn(2,60)*(100/p);return{q:fn(p)+'% '+t('word_of')+' '+fn(b)+' = ?',ans:parseFloat((p*b/100).toFixed(1))};}},
     {name:'Rule of 70',
      explain:'To estimate how long it takes money (or anything) to double at a steady growth rate: divide 70 by the rate.',
      steps:['Double at 7% in how many years?','70 ÷ 7 = 10','Answer: 10 years'],
      final:'10',
      gen:function(){
-       var rates=[2,4,5,7,10,14,35];
+       var rates=[1,2,4,5,7,10,14,20,25,28,35];
        var r=rates[rn(0,rates.length-1)];
-       return{q:t('rule_of_70_q',{r:r}),ans:70/r};
+       if(rn(1,2)===1)return{q:t('rule_of_70_q',{r:r}),ans:70/r};
+       var years=70/r;
+       return{q:t('rule_of_70_inv_q',{y:fn(years)}),ans:r};
      }}
   ]},
   {group:'Verification',symbol:'✓',items:[
@@ -315,7 +363,7 @@ export const TRICKS = [
          {m:20,scale:100,div:5},{m:12.5,scale:100,div:8}
        ];
        var al=aliquots[rn(0,aliquots.length-1)];
-       var a=rn(2,20)*al.div;
+       var a=rn(2,60)*al.div;
        return{q:fn(a)+' × '+al.m+' = ?',ans:a*al.m};
      }},
     {name:'Multiply 3-digit × 1-digit',
@@ -327,16 +375,16 @@ export const TRICKS = [
      explain:'When both numbers are close to 100, note each gap from 100. Cross-subtract one gap from the other number. Multiply both gaps for the last two digits.',
      steps:['97 × 96 = ?','Gaps: 3 and 4','97 − 4 = 93','3 × 4 = 12','9312'],
      final:'9312',
-     gen:function(){var g1=rn(1,9),g2=rn(1,9),a=100-g1,b=100-g2;return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};}},
+     gen:function(){var g1=rn(1,12)*(rn(1,2)===1?-1:1),g2=rn(1,12)*(rn(1,2)===1?-1:1),a=100-g1,b=100-g2;return{q:fn(a)+' × '+fn(b)+' = ?',ans:a*b};}},
     {name:'Square a 3-digit number',
      explain:'Find the gap to the nearest hundred. Use the formula (n+gap)×(n−gap) then add gap squared. Same principle as squaring 2-digit numbers, just bigger.',
      steps:['193² = ?','Nearest hundred = 200, gap = 7','200 × 186 = 37,200','7² = 49','37,249'],
      final:'37249',
      gen:function(){
-       var hundreds=rn(1,4)*100;
-       var gap=rn(1,15);
+       var hundreds=rn(1,9)*100;
+       var gap=rn(1,25);
        var n=Math.random()>0.5?hundreds-gap:hundreds+gap;
-       if(n<100||n>499)n=hundreds-gap;
+       if(n<100||n>999)n=hundreds-gap;
        return{q:fn(n)+' × '+fn(n)+' = ?',ans:n*n};
      }},
     {name:'Aliquot parts (fractions of 100)',
@@ -346,7 +394,7 @@ export const TRICKS = [
      gen:function(){
        var aliquots=[{m:12.5,d:8},{m:20,d:5},{m:25,d:4},{m:50,d:2}];
        var al=aliquots[rn(0,aliquots.length-1)];
-       var a=rn(2,20)*al.d;
+       var a=rn(2,60)*al.d;
        return{q:fn(a)+' × '+al.m+' = ?',ans:a*al.m};
      }}
   ]}
@@ -375,7 +423,7 @@ export const TRICKS_RU = {
 'Multiplication::Double & halve':{name:'Удвоить и уполовинить',explain:'Уполовиньте одно число и удвойте другое — произведение не меняется. Продолжайте, пока одно из чисел не станет удобным.',steps:['16 × 25 = ?','8 × 50','4 × 100 = 400']},
 'Multiplication::Multiply using factors':{name:'Умножение через множители',explain:'Разложите одно число на два меньших множителя. Умножайте на каждый множитель по очереди — гораздо проще одного большого шага.',steps:['43 × 28 = ?','28 = 7 × 4','43 × 7 = 301','301 × 4 = 1204']},
 'Multiplication::Scale & shift zeros':{name:'Масштабирование и перенос нулей',explain:'Уберите нули у обоих чисел, перемножьте основные цифры, затем добавьте все нули обратно. Работает при любом масштабе.',steps:['50 × 160 = ?','Основа: 5 × 16 = 80','Убрано 2 нуля всего','80 × 100 = 8000']},
-'Multiplication::Squares ending in 5':{name:'Квадраты чисел, оканчивающихся на 5',explain:'Для любого числа, оканчивающегося на 5: умножьте первую цифру на неё же плюс 1, затем допишите 25.',steps:['35 × 35 = ?','Первая цифра: 3','3 × (3+1) = 3 × 4 = 12','Дописать 25 → 1225']},
+'Multiplication::Squares ending in 5':{name:'Квадраты чисел, оканчивающихся на 5',explain:'Для любого числа, оканчивающегося на 5: умножьте часть перед пятёркой на неё же плюс 1, затем допишите 25.',steps:['35 × 35 = ?','Первая цифра: 3','3 × (3+1) = 3 × 4 = 12','Дописать 25 → 1225']},
 'Multiplication::Square any 2-digit number':{name:'Возведение в квадрат любого двузначного числа',explain:'Найдите ближайший круглый десяток и вычислите разницу. Умножьте (число + разница) × (число − разница), затем добавьте разницу в квадрате.',steps:['37² = ?','Ближайший десяток = 40, разница = 3','(40) × (34) = 1360','+ 3² = 9 → 1369']},
 'Multiplication::Close-together method':{name:'Метод близких чисел',explain:'Когда два числа близки к одному и тому же круглому десятку, используйте этот десяток как базу. Умножьте базу × дальнее число, затем добавьте произведение двух разниц.',steps:['23 × 26 = ?','База = 20, разницы = 3 и 6','20 × 29 = 580','3 × 6 = 18','580 + 18 = 598']},
 'Multiplication::Cube a number':{name:'Возведение числа в куб',explain:'Возведите число в третью степень. Умножьте его само на себя, чтобы получить квадрат, затем умножьте на исходное число ещё раз.',steps:['7³ = ?','7 × 7 = 49','49 × 7 = 343']},

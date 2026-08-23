@@ -3,7 +3,7 @@ import { useI18n } from '../store/useI18n.js';
 import { attemptWord } from '../i18n_data.js';
 import TrickOfDayCard from '../components/TrickOfDayCard.jsx';
 import { todayDone } from '../store/AppStateContext.jsx';
-import { todayChallengeAvg, todayChallengeHigh } from '../store/selectors.js';
+import { todayChallengeAvg, todayChallengeHigh, challengeStreak } from '../store/selectors.js';
 import { diffLabel, diffInfoText } from '../store/questionEngine.js';
 import ChallengeChart from '../components/ChallengeChart.jsx';
 import StatInfoModal from '../components/StatInfoModal.jsx';
@@ -14,7 +14,7 @@ const DIFF_KEYS = ['easy', 'medium', 'hard'];
 // chSetRange()/toggleInfo()/openMdl(). The Trick-of-the-Day card and guest-conversion banner
 // are intentionally omitted this stage — Tricks and the account/onboarding UI aren't built yet.
 export default function ChallengeHomeScreen({
-  db, selDiff, onSelDiff, chRange, onChRange, streak, bestStreakEver,
+  db, selDiff, onSelDiff, chRange, onChRange,
   onStartChallenge,
   totdLastViewed, onOpenTrickOfDay,
 }) {
@@ -33,7 +33,16 @@ export default function ChallengeHomeScreen({
   // The best SINGLE run today, which is a genuinely different number from both the day's average
   // and the all-time personal best beside it.
   const high = todayChallengeHigh(db, selDiff);
-  const streakIsRecord = done && streak > 0 && streak === bestStreakEver;
+  // v16 item 2: this pill used to show `bestStreakEver` — the longest UNIFIED run, the same
+  // streak the header flame counts. It now shows how many days in a row Challenge itself has
+  // been played, which is the number a player on this screen is actually asking about. The
+  // header flame is untouched and still unified, so the two can legitimately differ: a week of
+  // Braining and no Challenge leaves the flame at 7 and this pill at 0.
+  //
+  // Derived from session history rather than stored — see challengeStreak() in selectors.js.
+  const chStreak = challengeStreak(db);
+  // "Record" now means this pill's own number is a record, not the unified streak's.
+  const streakIsRecord = done && chStreak.current > 0 && chStreak.current === chStreak.best;
   const streakCls = done ? (streakIsRecord ? 'yl' : 'gr') : '';
 
   return (
@@ -52,8 +61,8 @@ export default function ChallengeHomeScreen({
 
       <div className="srow">
         <div className={'sc ' + streakCls} onClick={() => setStatModal('streak')}>
-          <div className={'sn ' + streakCls}>{bestStreakEver || 0}</div>
-          <div className={'sl ' + streakCls}>{t('stat_best_streak')}</div>
+          <div className={'sn ' + streakCls}>{chStreak.current}</div>
+          <div className={'sl ' + streakCls}>{t('stat_ch_streak')}</div>
         </div>
         <div className={'sc ' + (done ? 'gr' : '')} onClick={() => setStatModal('today')}>
           <div className={'sn ' + (done ? 'gr' : '')}>{high == null ? '--' : high}</div>
@@ -133,8 +142,6 @@ export default function ChallengeHomeScreen({
         type={statModal}
         db={db}
         selDiff={selDiff}
-        streak={streak}
-        bestStreakEver={bestStreakEver}
         lang={lang}
         onClose={() => setStatModal(null)}
       />

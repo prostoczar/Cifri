@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { brDoneToday } from '../store/AppStateContext.jsx';
 import { brFmtSec, fmtBrCountdown } from '../store/braining.js';
+import { brainingStreak } from '../store/selectors.js';
 import BrainingChart from '../components/BrainingChart.jsx';
 import TrickOfDayCard from '../components/TrickOfDayCard.jsx';
 import MidnightCountdown from '../components/MidnightCountdown.jsx';
 
 // Ported from the reference prototype's Braining home markup + brUpdateHome().
 export default function BrainingHomeScreen({
-  brState, streak, bestStreakEver, chartRange, chartType,
+  brState, chartRange, chartType,
   onChartRange, onChartType, onStart, onPractice,
   totdLastViewed, onOpenTrickOfDay,
 }) {
@@ -16,7 +17,11 @@ export default function BrainingHomeScreen({
   const [infoOpen, setInfoOpen] = useState(false);
 
   const done = brDoneToday(brState);
-  const streakIsRecord = done && streak > 0 && streak === bestStreakEver;
+  // v16 item 2: was `bestStreakEver`, the longest UNIFIED run. Now the number of days in a row
+  // Braining itself has been played — see the matching note in ChallengeHomeScreen. The header
+  // flame stays unified and untouched, so the two numbers can differ, and should.
+  const brStreak = brainingStreak(brState);
+  const streakIsRecord = done && brStreak.current > 0 && brStreak.current === brStreak.best;
   const statCls = (isStreak) =>
     'br-stat' + (done ? (isStreak && streakIsRecord ? ' br-stat-yl' : ' br-stat-gl') : '');
   const numStyle = { color: done ? '#000' : '' };
@@ -28,8 +33,8 @@ export default function BrainingHomeScreen({
     <div className="br-home">
       <div className="br-stats">
         <div className={statCls(true)}>
-          <div className="br-stat-n" style={numStyle}>{bestStreakEver || 0}</div>
-          <div className="br-stat-l">{t('stat_best_streak')}</div>
+          <div className="br-stat-n" style={numStyle}>{brStreak.current}</div>
+          <div className="br-stat-l">{t('stat_br_streak')}</div>
         </div>
         <div className={statCls(false)}>
           <div className="br-stat-n" style={numStyle}>{brState.bestTime !== null && brState.bestTime !== undefined ? brFmtSec(brState.bestTime, t) : '--'}</div>

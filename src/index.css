@@ -56,17 +56,27 @@ body.dark{
   --txt3:#84806f;
 }
 /* ── FONT: Nunito replaces system-ui throughout ── */
-body{background:var(--bg);min-height:100vh;font-family:'Nunito',system-ui,-apple-system,sans-serif;overflow-x:hidden;transition:background .25s ease}
+/* v16 item 1: the page itself never scrolls — the app is a fixed-height shell and the one
+   in-flow region (.scroll) does any scrolling internally. Two reasons this had to change:
+   `min-height:100vh` on iOS Safari resolves against the LARGE viewport (toolbars hidden), so the
+   document was always taller than the visible area and every screen scrolled a little even when
+   its content fitted; and a document that scrolls under a `position:fixed` bottom nav lets iOS
+   detach that nav mid-gesture, which is what made it float over the Tricks list. */
+html{height:100%}
+body{background:var(--bg);height:100vh;height:100dvh;overflow:hidden;overscroll-behavior:none;font-family:'Nunito',system-ui,-apple-system,sans-serif;transition:background .25s ease}
 button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-serif}
-.wrap{max-width:420px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;background:var(--bg);transition:background .25s ease}
+.wrap{max-width:420px;margin:0 auto;height:100vh;height:100dvh;overflow:hidden;display:flex;flex-direction:column;position:relative;background:var(--bg);transition:background .25s ease}
 
 /* HEADER */
 /* HEADER — no border, clean white */
-/* v14.9 item 5: fixed to the top of the viewport (same centering trick as .bnav below) so it
-   never scrolls away, regardless of page content height. .scroll gets a matching padding-top,
-   set precisely by JS (see positionScrollForFixedHeader) since the header's exact height can
-   vary slightly by content/font-load. */
-.hdr{padding:14px 16px 10px;background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;z-index:45}
+/* v14.9 item 5 made the header `position:fixed` so it could not scroll away — necessary then,
+   because the DOCUMENT was what scrolled. v16 item 1 removed that scroll entirely: .wrap is a
+   fixed-height shell and only .scroll moves, so a plain flex child that refuses to shrink stays
+   put by construction. Being back in normal flow is strictly better on iOS, where a fixed
+   element can visibly detach from the viewport mid-scroll (that is what made the bottom nav
+   float over the Tricks list), and it means .scroll no longer needs a padding-top guessing at
+   this header's height. */
+.hdr{padding:14px 16px 10px;background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:relative;z-index:45}
 /* v15 item 5: groups the streak pill and the new refill pill together on the header's left side */
 .hdr-left{display:flex;align-items:center;gap:8px}
 /* Profile button — circle with user icon */
@@ -93,20 +103,37 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .streak-badge.rolling{animation:streakNumberRoll .4s ease}
 
 /* SCROLL AREA */
-/* v14.9 item 5: padding-top is a fallback estimate matching the header's typical rendered height;
-   positionScrollForFixedHeader() below overwrites this with the exact measured height on load/resize */
-.scroll{flex:1;overflow-y:auto;padding-bottom:80px;padding-top:62px;position:relative;overflow-x:hidden}
+/* v16 item 1: `min-height:0` is what makes "scroll only when it doesn't fit" actually work. A
+   flex item defaults to `min-height:auto` — it refuses to shrink below its content — so without
+   this the container would grow past .wrap's fixed height and the overflowing part would be
+   clipped away with no way to reach it. With it, .scroll is pinned to the leftover space and
+   `overflow-y:auto` shows a scrollbar only when the content genuinely exceeds that space.
+   `overscroll-behavior:contain` stops a scroll that reaches the end from rubber-banding the page
+   behind it.
+
+   NO `-webkit-overflow-scrolling:touch` HERE, and it must not be added back. It was, in the first
+   draft of this change, out of habit — and on iPhone it broke every popup that lives inside this
+   container. That property makes the element a stacking context AND makes `position:fixed`
+   descendants behave as though they were `absolute` inside it, so a full-screen modal backdrop
+   could only dim from the top of .scroll downwards: the header stayed undimmed and bright while
+   the rest of the screen greyed out. It is also pointless — momentum scrolling has been the
+   default since iOS 13, and the property was removed from WebKit in the same release. It cost
+   nothing to delete and it was the whole bug. Desktop browsers never showed it. */
+.scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;position:relative;overflow-x:hidden}
 /* v14.9 item 6: swipe-to-switch-tabs — the outgoing/incoming .scr screens are briefly taken out
    of normal flow and animated with a transform while this class is present */
 .scr.swiping{position:absolute;top:0;left:0;width:100%}
 
 /* BOTTOM NAV */
 /* BOTTOM NAV — white background, no top border, tabs use rounded square for selected state */
-/* v14.9 item 7: bottom padding increased 10px→20px for breathing room below the pills;
-   .scroll's padding-bottom (80px, up from 70px) was bumped to match in the same session */
-.bnav{display:flex;background:var(--bg);border-top:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:420px;z-index:40;padding:6px 8px 20px;gap:4px}
+/* v14.9 item 7: bottom padding gives breathing room below the pills. v16 item 1: no longer
+   `position:fixed` — see the header note above; it is now the last flex child of .wrap, so it
+   occupies real space and .scroll's padding-bottom (which used to reserve that space by hand)
+   is gone. `position:relative` is kept only so .nb-indicator still has this element as its
+   containing block and stacking context. */
+.bnav{display:flex;background:var(--bg);border-top:none;position:relative;flex-shrink:0;z-index:40;padding:6px 8px 20px;gap:4px}
 /* v14.8 item 9: shared pill that slides between tabs — sits behind the buttons (negative z-index,
-   contained within .bnav's own stacking context since .bnav is position:fixed) so the static .nb
+   contained within .bnav's own stacking context, which position:relative + z-index keeps) so the .nb
    buttons always paint on top of it. Position/size are set by JS (positionNavIndicator) to match
    whichever button is currently .on. */
 /* The pill's motion is matched to the screen slide (duration and easing) so that during a swipe
@@ -209,11 +236,19 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .scrow span{font-size:calc(13px * var(--fs-mult));color:var(--txt);font-weight:600}
 .scbtn{background:var(--card);border:none;border-radius:50%;width:32px;height:32px;font-size:calc(18px * var(--fs-mult));cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--txt);transition:all .15s;font-weight:700;line-height:1}
 .scbtn:active{background:var(--GL2)}
-.sprac{padding:8px 0 90px}
+/* v16 item 1: 90px -> 12px. The 90 was clearance for a `position:fixed` bottom nav; the nav
+   now occupies real space, so keeping it would have reserved that room twice and forced this
+   screen to scroll when it otherwise fits. Same reason for .br-home and .tscr below. */
+.sprac{padding:8px 0 12px}
 .sprac button{width:100%;padding:15px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 3px 0 var(--GD)}
 
 /* COUNTDOWN */
-/* Countdown screen — numbers shown as coloured rounded squares */.cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;gap:20px}
+/* Countdown screen — numbers shown as coloured rounded squares */
+/* v16 item 1: 80vh -> 100%. A vh unit measures the whole viewport, but this box lives inside
+   .scroll, whose usable height is the viewport minus the header and the bottom nav; 80vh could
+   exceed that and force a scroll on a short phone. 100% resolves against .scroll, which has a
+   definite height, so it fills exactly the space available and never more. */
+.cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;gap:20px}
 /* Countdown number box */.cdn{font-size:calc(52px * var(--fs-mult));font-weight:900;color:#fff;line-height:1;width:90px;height:90px;border-radius:22px;display:flex;align-items:center;justify-content:center}
 /* Go! box — primary green */.cdgo{font-size:calc(38px * var(--fs-mult));font-weight:900;color:#fff;background:var(--G);width:180px;height:90px;border-radius:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 var(--GD)}
 .cdd{font-size:calc(12px * var(--fs-mult));color:var(--txt3);font-weight:600}
@@ -221,8 +256,14 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .cdn{animation:pop .4s ease}
 
 /* GAME */
-.gpad{padding:14px 16px 4px}
-.gtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+/* v16 item 5: a flex column that fills the space it is given, rather than a stack whose height
+   is whatever its contents add up to. The scribble pad is what forced this: when it opens it has
+   to take real room, and the only honest way to promise "everything still fits, on any phone" is
+   to let the parts that CAN give way do so — the keypad shrinks, the equation card tightens —
+   instead of hand-tuning pixel constants per device. `min-height:0` on the shrinkable children is
+   what actually permits it; a flex item defaults to refusing to shrink below its content. */
+.gpad{padding:14px 16px 4px;display:flex;flex-direction:column;height:100%;min-height:0}
+.gtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0}
 /* Timer circle — no border, card bg */.tc2{width:62px;height:62px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:background .3s}
 .tn{font-size:calc(20px * var(--fs-mult));font-weight:800;color:var(--txt);line-height:1}
 .ts{font-size:calc(9px * var(--fs-mult));color:var(--txt3);font-weight:500}
@@ -237,18 +278,39 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .sbs{font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:500}
 .pw{height:5px;background:var(--card);border-radius:3px;margin-bottom:14px}
 .pb{height:5px;background:var(--G);border-radius:3px;transition:width 1s linear,background .3s}
-.qc{background:var(--card);border-radius:var(--r);padding:18px 16px;text-align:center;margin-bottom:8px;transition:background .15s}
+/* v16 item 5: the card used to be 42px deep below the equation and 20px above it — an 18px
+   padding plus the feedback line's reserved 6+18. The reservation itself stays (see .fb below:
+   a line that collapsed when empty would bounce the keypad under a moving thumb), but the
+   padding beneath it goes, which brings the gap below the equation to 20px — the same as above.
+   `flex:0 1 auto` + `min-height:0` lets the card give up height when the scribble pad is open. */
+.qc{background:var(--card);border-radius:var(--r);padding:18px 16px 2px;text-align:center;margin-bottom:8px;transition:background .15s;flex:0 1 auto;min-height:0}
 .qc.fok{background:var(--GL)}
 .ob{font-size:calc(11px * var(--fs-mult));background:var(--GL2);color:var(--GDK);padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;font-weight:600}
 .qt{font-size:calc(27px * var(--fs-mult));font-weight:900;color:var(--txt);word-break:break-word;line-height:1.3}
-.fb{text-align:center;font-size:calc(12px * var(--fs-mult));color:var(--txt3);min-height:18px;margin-top:6px;font-weight:600}
+.fb{text-align:center;font-size:calc(12px * var(--fs-mult));color:var(--txt3);min-height:18px;margin-top:0;font-weight:600}
 .fb.ok{color:var(--GDK)}.fb.bad{color:#a32d2d}
-/* Answer input — no border, card bg */.ai{width:100%;padding:11px;font-size:calc(22px * var(--fs-mult));text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:8px;outline:none;transition:all .15s;caret-color:transparent}
+/* Answer input — no border, card bg */.ai{width:100%;padding:11px;font-size:calc(22px * var(--fs-mult));line-height:1.36;text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:8px;outline:none;transition:all .15s;caret-color:transparent;flex-shrink:0}
 .ai:focus{box-shadow:none;background:var(--GL2)}
 .ai.ok{background:var(--GL2);color:var(--GDK)}
 .ai.bad{background:#fcebeb;color:#c0654a}
-.np{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:6px}
-/* Keypad — number keys light mint */.k{padding:13px;background:var(--GL2);border:none;border-radius:var(--rs);font-size:calc(17px * var(--fs-mult));font-weight:800;color:#000;cursor:pointer;text-align:center;transition:all .1s;user-select:none;box-shadow:0 2px 0 #a8d8cc}
+/* `flex:0 1 auto` — shrink when the scribble pad needs room, never GROW to fill a tall phone,
+   which would have changed how every existing screen looks. `minmax(0,1fr)` rows plus
+   `min-height:0` on the keys is what lets them compress; the text's own line box is the floor,
+   so they can never shrink to something unreadable or untappable. */
+.np{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:minmax(0,1fr);gap:7px;margin-bottom:6px;flex:0 1 auto;min-height:0}
+/* One empty key-height of clearance below the bottom row, so opening the scribble pad cannot
+   push the keys flush against the edge of the screen.
+   Done as an empty SIXTH GRID ROW rather than a padding value, because the rows are `1fr`: the
+   spacer is therefore exactly one key tall by construction, and when the keys compress to make
+   room for the pad the gap compresses with them. A fixed padding would have been right at one
+   size of phone and wrong at every other. A pseudo-element on a grid container is itself a grid
+   item, so this needs no extra element in any of the three game screens.
+   It applies whether the pad is open or shut. Scoping it to the open state was tried and reverted:
+   on a 667px phone the Braining keypad finishes 10px from the bottom edge with the pad CLOSED
+   too, so the rule has to hold generally to mean anything. On a tall phone it costs nothing —
+   the keypad never grows into spare space, so there was already room below it. */
+.np::after{content:'';grid-column:1 / -1}
+/* Keypad — number keys light mint */.k{padding:13px 4px;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--GL2);border:none;border-radius:var(--rs);font-size:calc(17px * var(--fs-mult));font-weight:800;color:#000;cursor:pointer;text-align:center;transition:all .1s;user-select:none;box-shadow:0 2px 0 #a8d8cc}
 .k:active{transform:translateY(1px);box-shadow:none}
 /* Special keys — +/- and decimal: muted grey */.k.spec{font-size:calc(13px * var(--fs-mult));color:var(--txt2);font-weight:600;background:var(--card);box-shadow:0 2px 0 var(--border2)}
 /* Delete key — light terracotta */.k.spec-del{background:var(--TCL);color:var(--TC);box-shadow:0 2px 0 #d4b0a4}
@@ -257,6 +319,86 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 /* Quit button — terracotta */.qbtn{width:38px;height:38px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;box-shadow:0 2px 0 #d4b0a4}
 .qbtn:active{transform:scale(.9)}
 .qbtn svg{width:18px;height:18px;stroke:var(--TC);fill:none;stroke-width:2.5;stroke-linecap:round}
+
+/* ── SCRIBBLE PAD (v16 item 5) ─────────────────────────────────────────────
+   Closed, it is a button the same size as the answer box above it. "Same size" is derived rather
+   than measured: identical padding and identical font-size to .ai, with the icon sized in `em`,
+   so the two stay matched at all three text-size settings instead of agreeing only at Medium.
+   The `min-height` is the load-bearing part: an icon-only button has no line box of its own, so
+   without it the button came out 6px shorter than the field it is supposed to mirror. */
+.scribble-btn{width:100%;padding:11px;font-size:calc(22px * var(--fs-mult));line-height:1.36;min-height:calc(1.36em + 22px);border:none;border-radius:var(--rs);background:var(--GL2);color:var(--GDK);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #a8d8cc;transition:all .15s;margin-bottom:8px;flex-shrink:0}
+.scribble-btn svg{width:1.1em;height:1.1em;display:block}
+.br-gpad .scribble-btn{font-size:calc(24px * var(--fs-mult))}
+.scribble-btn:active{transform:translateY(2px);box-shadow:none}
+/* Open, it takes every pixel the keypad and the card can spare — `flex:1 1 0` against their
+   `0 1 auto` — with a floor below which it is not worth drawing on. */
+.scribble-pad{position:relative;flex:1 1 0;min-height:80px;margin-bottom:8px;border-radius:var(--rs);background:var(--GL);overflow:hidden}
+/* `touch-action:none` is load-bearing, not tidying: without it the browser claims a finger drag
+   as a scroll gesture and the stroke stops after a few pixels.
+   `color` is what the canvas reads its ink from (see ScribblePad.jsx). It is a FIXED dark ink,
+   not var(--txt): the pad's own surface is light green in both themes, exactly as the keypad
+   keys are, so an ink that flipped with the theme drew white-on-mint in dark mode and the
+   working out simply vanished. The keys solve the same problem the same way, with color:#000. */
+.scribble-canvas{display:block;width:100%;height:100%;touch-action:none;color:#16241e}
+.scribble-close{position:absolute;top:6px;right:6px;z-index:2;width:28px;height:28px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #d4b0a4;transition:all .15s}
+.scribble-close svg{width:15px;height:15px;stroke:var(--TC);fill:none}
+.scribble-close:active{transform:translateY(2px);box-shadow:none}
+
+/* While the pad is out, everything above and below it gives up a little size so the scratch area
+   is worth having on a small phone as well as a large one. The equation drops from 27px to 21px,
+   which is still the largest thing on the screen, and only while scribbling — by which point the
+   player has read the question and is working it out.
+   Measured across the four play screens: the pad gets 155-166px on a 812px phone and sits on its
+   80px floor on a 667px one, with keys never below 38px and nothing ever scrolling. */
+.scribbling .qc{padding:12px 16px 2px}
+.scribbling .qt{font-size:calc(21px * var(--fs-mult))}
+.scribbling .ob{margin-bottom:5px}
+.scribbling .ai{padding:7px;font-size:calc(18px * var(--fs-mult))}
+.scribbling .np{gap:6px}
+.scribbling .br-qc{padding:12px 16px 2px}
+.scribbling .br-qt{font-size:calc(21px * var(--fs-mult))}
+.scribbling .br-ob{margin-bottom:6px}
+.scribbling .br-ai{padding:7px;font-size:calc(18px * var(--fs-mult))}
+/* Braining and Tricks each show one extra band the Challenge screen does not — the practice /
+   test-mode pill — and on Braining that band was exactly what made it the tightest of the four. */
+.scribbling .br-pbadge{margin-bottom:4px}
+.scribbling .tg-mode-pill{margin-bottom:5px}
+/* The progress counter and the top row are the least useful things on screen while someone is
+   working a sum out, so they are what pays for the pad. Recovers about 20px on a 667px phone,
+   which is the difference between a scratch area you can use and one you cannot. */
+.scribbling .tg-solved-row{margin-bottom:4px}
+.scribbling .tg-solved-n{font-size:calc(16px * var(--fs-mult))}
+.scribbling .tg-solved-of{font-size:calc(11px * var(--fs-mult))}
+.scribbling .tg-solved-l{font-size:calc(9px * var(--fs-mult));margin-top:1px}
+.scribbling .gtop,.scribbling .br-gtop,.scribbling .tgtop{margin-bottom:8px}
+.scribbling .qc,.scribbling .br-qc,.scribbling .ai,.scribbling .br-ai{margin-bottom:6px}
+.scribbling .scribble-pad{margin-bottom:6px}
+/* The keypad and the pad compete for the same leftover height. The floor goes on the KEYS rather
+   than on the pad, and that choice is the whole balance: a floor on the pad squeezed the keys to
+   34px on the Braining screen (which carries an extra badge and a taller answer box), while a
+   floor on the keys lets each of the four screens settle wherever its own chrome allows — the
+   Tricks screen ends up with a bigger pad than Braining because it has less above it, which is
+   correct. 38px is the smallest a full-width key can be and still be hit reliably. */
+.scribbling .np .k{min-height:38px}
+
+/* ── TRICK EXPLANATION POPUP (v16 item 9) ──────────────────────────────────
+   Wider than the standard .mdl (300px) because it carries the worked example, and capped in
+   height with the BODY doing the scrolling — .mdl has no max-height of its own, so a long
+   explanation would otherwise run off both ends of a phone with no way to reach either. */
+.trick-info-mdl{width:340px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;padding:16px 16px 18px}
+.trick-info-hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-shrink:0}
+.trick-info-hdr h3{margin:0;flex:1}
+/* Same terracotta circle as the quit button, the sheet close and the scribble close. */
+.trick-info-close{width:30px;height:30px;border-radius:50%;background:var(--TCL);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 0 #d4b0a4;transition:all .15s}
+.trick-info-close svg{width:15px;height:15px;stroke:var(--TC);fill:none}
+.trick-info-close:active{transform:translateY(2px);box-shadow:none}
+.trick-info-body{overflow-y:auto;min-height:0;margin-top:10px;overscroll-behavior:contain}
+/* The library card gives .tex a bottom margin that sits between it and the example block; keep it,
+   but drop the trailing space the card needs and this dialog does not. */
+.trick-info-body .teg-wrap{margin-bottom:0}
+/* The pill is now a control, so it has to look like one. Everything else about it is unchanged. */
+.ttl.tappable{cursor:pointer}
+.ttl.tappable:active{transform:translateY(2px);box-shadow:none}
 
 /* RESULT */
 .rscr{padding:20px 16px}
@@ -290,7 +432,7 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .bbtn:active{transform:translateY(2px);box-shadow:none}
 
 /* TRICKS */
-.tscr{padding:0 16px 80px}
+.tscr{padding:0 16px 12px}
 .tg{margin-bottom:8px}
 .tgh{font-size:calc(12px * var(--fs-mult));font-weight:800;color:var(--txt);padding:12px 0 6px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.06em}
 .tg-sym{background:var(--G);color:#fff;font-size:calc(12px * var(--fs-mult));font-weight:800;padding:2px 9px;border-radius:20px;text-transform:none;letter-spacing:0;line-height:1.6;flex-shrink:0;box-shadow:0 2px 0 var(--GD)}
@@ -313,11 +455,16 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .tpb{padding:8px 16px;background:var(--G);color:#fff;border:none;border-radius:20px;font-size:calc(12px * var(--fs-mult));font-weight:700;cursor:pointer;box-shadow:0 2px 0 var(--GD)}.tpb:active{transform:translateY(1px);box-shadow:none}
 
 /* TRICK GAME */
-.tgpad{padding:14px 16px 4px}
+/* v16 item 5: same flex column as .gpad — see the note there. */
+.tgpad{padding:14px 16px 4px;display:flex;flex-direction:column;height:100%;min-height:0}
+/* The end-of-run card is a different shape from the play stack — a result panel that reads top to
+   bottom and can legitimately be taller than the screen. It keeps the padding and drops the
+   fixed height, so .scroll scrolls it in the normal way instead of squashing it to fit. */
+.tgpad-done{height:auto;display:block}
 .tgtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 /* v14.9 item 12: solved counter moved out of the top row (was colliding with title/close on
    narrow screens) — now centered directly above the equation box */
-.tg-solved-row{text-align:center;margin-bottom:12px}
+.tg-solved-row{text-align:center;margin-bottom:12px;flex-shrink:0}
 .tg-solved-n{font-size:calc(22px * var(--fs-mult));font-weight:900;color:var(--txt);line-height:1}
 .tg-solved-l{font-size:calc(10px * var(--fs-mult));color:var(--txt3);font-weight:500;margin-top:2px}
 .ttl{font-size:calc(13px * var(--fs-mult));font-weight:700;color:var(--GDK);background:var(--GL2);padding:5px 14px;border-radius:20px;flex:1;margin-right:8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 0 #a8d8cc}
@@ -360,7 +507,7 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
    chip row (.drow: 12px+8px padding around a ~32px chip = ~52px) sitting above its stat boxes —
    Braining has no equivalent row, so without this its stats sat right against the header.
    This is an estimate rather than a pixel-measured match — nudge it if it looks off on your phone. */
-.br-home{padding:12px 16px 90px}
+.br-home{padding:12px 16px 12px}
 /* v14.8 item 2: br-home already provides 16px side padding, so the shared .totd-card's own
    left/right margin (used to align it on the Challenge screen, which has no such parent padding)
    would double it up here — cancel it out so the card lines up with br-chart-card/br-stats */
@@ -417,14 +564,15 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .br-btn-out:active{transform:translateY(2px);box-shadow:none}
 .br-lbl{text-align:center;font-size:calc(11px * var(--fs-mult));color:var(--txt3);min-height:16px;margin-top:2px}
 /* Countdown */
-.br-cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:78vh;gap:20px;padding:20px}
+.br-cds{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;gap:20px;padding:20px}
 /* v14.8 item 1: .br-cdn/.br-cdgo removed — Braining's countdown markup now uses the shared
    .cdn/.cdgo classes (defined near the Challenge countdown, above) so both modes look identical */
 .br-cdsub{font-size:calc(13px * var(--fs-mult));color:var(--txt3);margin-top:8px}
 .br-cdmode{font-size:calc(12px * var(--fs-mult));background:#f0f0f0;color:#888;padding:4px 14px;border-radius:20px;font-weight:600;margin-top:6px}
 /* Game */
-.br-gpad{padding:14px 16px 4px}
-.br-gtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+/* v16 item 5: same flex column as .gpad — see the note there. */
+.br-gpad{padding:14px 16px 4px;display:flex;flex-direction:column;height:100%;min-height:0}
+.br-gtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0}
 .br-tc{width:64px;height:64px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
 .br-lasttime{display:none;font-size:calc(8px * var(--fs-mult));color:var(--txt3);font-weight:700;margin-bottom:1px}
 .br-lasttime.show{display:block}
@@ -444,14 +592,16 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .br-pb{height:4px;background:var(--G);border-radius:2px;transition:width .25s}
 .br-pbadge{text-align:center;margin-bottom:8px}
 .br-pbadge span{font-size:calc(11px * var(--fs-mult));font-weight:600;background:#f0f0f0;color:#888;padding:3px 12px;border-radius:20px}
-.br-qc{background:var(--card);border-radius:var(--r);padding:18px 16px;text-align:center;margin-bottom:8px;transition:background .12s,border-color .12s}
+/* v16 item 5: the gap below the equation brought level with the gap above it, exactly as on the
+   Challenge card — see the note on .qc. .br-hint keeps its reserved height for the same reason. */
+.br-qc{background:var(--card);border-radius:var(--r);padding:18px 16px 2px;text-align:center;margin-bottom:8px;transition:background .12s,border-color .12s;flex:0 1 auto;min-height:0}
 .br-qc.ok{background:var(--GL2)}
 .br-qc.bad{background:#fcebeb}
 .br-ob{font-size:calc(11px * var(--fs-mult));font-weight:600;color:var(--GDK);background:var(--GL2);padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:10px}
 .br-qt{font-size:calc(28px * var(--fs-mult));font-weight:800;color:var(--txt);word-break:break-word;line-height:1.25}
-.br-hint{font-size:calc(12px * var(--fs-mult));color:var(--txt3);margin-top:6px;min-height:18px}
+.br-hint{font-size:calc(12px * var(--fs-mult));color:var(--txt3);margin-top:0;min-height:18px}
 .br-hint.bad{color:#a32d2d;font-weight:600}
-.br-ai{width:100%;padding:11px;font-size:calc(24px * var(--fs-mult));text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:10px;outline:none;caret-color:transparent}
+.br-ai{width:100%;padding:11px;font-size:calc(24px * var(--fs-mult));line-height:1.36;text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:8px;outline:none;caret-color:transparent;flex-shrink:0}
 .br-ai:focus{box-shadow:none;background:var(--GL2)}
 .br-ai.bad{background:#fcebeb;color:#c0654a}
 /* Result */

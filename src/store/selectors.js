@@ -1,4 +1,4 @@
-import { dayKey } from './dates.js';
+import { dayKey, addDaysStr } from './dates.js';
 
 function isRecordedSession(s) {
   return s.real === true || typeof s.real === 'undefined';
@@ -86,4 +86,88 @@ export function computeOpSummary(opTimes) {
   });
   avgs.sort((a, b) => a.avg - b.avg);
   return { fastest: avgs[0], slowest: avgs[avgs.length - 1] };
+}
+
+// ── PER-MODE STREAKS (v16 item 2) ──────────────────────────────────────────────
+//
+// The header flame is the UNIFIED streak: one number, earned by playing either mode, with its
+// own stored counter and its own restore mechanic. None of that is touched here. These are a
+// second, separate reading — how many days in a row you have played THIS mode — and they exist
+// only to fill the stat pill on each mode's home screen.
+//
+// DERIVED, NOT STORED. The obvious implementation was three new saved fields per mode (current,
+// best, creditedForDay), a migration to fill them in for existing players, and a load-time check
+// to notice when one had died overnight. All of that was rejected for one reason: session history
+// in this app is never pruned, so the answer is already in the saved data, exactly, and a stored
+// counter could only ever be a cache of it that might drift. A derived value cannot be
+// double-credited by playing twice, cannot miss a break because the app was closed at midnight,
+// cannot disagree with the chart drawn from the same sessions, and needs no migration — an
+// account created before this existed reads back its true streak the first time it loads.
+//
+// It also means these follow a player between devices for free: `db` and `brState` are already
+// in SYNCED_KEYS, so nothing new crosses the sync boundary.
+//
+// NO RESTORE. The unified streak can be resurrected across a gap with a refill; these cannot.
+// A refill is a stored fact about one streak, and honouring it here would mean storing state
+// again. "Days in a row you played this mode" stays a plain reading of the record.
+
+// Every distinct day on which this mode had at least one COUNTING session, as a lookup.
+// Practice runs are excluded on purpose: they are the same runs the chart and the day's score
+// already ignore, so a streak built on them would disagree with everything else on the screen.
+function countedDaySet(sessionLists) {
+  const days = new Set();
+  sessionLists.forEach((list) => {
+    (list || []).forEach((s) => { if (isRecordedSession(s)) days.add(s.date); });
+  });
+  return days;
+}
+
+// The Challenge session lists — all three difficulties, since a Challenge day is a Challenge day
+// whichever difficulty it was played at. Matches chDoneToday()/chCompletedOnDate() in the reducer.
+function challengeLists(db) {
+  return ['easy', 'medium', 'hard'].map((d) => (db && db[d] ? db[d].sessions : []));
+}
+
+// How many days in a row up to now.
+//
+// Starting from YESTERDAY when today is empty is the part worth stating: a streak credited
+// yesterday is still alive all through today — it dies at tomorrow's midnight, not at the moment
+// you wake up. That is the same boundary the unified streak breaks on, so the two numbers can
+// never tell contradictory stories about the same day.
+function currentFrom(days) {
+  const today = dayKey();
+  let cursor;
+  if (days.has(today)) cursor = today;
+  else if (days.has(addDaysStr(today, -1))) cursor = addDaysStr(today, -1);
+  else return 0;
+
+  let n = 0;
+  while (days.has(cursor)) {
+    n++;
+    cursor = addDaysStr(cursor, -1);
+  }
+  return n;
+}
+
+// The longest run anywhere in the record. Sorted rather than walked from today, because the best
+// run is usually not the current one.
+function bestFrom(days) {
+  const sorted = Array.from(days).sort();
+  let best = 0, run = 0, prev = null;
+  sorted.forEach((d) => {
+    run = prev !== null && addDaysStr(prev, 1) === d ? run + 1 : 1;
+    if (run > best) best = run;
+    prev = d;
+  });
+  return best;
+}
+
+export function challengeStreak(db) {
+  const days = countedDaySet(challengeLists(db));
+  return { current: currentFrom(days), best: bestFrom(days) };
+}
+
+export function brainingStreak(brState) {
+  const days = countedDaySet([brState ? brState.sessions : []]);
+  return { current: currentFrom(days), best: bestFrom(days) };
 }

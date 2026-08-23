@@ -1,9 +1,14 @@
+import { useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
+import ScribblePad from '../components/ScribblePad.jsx';
 import { fn } from '../store/questionEngine.js';
 
 // Ported from the reference prototype's #scr-game markup + updateTUI().
 export default function ChallengeGameScreen({ game, onShowQuit }) {
   const { t } = useI18n();
+  // Owned here rather than inside the pad because the layout above and below it reacts to the
+  // open state — the card and keypad give up height only while it is out.
+  const [scribbleOpen, setScribbleOpen] = useState(false);
   const { session, question, input, inputClass, feedback, qcFlash, padInput, backspace, submitAnswer } = game;
   if (!session) return null;
 
@@ -24,7 +29,7 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
   }
 
   return (
-    <div className="gpad">
+    <div className={'gpad' + (scribbleOpen ? ' scribbling' : '')}>
       <div className="gtop">
         <div className={'tc2' + (urgent ? ' urg' : '')}>
           <div className="tn">{tn}</div>
@@ -55,6 +60,9 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
       </div>
       <input type="text" className={inputClass} placeholder="?" autoComplete="off" inputMode="decimal" readOnly value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submitAnswer(); }} />
+      {/* Between the answer box and the keypad, where a hand already is. `session.qIdx` is the
+          per-question reset key: a new question wipes the pad, so nothing carries over. */}
+      <ScribblePad open={scribbleOpen} onToggle={setScribbleOpen} resetKey={session.qIdx} />
       {/* ph-no-capture keeps analytics autocapture off the keypad. Autocapture records the TEXT of
           whatever was clicked, and these buttons are labelled 1-9 — so without it every tap would
           be sent as a digit, and the sequence would reconstruct the player's answer exactly. The
