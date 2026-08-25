@@ -292,6 +292,26 @@ export function identify(userId) {
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.login(String(userId));
+      // ── Why the tags are sent AGAIN, immediately after login ──────────────────────────────
+      //
+      // TAGS BELONG TO THE USER, NOT TO THE SUBSCRIPTION, and `login()` moves this subscription
+      // to a different user — OneSignal does not carry tags across from the anonymous one.
+      //
+      // That is guaranteed to bite on every single launch, because of the order the app runs in:
+      // App.jsx publishes tags from a mount effect, while this call waits on getSession(), which
+      // is asynchronous and therefore always lands second. So every launch wrote a full set of
+      // tags and then abandoned the user holding them. The subscription stayed healthy and
+      // permission stayed granted — a notification sent by hand arrived — but every automated
+      // campaign filters on tags, and the user those filters read had none.
+      //
+      // Re-published INSIDE this callback rather than from a second effect, because the SDK's
+      // queue is drained in order and that is the only ordering guarantee available here. A
+      // separate effect would be racing the login it needs to follow.
+      //
+      // `lastTagsSent` is whatever syncTags() last published, not a recomputation — this module
+      // still computes nothing (see the header). The deadlines in it are absolute timestamps, so
+      // re-sending the same values later cannot make them stale.
+      if (lastTagsSent) await OneSignal.User.addTags(lastTagsSent);
     } catch (e) {
       note(e);
     }
@@ -307,6 +327,20 @@ export function forget() {
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.logout();
+      // Cleared, and deliberately NOT re-published the way identify() does.
+      //
+      // logout() also moves the subscription to a fresh user, so the same reasoning applies —
+      // but the conclusion is the opposite one. This function exists so that the next person to
+      // use this browser does not inherit the last player's identity; re-attaching the departing
+      // player's streak to the new anonymous user would recreate exactly the bug it is here to
+      // prevent, and would do it while looking like a fix.
+      //
+      // Clearing rather than leaving the value in place matters for the same reason: a later
+      // identify() on this device must not top up a new account with the previous player's
+      // numbers. The next syncTags() publishes the wiped state from scratch, which the logout
+      // wipe triggers on its own by changing the streak this module is watched through.
+      lastTagsSent = null;
+      lastTagsAt = null;
     } catch (e) {
       note(e);
     }

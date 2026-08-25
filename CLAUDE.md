@@ -40,6 +40,7 @@ logic rather than a copy of it.
 | `check:achievements-verified` | an achievement the Braining boost could buy, or one that needs the network |
 | `check:invariant` | the three places a day's score is computed disagreeing |
 | `check:notify` | a reminder addressed to the wrong player, or carrying something it should not |
+| `check:notify-identity` | tags stranded on an abandoned OneSignal user by a sign-in or sign-out |
 | `check:i18n` | user-facing text that never reached the translation table, and key parity |
 | `check:worktrees` | work parked on a branch or worktree that `react-rewrite` cannot see |
 
