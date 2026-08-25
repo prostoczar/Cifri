@@ -20,6 +20,10 @@ export const ERR = {
   CONFIRM_REQUIRED: 'confirm_required', // email confirmation is switched on in Supabase
   NETWORK: 'network',
   UNKNOWN: 'unknown',
+  // Not a user-facing failure — never mapped to a screen message. Means the conditional write
+  // in pushPlayerState() below did not match: another device has written to this account's
+  // player_state since we last read it, and our payload was refused rather than overwriting it.
+  CONFLICT: 'conflict',
 };
 
 // The i18n key each failure maps to, so every screen phrases the same problem the same way.
@@ -154,15 +158,26 @@ export async function signUpWithProfile({ email, password, username, fullName, a
 
       // A finished account. Nothing has touched the app's client, so there is nothing to undo —
       // the player is still exactly the guest they were a moment ago, with their progress intact.
+      //
+      // `{ scope: 'local' }` on both signOut() calls in this block: the default is 'global', which
+      // revokes the refresh token SERVER-SIDE for every session on the account, not just this
+      // probe's. This account belongs to whoever is typing — proven by the password a moment ago
+      // — and the whole point of the probe client was to ask a question without disturbing
+      // anything. A global sign-out here would silently end their session on every OTHER device
+      // signed into this same account, for no better reason than mistakenly retyping their own
+      // email into the signup form.
       if (existingProfile) {
-        await p.auth.signOut();
+        await p.auth.signOut({ scope: 'local' });
         return { ok: false, error: ERR.EMAIL_IN_USE };
       }
 
       // A half-finished account, and the password proves it belongs to whoever is typing. NOW
       // signing in is the right thing to do, so the verified session is handed to the real client
-      // deliberately — the one place in this flow where a login is actually intended.
-      await p.auth.signOut();
+      // deliberately — the one place in this flow where a login is actually intended. Global scope
+      // here would be worse than in the branch above: it would revoke the very refresh token
+      // `setSession()` is about to adopt two lines down, on the client this account is actually
+      // meant to end up signed into.
+      await p.auth.signOut({ scope: 'local' });
       const { data: adopted, error: adoptError } = await supabase.auth.setSession({
         access_token: retry.session.access_token,
         refresh_token: retry.session.refresh_token,
@@ -198,13 +213,16 @@ export async function signUpWithProfile({ email, password, username, fullName, a
   }
 
   // Carry the guest's progress onto the new account. Upsert for the same reason.
-  const { error: stateError } = await supabase.from('player_state').upsert({
+  //
+  // `.select('updated_at')` so the caller can seed the version this write is now at — the
+  // starting point every later conditional push (see pushPlayerState) checks itself against.
+  const { data: stateRow, error: stateError } = await supabase.from('player_state').upsert({
     user_id: userId,
     data: toSyncPayload(localState),
-  }, { onConflict: 'user_id' });
+  }, { onConflict: 'user_id' }).select('updated_at').single();
   if (stateError) return { ok: false, error: mapAuthError(stateError) };
 
-  return { ok: true, session };
+  return { ok: true, session, updatedAt: stateRow ? stateRow.updated_at : null };
 }
 
 // ── Login ──────────────────────────────────────────────────────────────────────
@@ -258,7 +276,7 @@ export async function fetchAccount() {
 
   const [{ data: profile, error: pErr }, { data: stateRow, error: sErr }] = await Promise.all([
     supabase.from('profiles').select('username, full_name, avatar').eq('id', session.user.id).maybeSingle(),
-    supabase.from('player_state').select('data').eq('user_id', session.user.id).maybeSingle(),
+    supabase.from('player_state').select('data, updated_at').eq('user_id', session.user.id).maybeSingle(),
   ]);
   if (pErr) return { ok: false, error: mapAuthError(pErr) };
   if (sErr) return { ok: false, error: mapAuthError(sErr) };
@@ -269,20 +287,49 @@ export async function fetchAccount() {
     profile: profile || null,
     syncedState: fromSyncPayload(stateRow ? stateRow.data : null),
     hasRemoteState: !!stateRow,
+    // The version this row is at right now. Threaded through to beginSync()/adopt() so the next
+    // upload can be conditioned on it — see pushPlayerState().
+    updatedAt: stateRow ? stateRow.updated_at : null,
   };
 }
 
 // ── Saving progress ────────────────────────────────────────────────────────────
-// Upsert so the first save after login works whether or not a row exists yet.
-
-export async function pushPlayerState(payload) {
+//
+// `expectedUpdatedAt`, when given, makes this a compare-and-swap instead of a blind overwrite:
+// the write only lands if the row is still at the version this device last saw. Two devices
+// signed in at once, each writing independently, could otherwise have the second write replace
+// the first's with no idea the first ever happened — including replacing a just-recorded score
+// with an older copy that never saw it. `updated_at` is maintained by a server-side trigger
+// (migration 0001), so a device can only pass a version it actually observed the server hold.
+//
+// A CONFLICT return means the row has moved since — the caller is expected to re-fetch and
+// decide what to do (see hasUnsyncedProgress in syncedState.js), not retry blindly.
+//
+// With no `expectedUpdatedAt` (first save after signup/login, or a row that may not exist yet)
+// there is nothing to race against, so a plain upsert is both correct and simpler.
+export async function pushPlayerState(payload, expectedUpdatedAt) {
   const session = await getSession();
   if (!session) return { ok: false, error: ERR.INVALID_CREDENTIALS };
-  const { error } = await supabase
+
+  if (expectedUpdatedAt) {
+    const { data, error } = await supabase
+      .from('player_state')
+      .update({ data: payload })
+      .eq('user_id', session.user.id)
+      .eq('updated_at', expectedUpdatedAt)
+      .select('updated_at');
+    if (error) return { ok: false, error: mapAuthError(error) };
+    if (!data || data.length === 0) return { ok: false, error: ERR.CONFLICT };
+    return { ok: true, updatedAt: data[0].updated_at };
+  }
+
+  const { data, error } = await supabase
     .from('player_state')
-    .upsert({ user_id: session.user.id, data: payload }, { onConflict: 'user_id' });
+    .upsert({ user_id: session.user.id, data: payload }, { onConflict: 'user_id' })
+    .select('updated_at')
+    .single();
   if (error) return { ok: false, error: mapAuthError(error) };
-  return { ok: true };
+  return { ok: true, updatedAt: data ? data.updated_at : null };
 }
 
 // ── Saving the normalized daily results ────────────────────────────────────────

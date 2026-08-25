@@ -3,8 +3,8 @@ import { dayKey, yesterday, addDaysStr, dateStrToDate, daysBetweenKeys } from '.
 import { ACHIEVEMENTS, earnedCount, streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
 import { applyBrainingBoost } from './scoring.js';
 import { brainAge20Count, isSharperEveryDay } from './braining.js';
-import { fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
-import { sameSyncPayload, signOutResetKeys, toSyncPayload } from '../lib/syncedState.js';
+import { ERR, fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
+import { hasUnsyncedProgress, sameSyncPayload, signOutResetKeys, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
 import { clearBaseline, fingerprint, readBaseline, writeBaseline } from '../lib/syncBaseline.js';
 import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
@@ -1444,7 +1444,10 @@ export function AppStateProvider({ children }) {
   // `ready` gates uploading. It is false until we know the server's copy, which is what stops
   // the worst possible bug here: a signed-in player opening the app on a second device and
   // uploading that device's empty state over their real history before the download lands.
-  const sync = useRef({ ready: false, lastPushed: null, uid: null });
+  // `updatedAt` is the player_state row's version as this device last observed it. Every upload
+  // is conditioned on it (see pushPlayerState), so a device cannot overwrite a write it never
+  // saw — see the sync-conflict handling below for what happens when that condition fails.
+  const sync = useRef({ ready: false, lastPushed: null, uid: null, updatedAt: null });
   const [syncRetry, setSyncRetry] = useState(0);
 
   // The startup effect below runs once and closes over the state as it was at mount. It needs to
@@ -1518,6 +1521,11 @@ export function AppStateProvider({ children }) {
         // Just downloaded, so the server's contents are known — safe to record as the baseline.
         if (uid && res.hasRemoteState) writeBaseline(uid, res.syncedState);
       }
+      // The version this row was at at the moment of this fetch, whichever branch above ran —
+      // even when keeping local, this is still the freshest version actually observed, and the
+      // first upload will be conditioned on it rather than blindly overwriting a third write
+      // that landed in the gap between this fetch and that upload.
+      sync.current.updatedAt = res.updatedAt;
       sync.current.ready = true;
       sync.current.uid = uid;
       // From here, attempts belong to this account. Set immediately rather than waiting for the
@@ -1576,6 +1584,43 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; unsubscribe(); };
   }, []);
 
+  // Called when a conditional push (below) is refused because player_state has moved since this
+  // device last saw it — another signed-in device wrote in between. This is the one place a
+  // sync conflict is actually resolved, and it does not just retry: it asks whether OUR pending
+  // write is worth defending.
+  //
+  // If it holds real progress the fresh copy lacks (hasUnsyncedProgress), it is kept exactly as
+  // is and re-sent against the version just observed — nothing local changes, only the version
+  // this device is racing against. If not — a view preference changed on a device that never
+  // played anything, say — the fresh copy is already at least as good as ours, so it is adopted
+  // outright, same as a login, and our stale write is dropped rather than fought over.
+  //
+  // This is what stops the failure this whole mechanism exists for: a second device, open but
+  // otherwise idle, silently overwriting a score just recorded on the first because its own
+  // routine housekeeping happened to touch a synced field a moment later.
+  const reconcileConflict = useCallback(async () => {
+    const res = await fetchAccount();
+    if (!res.ok || !res.profile) {
+      setTimeout(() => setSyncRetry((n) => n + 1), 15000);
+      return;
+    }
+    sync.current.updatedAt = res.updatedAt;
+    if (hasUnsyncedProgress(stateRef.current, res.syncedState)) {
+      setSyncRetry((n) => n + 1);
+      return;
+    }
+    dispatch({
+      type: 'ACCOUNT_LOADED',
+      username: res.profile.username,
+      email: res.email,
+      fullName: res.profile.full_name || '',
+      avatar: res.profile.avatar,
+      synced: res.syncedState,
+    });
+    dispatch({ type: 'CHECK_STREAK_BREAK' });
+    sync.current.lastPushed = res.hasRemoteState ? res.syncedState : null;
+  }, [dispatch]);
+
   // Upload progress whenever it changes. Debounced, because a finished game updates several
   // fields at once and there is no reason to send five near-identical writes.
   useEffect(() => {
@@ -1584,9 +1629,10 @@ export function AppStateProvider({ children }) {
     if (sameSyncPayload(payload, sync.current.lastPushed)) return;
 
     const id = setTimeout(async () => {
-      const res = await pushPlayerState(payload);
+      const res = await pushPlayerState(payload, sync.current.updatedAt);
       if (res.ok) {
         sync.current.lastPushed = payload;
+        sync.current.updatedAt = res.updatedAt;
         // The upload is confirmed, so this is now genuinely what the server holds. Recorded here
         // and nowhere optimistic, so the baseline can never claim a sync that did not happen.
         if (sync.current.uid) writeBaseline(sync.current.uid, payload);
@@ -1594,6 +1640,8 @@ export function AppStateProvider({ children }) {
         // already stored and cannot change. Upserted on the primary key, so this repeats
         // harmlessly all day rather than accumulating rows.
         pushDailyResults(projectDailyRows(state, { todayOnly: true }));
+      } else if (res.error === ERR.CONFLICT) {
+        await reconcileConflict();
       } else {
         // Leave lastPushed alone so this payload is still considered unsent, and nudge the
         // effect to run again. Progress is already safe in localStorage either way — a failed
@@ -1602,10 +1650,15 @@ export function AppStateProvider({ children }) {
       }
     }, 1500);
     return () => clearTimeout(id);
-  }, [state, syncRetry]);
+  }, [state, syncRetry, reconcileConflict]);
 
   // Mobile browsers can discard a backgrounded tab without warning, which would strand the
   // 1.5s debounce above. Flush immediately when the app is hidden instead.
+  //
+  // A CONFLICT here is treated the same as any other failure: reconciling takes a network round
+  // trip this handler has no time for (the tab may be gone before it resolves), so it just backs
+  // off and leaves it to the ordinary debounced effect above to reconcile properly once the app
+  // is foregrounded again.
   useEffect(() => {
     function flush() {
       if (document.visibilityState !== 'hidden') return;
@@ -1613,8 +1666,9 @@ export function AppStateProvider({ children }) {
       const payload = toSyncPayload(state);
       if (sameSyncPayload(payload, sync.current.lastPushed)) return;
       sync.current.lastPushed = payload;
-      pushPlayerState(payload).then((res) => {
-        if (!res.ok) sync.current.lastPushed = null; // unsent after all — let the retry catch it
+      pushPlayerState(payload, sync.current.updatedAt).then((res) => {
+        if (res.ok) sync.current.updatedAt = res.updatedAt;
+        else sync.current.lastPushed = null; // unsent after all — let the retry catch it
       });
     }
     document.addEventListener('visibilitychange', flush);
@@ -1671,9 +1725,12 @@ export function AppStateProvider({ children }) {
   }, [state]);
 
   // Called by the account screens once a signup or login has completed, so uploading can begin
-  // from a known-good baseline rather than guessing.
-  const beginSync = useCallback((baseline) => {
+  // from a known-good baseline rather than guessing. `updatedAt` is the player_state row's
+  // version at that same moment — signup's own upsert, or the row login just downloaded — so the
+  // very first push from this device is already a conditional one rather than a blind overwrite.
+  const beginSync = useCallback((baseline, updatedAt) => {
     sync.current.lastPushed = baseline || null;
+    sync.current.updatedAt = updatedAt || null;
     sync.current.ready = true;
     // `baseline` is what the caller just confirmed the server holds — the payload signup uploaded,
     // or the state login downloaded. When it is null the server's contents are NOT known, so
@@ -1702,9 +1759,10 @@ export function AppStateProvider({ children }) {
     const payload = toSyncPayload(stateRef.current);
     if (fingerprint(payload) === readBaseline(uid)) return true;
 
-    const res = await pushPlayerState(payload);
+    const res = await pushPlayerState(payload, sync.current.updatedAt);
     if (!res.ok) return false;
     sync.current.lastPushed = payload;
+    sync.current.updatedAt = res.updatedAt;
     writeBaseline(uid, payload);
     // Today's rows are the half of the mirror the leaderboard reads, and they are cheap. A
     // failure here is not fatal to the wipe: the state payload above is the record that matters,

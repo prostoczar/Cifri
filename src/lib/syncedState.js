@@ -38,6 +38,80 @@ export const SYNCED_KEYS = [
   'firstOpenDate',
 ];
 
+// Which SYNCED_KEYS are something a player DID — history that cannot be recreated if lost —
+// versus a device/view preference that costs little to lose. Used only by hasUnsyncedProgress()
+// below, to decide, when two devices' writes to player_state collide, whether the write that
+// lost the race was worth defending or safe to drop in favor of whatever the other device left
+// on the server. (streak, streakCreditedForDay and streakRestoreAvailable are deliberately not
+// here even though they are real state — see the comment on hasUnsyncedProgress below.)
+export const PROGRESS_KEYS = [
+  'db', 'brState',
+  'streak', 'streakCreditedForDay', 'streakRestoreAvailable', 'pendingRestore', 'bestStreakEver',
+  'brBoostDay',
+  'milestones',
+  'trickStats',
+];
+
+function sessionKey(s) {
+  return s.attemptId || `${s.date}|${s.score ?? s.time}|${s.correct ?? s.age}`;
+}
+// True when `localList` has a session `freshList` does not — matched by attemptId where present,
+// falling back to date+score+correct (or date+time+age for Braining) for older saved sessions
+// that predate attemptId.
+function hasNewSessions(localList, freshList) {
+  const freshKeys = new Set((freshList || []).map(sessionKey));
+  return (localList || []).some((s) => !freshKeys.has(sessionKey(s)));
+}
+function hasNewInArray(localArr, freshArr) {
+  const freshSet = new Set(freshArr || []);
+  return (localArr || []).some((x) => !freshSet.has(x));
+}
+// True when `localMap` has a higher count than `freshMap` for at least one key — used for
+// practice/test attempt counters, where only a count going UP is something local did.
+function hasHigherCount(localMap, freshMap) {
+  return Object.entries(localMap || {}).some(([k, v]) => (v || 0) > ((freshMap || {})[k] || 0));
+}
+
+// True when `local` holds progress that `fresh` (a payload just downloaded from the server)
+// does not — the case a sync conflict must never resolve by quietly taking `fresh` over it.
+//
+// Deliberately NOT "the two payloads differ on a PROGRESS_KEYS field": that would also fire the
+// other way round, when `fresh` is the one ahead — exactly the case a device that lost a write
+// race is in, sitting on an empty `db` while the fresh copy already holds the run that beat it
+// there. Comparing for mere inequality would make THAT look like local progress worth defending
+// and cause a second, now-successful overwrite of the very history this function exists to
+// protect — a real bug caught by a live two-device repro, not a hypothetical. So every field
+// below is checked in the one direction that actually means "local did something fresh missed":
+// a session id fresh doesn't have, an achievement or trick-pass fresh doesn't have, a count that
+// went up, a personal best that improved. The reverse direction is never progress lost — it is
+// simply picked up when `fresh` is adopted.
+//
+// streak / streakCreditedForDay / streakRestoreAvailable are deliberately not compared here even
+// though they are in PROGRESS_KEYS: they are pure functions of db/brState history plus the
+// calendar date (see CHECK_STREAK_BREAK's own comment on why re-deriving them is always safe),
+// so once db and brState are reconciled correctly, re-running that check after adopting `fresh`
+// reproduces them without needing an independent, harder-to-get-right comparison of its own.
+export function hasUnsyncedProgress(local, fresh) {
+  const l = local || {};
+  const f = fresh || {};
+  const lDb = l.db || {};
+  const fDb = f.db || {};
+  for (const diff of ['easy', 'medium', 'hard']) {
+    if (hasNewSessions((lDb[diff] || {}).sessions, (fDb[diff] || {}).sessions)) return true;
+  }
+  if (hasNewSessions(l.brState?.sessions, f.brState?.sessions)) return true;
+  if (hasNewInArray(l.milestones?.achievedLog, f.milestones?.achievedLog)) return true;
+  if (hasNewInArray(l.trickStats?.testPassed, f.trickStats?.testPassed)) return true;
+  if (hasHigherCount(l.trickStats?.practiceDone, f.trickStats?.practiceDone)) return true;
+  if (hasHigherCount(l.trickStats?.testDone, f.trickStats?.testDone)) return true;
+  if ((l.bestStreakEver || 0) > (f.bestStreakEver || 0)) return true;
+  // One-shot flags: only defend a value THIS device set that fresh has not recorded. Adopting a
+  // value fresh already has and local lacks is not a loss, it is just picking it up.
+  if (l.brBoostDay && l.brBoostDay !== f.brBoostDay) return true;
+  if (l.pendingRestore && JSON.stringify(l.pendingRestore) !== JSON.stringify(f.pendingRestore)) return true;
+  return false;
+}
+
 // Deliberately NOT synced:
 //   username / avatar        — they live in the `profiles` table instead
 //   acctData                 — the password field disappears entirely under real auth

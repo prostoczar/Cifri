@@ -874,7 +874,7 @@ function AppShell() {
 
     dispatch({ type: 'ACCOUNT_CREATED', username: d.username, email: d.email, fullName: d.fullName });
     // Device and server now hold the same thing, so sync starts from that as its baseline.
-    beginSync(payload);
+    beginSync(payload, res.updatedAt);
     setAcctOpen(false);
   }
 
@@ -905,7 +905,7 @@ function AppShell() {
     dispatch({ type: 'CHECK_STREAK_BREAK' });
     // If the account somehow has no saved progress yet, pass no baseline so the very next
     // change uploads the whole thing rather than being skipped as unchanged.
-    beginSync(acct.hasRemoteState ? acct.syncedState : null);
+    beginSync(acct.hasRemoteState ? acct.syncedState : null, acct.updatedAt);
     setLoginOpen(false);
     return { ok: true };
   }
