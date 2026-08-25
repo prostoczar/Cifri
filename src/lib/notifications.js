@@ -49,6 +49,10 @@ let lastError = null;
 let lastTagsSent = null;
 let lastTagsAt = null;
 
+// Which account this device is already identified as, so a second identify() for the same one is
+// not a second login(). See identify() for why that matters more than it looks.
+let identifiedAs = null;
+
 /** Read from the browser console: `window.__cifriNotif()`. Never used by the app itself. */
 export function notificationDiagnostics() {
   return {
@@ -60,6 +64,7 @@ export function notificationDiagnostics() {
     permission: typeof Notification !== 'undefined' ? Notification.permission : 'n/a',
     lastTagsSent,
     lastTagsAt,
+    identifiedAs,
     lastError: lastError ? String(lastError) : null,
   };
 }
@@ -289,9 +294,30 @@ export function syncTags(state) {
  */
 export function identify(userId) {
   if (!userId || !ensureInit()) return;
+  const id = String(userId);
+
+  // ── Once per account, not once per caller ─────────────────────────────────────────────────
+  //
+  // Two places call this for the same sign-in — the startup path and the guest-conversion
+  // bootstrap — because each of them independently establishes who the player is, and neither can
+  // assume the other ran. That is right for analytics and for the attempt log, which are
+  // idempotent. It is not right for login().
+  //
+  // A second login() is a second identity operation against a subscription that is already being
+  // moved by the first. OneSignal answers the loser with 409 Conflict on every subsequent write —
+  // and its SDK marks those ops "no retry", so the tags are dropped silently and the device stays
+  // untaggable until its local state is cleared. Which is exactly the state one real iPhone was
+  // found in on 25 August 2026.
+  //
+  // Compared synchronously, before anything is queued, so two calls in the same tick cannot both
+  // get through. Cleared on failure so a genuine retry is still possible, and by forget(), which
+  // is the only thing that legitimately makes this device a different person.
+  if (identifiedAs === id) return;
+  identifiedAs = id;
+
   withOneSignal(async (OneSignal) => {
     try {
-      await OneSignal.login(String(userId));
+      await OneSignal.login(id);
       // ── Why the tags are sent AGAIN, immediately after login ──────────────────────────────
       //
       // TAGS BELONG TO THE USER, NOT TO THE SUBSCRIPTION, and `login()` moves this subscription
@@ -313,6 +339,8 @@ export function identify(userId) {
       // re-sending the same values later cannot make them stale.
       if (lastTagsSent) await OneSignal.User.addTags(lastTagsSent);
     } catch (e) {
+      // Released, so a later attempt is not suppressed by a login that never actually happened.
+      identifiedAs = null;
       note(e);
     }
   });
@@ -324,6 +352,10 @@ export function identify(userId) {
  */
 export function forget() {
   if (!ensureInit()) return;
+  // Released synchronously, mirroring the way identify() claims it: from the app's point of view
+  // this device stops being that account the moment sign-out happens, not whenever the queue gets
+  // to it. It also means a logout that fails still leaves the next sign-in able to try.
+  identifiedAs = null;
   withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.logout();

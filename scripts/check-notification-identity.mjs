@@ -131,6 +131,43 @@ console.log('\nnotification identity\n');
     'user ' + user.id + ' inherited: ' + JSON.stringify(fake.User.getTags()));
 }
 
+// ── 3b. login() happens once per account, however many callers ask ────────────────────────────
+// Two places call identify() for the same sign-in — the startup path and the guest-conversion
+// bootstrap — because each establishes the player's identity independently and neither can assume
+// the other ran. Idempotent for analytics; NOT for login(). A second identity operation against a
+// subscription the first is still moving gets the loser a 409 Conflict on every later write, and
+// the SDK marks those "no retry" — so tags vanish silently and the device stays untaggable until
+// its local storage is cleared. One real iPhone was found in exactly that state on 25 Aug 2026.
+{
+  calls.length = 0;
+  notif.identify('acct-3');
+  notif.identify('acct-3');
+  notif.identify('acct-3');
+  await drain();
+  const logins = calls.filter((c) => c === 'login:acct-3').length;
+  check('three identify() calls for one account produce one login()', logins === 1,
+    logins + ' logins — queue was: ' + calls.join(' → '));
+}
+
+// A DIFFERENT account on the same device must still get through, or switching users silently fails.
+{
+  calls.length = 0;
+  notif.identify('acct-4');
+  await drain();
+  check('a different account still logs in', calls.includes('login:acct-4'),
+    'queue was: ' + calls.join(' → '));
+}
+
+// And sign-out must release the claim, or signing back in after a logout would be a no-op.
+{
+  calls.length = 0;
+  notif.forget();
+  notif.identify('acct-4');
+  await drain();
+  check('signing back in after sign-out is not suppressed', calls.includes('login:acct-4'),
+    'queue was: ' + calls.join(' → '));
+}
+
 // ── 4. A fresh publish after sign-out reaches the new user ────────────────────────────────────
 // Clearing must not leave the device permanently untagged: the logout wipe changes the streak,
 // which is one of the values App.jsx watches, so a publish follows on its own.
