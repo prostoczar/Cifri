@@ -73,6 +73,21 @@ function isUniqueViolation(error) {
   return !!error && error.code === '23505';
 }
 
+// A JWT that was only just issued can carry an `iat` a moment ahead of Postgres' own clock, on a
+// device whose clock runs fast — PostgREST then answers the very first query made with it with
+// PGRST303 ("JWT issued at future"). It is a real-world clock, not a bug in the token, so it
+// clears itself within a second or two. One retry after a short pause is enough; nothing else
+// gets this treatment, because a genuine, later failure should surface immediately rather than be
+// silently delayed.
+async function retryOnClockSkew(run) {
+  const result = await run();
+  if (result && result.error && result.error.code === 'PGRST303') {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return run();
+  }
+  return result;
+}
+
 // ── Username availability ──────────────────────────────────────────────────────
 // Backed by the is_username_available() database function, which returns a single true/false
 // and can never return anyone's row. A logged-in player's own name always reads as available.
@@ -111,8 +126,13 @@ export async function signUpWithProfile({ email, password, username, fullName, a
   let session = await getSession();
 
   // Only reuse an existing session if it is genuinely this same signup being retried.
+  //
+  // `{ scope: 'local' }`: the default is 'global', which revokes the refresh token SERVER-SIDE for
+  // every session on the account, not just this device's. Whoever is signed in here is about to be
+  // replaced by a brand new account on THIS device only — that is no reason to sign out their other
+  // devices too.
   if (session && session.user.email !== email.trim().toLowerCase()) {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     session = null;
   }
 
@@ -201,12 +221,14 @@ export async function signUpWithProfile({ email, password, username, fullName, a
   // about the player's own name and leave them permanently stuck. Upserting on `id` makes the
   // retry idempotent, while a genuine collision on someone else's username still raises 23505
   // against the username index and is reported correctly.
-  const { error: profileError } = await supabase.from('profiles').upsert({
+  // Wrapped in retryOnClockSkew() because this is the first authenticated query run against a
+  // session `signUp()` just minted a moment ago — exactly where PGRST303 shows up.
+  const { error: profileError } = await retryOnClockSkew(() => supabase.from('profiles').upsert({
     id: userId,
     username: username.trim(),
     full_name: (fullName || '').trim(),
     avatar: avatar || {},
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (profileError) {
     if (isUniqueViolation(profileError)) return { ok: false, error: ERR.TAKEN };
     return { ok: false, error: mapAuthError(profileError) };
@@ -261,7 +283,10 @@ export async function signInWithIdentifier({ identifier, password }) {
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
+  // `{ scope: 'local' }`: the default is 'global', which revokes the refresh token SERVER-SIDE for
+  // every session on the account. Logging out here is a decision about THIS device; without this,
+  // it would silently end the player's session on every other device signed into the same account.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) return { ok: false, error: mapAuthError(error) };
   return { ok: true };
 }
@@ -274,9 +299,13 @@ export async function fetchAccount() {
   const session = await getSession();
   if (!session) return { ok: false, error: ERR.INVALID_CREDENTIALS };
 
+  // Wrapped in retryOnClockSkew() because this often runs right after signInWithPassword() mints
+  // a brand new session — the same first-query-on-a-fresh-token spot PGRST303 shows up in.
   const [{ data: profile, error: pErr }, { data: stateRow, error: sErr }] = await Promise.all([
-    supabase.from('profiles').select('username, full_name, avatar').eq('id', session.user.id).maybeSingle(),
-    supabase.from('player_state').select('data, updated_at').eq('user_id', session.user.id).maybeSingle(),
+    retryOnClockSkew(() =>
+      supabase.from('profiles').select('username, full_name, avatar').eq('id', session.user.id).maybeSingle()),
+    retryOnClockSkew(() =>
+      supabase.from('player_state').select('data, updated_at').eq('user_id', session.user.id).maybeSingle()),
   ]);
   if (pErr) return { ok: false, error: mapAuthError(pErr) };
   if (sErr) return { ok: false, error: mapAuthError(sErr) };
@@ -459,6 +488,8 @@ export async function deleteAccount() {
   if (!session) return { ok: false, error: ERR.INVALID_CREDENTIALS };
   const { data, error } = await supabase.functions.invoke('delete-account');
   if (error || !data || data.deleted !== true) return { ok: false, error: ERR.UNKNOWN };
-  await supabase.auth.signOut();
+  // Local scope for consistency with every other signOut() in this file; the account is already
+  // gone server-side by this point, so it makes no practical difference here.
+  await supabase.auth.signOut({ scope: 'local' });
   return { ok: true };
 }
