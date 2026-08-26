@@ -56,6 +56,25 @@ export default function ProfileSheet({
   // object wholesale, so data saved before this field existed arrives without it.
   const notif = useNotificationStatus();
   const notifPref = settings.notif || {};
+
+  // Re-read the device half every time the sheet opens.
+  //
+  // This sheet is rendered unconditionally and only HIDDEN by `open`, so it never unmounts and its
+  // copy of the device state is whatever was true when the app started. The opt-in card holds a
+  // separate copy of the same hook, so a player who granted permission through the card left this
+  // one still saying `subscribed: false` — and since the toggle is `enabled && subscribed`, Settings
+  // showed reminders OFF while OneSignal held the tags and the pushes were arriving. The subtitle
+  // was worse than the toggle: it read "enable on this device" about a device that was already
+  // subscribed.
+  //
+  // Refreshing on open is the whole fix rather than a patch over one, because this copy is only
+  // ever LOOKED at while the sheet is open — making it fresh at that moment makes it fresh whenever
+  // it can be seen. The alternative, one shared store behind every caller of the hook, would keep
+  // two copies in step that never need to agree while both are invisible.
+  const notifRefresh = notif.refresh;
+  useEffect(() => {
+    if (open) notifRefresh();
+  }, [open, notifRefresh]);
   const notifHour = typeof notifPref.hour === 'number' ? notifPref.hour : 19;
   // The toggle shows ON only when both halves are true. A green switch on a laptop that holds no
   // subscription would be the app claiming to send something it cannot send.
