@@ -86,7 +86,14 @@ async function drain() {
   while (q.length) await q.shift()(fake);
 }
 
-const state = { ...defaultState(), streak: 4, username: 'ada' };
+// `notif.enabled: true` gives `w` real content to check for, rather than the empty string a
+// default state would publish — the point of this file is whether tags survive, so they need to
+// be non-trivial to prove that.
+const state = {
+  ...defaultState(),
+  username: 'ada',
+  settings: { ...defaultState().settings, notif: { enabled: true, hour: 15 }, lang: 'en' },
+};
 
 console.log('\nnotification identity\n');
 
@@ -105,7 +112,7 @@ console.log('\nnotification identity\n');
   check('tags survive login()', Object.keys(fake.User.getTags()).length > 0,
     'the identified user (' + user.id + ') holds no tags — a campaign filter cannot match it');
   check('the surviving tags are the ones we sent',
-    fake.User.getTags().streak === '4' && fake.User.getTags().reminders !== undefined,
+    fake.User.getTags().w !== '' && fake.User.getTags().c !== undefined,
     JSON.stringify(fake.User.getTags()));
   const lastLogin = calls.lastIndexOf('login:acct-1');
   check('addTags is re-sent AFTER login, not only before',
@@ -169,13 +176,14 @@ console.log('\nnotification identity\n');
 }
 
 // ── 4. A fresh publish after sign-out reaches the new user ────────────────────────────────────
-// Clearing must not leave the device permanently untagged: the logout wipe changes the streak,
-// which is one of the values App.jsx watches, so a publish follows on its own.
+// Clearing must not leave the device permanently untagged: the logout wipe resets
+// streakCreditedForDay, which is one of the values App.jsx watches, so a publish follows on its
+// own.
 {
-  notif.syncTags({ ...defaultState(), streak: 0 });
+  notif.syncTags(defaultState());
   await drain();
   check('syncTags after sign-out publishes to the current user',
-    fake.User.getTags().streak === '0', JSON.stringify(fake.User.getTags()));
+    Object.keys(fake.User.getTags()).sort().join(',') === 'c,w', JSON.stringify(fake.User.getTags()));
 }
 
 // ── 5. Every value still crosses as a string ──────────────────────────────────────────────────

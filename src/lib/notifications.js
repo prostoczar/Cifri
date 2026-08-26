@@ -265,19 +265,10 @@ export function syncTags(state) {
   withOneSignal(async (OneSignal) => {
     try {
       const tags = notificationTags(state);
-      // The timezone is environmental rather than game state, so it is added here rather than in
-      // the pure function. It lets a campaign fall back to local-time delivery if we ever want it.
-      let tz = '';
-      try {
-        tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-      } catch (e) {
-        /* older browser — the ms deadlines already carry local time, so this is only a nicety */
-      }
       // Every value goes over as a string: OneSignal stores tags as strings, and letting it coerce
       // numbers itself is how a comparison silently becomes lexicographic ("9" > "10").
       const out = {};
       for (const k of Object.keys(tags)) out[k] = String(tags[k]);
-      if (tz) out.tz = tz;
       await OneSignal.User.addTags(out);
       lastTagsSent = out;
       lastTagsAt = new Date().toISOString();

@@ -358,34 +358,33 @@ screen learned about safe-area insets. iOS letterboxes in `theme_color` instead.
 
 ### The rule lives in the reducer, not in the sender
 
-`supabase/functions/send-reminders/` never asks whether a streak is about to break. The device
-answers that with the reducer — the only copy of the rule — and publishes the answer as absolute
-timestamps in `src/lib/notificationTags.js`. The function only compares them to `now`.
+`supabase/functions/send-reminders/` never asks whether today has been played. The device answers
+that with the reducer — the only copy of the rule — and publishes the answer as an absolute
+timestamp in `src/lib/notificationTags.js`. The function only compares it to `now`.
 
-A job that decided for itself who was at risk would be a second implementation of the streak rule,
-failing the same quiet way everything else here fails: by telling somebody their streak is safe on
-the evening it dies. `npm run check:notify` drives the real reducer and asserts the two agree at
-every gap length.
+A job that decided for itself who had played would be a second implementation of the rule, failing
+the same quiet way everything else here fails: by telling somebody to play a day they already
+played. `npm run check:notify` drives the real reducer and asserts the tag it publishes means what
+the sender assumes it means.
 
-Timestamps rather than date strings, because a OneSignal segment compares a tag against a **fixed**
-value and "today" is not fixed. Storing when a thing expires turns every question into `now > x`,
-and carries the player's local midnight inside it for free.
+A timestamp rather than a date string, because a OneSignal segment compares a tag against a
+**fixed** value and "today" is not fixed. Storing when a thing expires turns the question into
+`now > x`, and carries the player's local midnight inside it for free.
 
-### The four nudges, and why only one arrives
+### One nudge, and two tags
 
-Ordered by urgency; each filter excludes everything above it, so a player matches exactly one.
+There is exactly one message: play a session today to keep your streak going. It needs two facts,
+carried as two OneSignal tags. Two, not more, because the OneSignal plan this app is on rejects a
+tag write outright once a user holds more tags than the plan allows — a design that once tried to
+express four different nudges across ten tags found that out by having every write silently
+refused.
 
-| Kind | Fires when |
+| Tag | Meaning |
 |---|---|
-| `restore` | a broken streak's 24-hour restore offer is still open |
-| `boost` | an unspent Braining boost expires at midnight |
-| `streak` | a live streak dies tonight and nothing has been played |
-| `daily` | today is unplayed and nothing more urgent applies |
+| `w` | the chosen local hour (converted to UTC) and language, packed into one exact-match string, e.g. `15en`. Empty string when reminders are off — OneSignal deletes a tag set to `""`. |
+| `c` | `credited_until_ms` — `now >= c` means today is not banked yet. |
 
-The exclusions are plain ANDs, because OneSignal cannot express a negated range. That works because
-of one property, asserted by check 9 of the tag script: when today is not banked, a live streak
-always has a future deadline and a dead or absent one always has `0`. So "not at risk" is just
-`streak_deadline_ms < now`.
+The send filter is just `w = "<hour><lang>"` AND `c < now`.
 
 ### Guests get reminders too
 
@@ -395,7 +394,7 @@ signed up, and fixing that would mean mirroring guest progress server-side.
 
 Signing in additionally calls `OneSignal.login(<supabase user id>)` so one person on two devices is
 one recipient; signing out calls `logout()`, without which the next person to use that browser
-would inherit the previous player's streak warnings.
+would inherit the previous player's tags.
 
 No username, no email, no scores go to OneSignal. `check:notify` enforces a tag allowlist.
 

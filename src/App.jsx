@@ -650,10 +650,7 @@ function AppShell() {
     syncTags(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    state.streak,
     state.streakCreditedForDay,
-    state.brBoostDay,
-    state.pendingRestore,
     state.settings,
   ]);
 
