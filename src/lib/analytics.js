@@ -72,7 +72,14 @@ let unavailable = false;
 // name the test hosts instead would be out of date by the next branch. Anything unrecognised —
 // a new preview URL, a LAN address with the app open on a phone — is treated as test data, which
 // is the safe direction to be wrong in.
-const PRODUCTION_HOSTS = ['trycifri.com', 'www.trycifri.com'];
+//
+// cifri.app is the canonical domain as of the 27 August 2026 cutover. trycifri.com now 301s to it
+// and should never serve the app again, but it stays on this list deliberately: a redirect can be
+// mis-configured, a DNS change can take a day to reach everyone, and a real player who arrives on
+// the old host during that window is still a real player. Dropping it would file those sessions
+// as development and hide them behind the filter — the one direction this list must not be wrong
+// in for a host that genuinely serves players.
+const PRODUCTION_HOSTS = ['cifri.app', 'www.cifri.app', 'trycifri.com', 'www.trycifri.com'];
 
 function detectEnvironment() {
   try {
