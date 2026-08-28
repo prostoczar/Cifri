@@ -9,8 +9,8 @@ Practice drills, and a library of mental-maths Tricks, tied together by a shared
 
 | Branch | What it is |
 |---|---|
-| `main` | The original single-file prototype. Serves the live site at trycifri.com. |
-| `react-rewrite` | The React rewrite. This branch. |
+| `main` | The original single-file prototype. Served trycifri.com until the 27 August 2026 cutover; serves nothing now. |
+| `react-rewrite` | The React rewrite. This branch, and the live app at **cifri.app**. |
 
 ## Running it
 
@@ -187,14 +187,20 @@ real people to a dead address on a computer they do not own.
 
 | Setting | Value |
 |---|---|
-| Site URL | `https://cifri-1cju.vercel.app` — the fallback, and the *only* entry to revisit at cutover |
-| Redirect URLs | `http://localhost:5173/**`, `http://192.168.1.25:5173/**`, `http://macbook-air-van-bogdan.local:5173/**`, `https://cifri-1cju.vercel.app/**`, `https://cifri-*.vercel.app/**`, `https://trycifri.com/**`, `https://www.trycifri.com/**` |
+| Site URL | `https://cifri.app` — the canonical domain, and the fallback a stray `redirectTo` lands on |
+| Redirect URLs | `http://localhost:5173/**`, `http://192.168.1.25:5173/**`, `http://macbook-air-van-bogdan.local:5173/**`, `https://cifri-1cju.vercel.app/**`, `https://cifri-*.vercel.app/**`, `https://cifri.app/**` |
 
 `https://cifri-*.vercel.app/**` is there because preview deployments get a fresh hostname every
-time and could never be listed one by one. `trycifri.com` is listed before it serves the rewrite so
-that the cutover is a DNS change and nothing else. A new dev machine — or a new Wi-Fi network, which
+time and could never be listed one by one. A new dev machine — or a new Wi-Fi network, which
 changes the `192.168.*` address — needs its address added here, or resets asked for from it will
 land on the Site URL instead.
+
+The `trycifri.com` entries were removed at the 27 August 2026 cutover rather than kept as a
+transition fallback, and the reasoning is worth recording because it does not generalise: the old
+domain now 301s to `cifri.app`, so the app can no longer RUN at that origin and no new auth request
+can be made from it. The only thing an entry could still serve is a reset email sent before the
+cutover — and every account was deleted that same day, so there were none. On a domain with real
+players, keep the old entries until the outstanding links have expired.
 
 ### Cross-device restore
 
@@ -290,7 +296,7 @@ Every event is tagged from the hostname:
 
 | Host | `environment` |
 |---|---|
-| trycifri.com, www.trycifri.com | `production` |
+| cifri.app, www.cifri.app, trycifri.com, www.trycifri.com | `production` |
 | anything `*.vercel.app` | `staging` |
 | anything else — localhost, a LAN address | `development` |
 
@@ -328,18 +334,27 @@ strings — so changing one in Vercel does nothing until a redeploy, and the red
 the build cache. A missing key fails silently by design, which means the site looks perfectly healthy
 while collecting nothing.
 
-`cifri-1cju.vercel.app` is the rewrite's own Vercel project, and `react-rewrite` is *that project's*
-production branch — every deployment there is labelled "Production" and none of it touches
-trycifri.com, which is a separate project serving `main`.
+`cifri-1cju` is the rewrite's Vercel project and `react-rewrite` is its production branch, so both
+`cifri.app` and `cifri-1cju.vercel.app` are served from the same deployment. The `.vercel.app`
+address is kept ON PURPOSE rather than tidied away: it is the only host that tags itself `staging`,
+which makes it the one place the real app can be exercised without the session landing in the live
+figures.
 
-When trycifri.com is cut over to the rewrite: set both variables on whichever Vercel project serves
-it and deploy without the build cache. Nothing in PostHog needs to change — those events tag
-themselves `production` from the domain, and the existing filter starts counting them.
+The `cifri` project, which served trycifri.com from `main`, was deleted at the cutover once the
+redirect was verified.
 
 ## Push notifications
 
 Reminders are delivered by **OneSignal** (app "Cifri", web platform, origin
-`https://cifri-1cju.vercel.app`). Nothing about them is allowed to touch a game rule.
+`https://cifri.app`). Nothing about them is allowed to touch a game rule.
+
+The origin is not cosmetic. OneSignal validates the page against it, and when the app moved to
+`cifri.app` while this still said `cifri-1cju.vercel.app`, `OneSignal.init()` never settled — which
+stalls the `OneSignalDeferred` queue, so the callbacks behind `requestPermission()` and
+`isSubscribed()` never ran and their promises never resolved. The visible symptoms were a reminders
+toggle that would not switch on and an opt-in card that froze the app on "yes". Neither reported an
+error, because both promises resolve only on the success path. If push ever hangs rather than
+failing, check this setting first.
 
 ### Why the app had to become installable first
 
@@ -446,9 +461,12 @@ carries the cron secret, and a committed migration is the wrong home for the val
 anyone on the internet notifying every subscriber. The dashboard's Cron UI does the same job, but
 only appears once `pg_cron` is enabled — which is why it is easy to go looking for and not find.
 
-**Push subscriptions do not survive a domain change.** They are bound to one origin, so whenever
-the rewrite is cut over to trycifri.com every subscriber re-subscribes from scratch. Costless now,
-expensive later — an argument for cutting over before there are many.
+**Push subscriptions do not survive a domain change.** They are bound to one origin, so the move to
+`cifri.app` on 27 August 2026 invalidated every existing subscription and each device had to
+re-subscribe from scratch. That was free — every subscriber was a test device — and it is the
+argument for having cut over before there were real ones. It also means the installed Home Screen
+app has to be DELETED and re-added after such a move: the old service worker is bound to the old
+origin and a reload will not replace it.
 
 ## The reference prototype
 

@@ -4,13 +4,22 @@ A mobile mental-arithmetic trainer. React + Vite, Supabase for accounts and sync
 
 ## Branches — read this first
 
-**`react-rewrite` is the live branch and the default branch.** All work happens here.
+**`react-rewrite` is the live branch and the default branch.** All work happens here, and it is what
+serves the real app at **cifri.app**.
 
-`main` holds the original single-file prototype and serves the live site at **trycifri.com**.
+`main` holds the original single-file prototype. It served trycifri.com until **27 August 2026**,
+when the cutover happened: cifri.app became the one canonical URL, trycifri.com became a 301 to it,
+and the Vercel project that deployed `main` was deleted. `main` is now history — no domain, no
+deployment, no database (its auth was always faked; it never had a Supabase connection).
 
-**Do not merge the two.** Cutting the live site over to the rewrite is a deliberate decision that
-has not been made yet — it is not a tidying-up job, and it must not happen as a side effect of
-anything else. Do not commit to `main`, do not open a PR into it, and do not touch trycifri.com.
+**Do not merge the two, and do not commit to `main`.** The cutover being done does not make the
+branches mergeable — `main` is kept as the record of what was ported, and the rewrite's history
+should not absorb it. If the prototype is ever needed again, deploy the branch; do not merge it.
+
+The domain rule that replaces "do not touch trycifri.com": **cifri.app is production and has real
+players.** Changing what it serves, or the DNS behind it, is a deliberate decision, not a tidying-up
+job. The GoDaddy zone for cifri.app also carries live Google Workspace email — the MX, SPF, DKIM
+and DMARC records are load-bearing and must never be removed while adjusting web hosting.
 
 ## Before you commit
 
