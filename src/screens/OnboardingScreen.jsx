@@ -34,7 +34,7 @@ export default function OnboardingScreen({ initialUsername, onFinish, onOpenLogi
       <img className="ob-mark" src={markUrl} alt="" width="220" height="220" />
       <div className="ob-wordmark">Cifri</div>
       <div className="ob-tagline">{t('ob_tagline')}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28, maxWidth: 300, textAlign: 'left' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16, maxWidth: 320, textAlign: 'left' }}>
         {FEATURES.map((f) => (
           <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 28, height: 28, background: 'var(--GL2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -61,7 +61,9 @@ export default function OnboardingScreen({ initialUsername, onFinish, onOpenLogi
           reserved are not the same thing, and only one of them was being said out loud. */}
       <div className="ob-disclaimer pair">{t('ob_not_reserved')}</div>
       <div className="ob-disclaimer">{t('ob_disclaimer')}</div>
-      <div className="ob-hint">{t('ob_hint')}</div>
+      {/* No leaderboard line here. It was the one thing on this screen that described something
+          that does not exist yet, and it cost enough vertical space to push "Let's go" off the
+          bottom of a phone screen — a button nobody scrolls to is worse than a promise unmade. */}
       <button
         className="ob-btn"
         disabled={!canSubmit}

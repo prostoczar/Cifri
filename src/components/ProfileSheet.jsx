@@ -279,6 +279,13 @@ export default function ProfileSheet({
             <div className="set-info"><div className="set-lbl">{t('legal_privacy_link')}</div></div>
           </div>
 
+          {/* A plain mailto rather than an in-app form: the player's own mail app already knows who
+              they are and keeps a copy in their Sent folder, and a form would mean a send endpoint
+              to build, spam-guard and keep working offline. Rendered as an anchor, not a button
+              with a JS navigation, because that is what iOS hands to Mail reliably from a Home
+              Screen install. */}
+          <a className="prof-feedback-btn" href="mailto:support@cifri.app">{t('prof_feedback')}</a>
+
           {/* Logging out only makes sense once an account exists. Neither does deleting one: for a
               guest there is no server-side account to delete, so the button led nowhere. Wiping
               local progress is what `set_reset` is for, and that stays available to everyone. */}

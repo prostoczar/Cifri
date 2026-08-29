@@ -644,28 +644,34 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 @keyframes brPopIn{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
 
 /* ── ONBOARDING ───────────────────────────────────────── */
-.ob-screen{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:48px 28px 32px;text-align:center;overflow-y:auto}
+/* Every vertical figure on this screen is tuned to one requirement: "Let's go" has to be on
+   screen the first time a player sees it, WITHOUT scrolling, on a phone in Safari with the
+   address bar showing (~650px of viewport, not the ~810px a desktop window suggests). That is
+   why the padding, the gaps and the mark below are all smaller than they look like they want to
+   be. Measure before loosening any of them: the screen was 833px tall and the button was simply
+   below the fold, which is the same as not having a button. */
+.ob-screen{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 28px 20px;text-align:center;overflow-y:auto}
 .ob-screen.hidden{display:none}
 .ob-logo{font-size:calc(42px * var(--fs-mult));font-weight:900;color:var(--txt);letter-spacing:-1px;margin-bottom:6px}
 .ob-logo span{color:var(--G)}
 /* The app icon's mark, standing on the page rather than on a card — the green badge that used to
    be here was a stand-in from before the icon existed. The file is the Android adaptive
-   foreground, so it carries the safe-zone padding that format requires: at 220px the artwork only
-   occupies the middle ~142×119, leaving a ~50px transparent band above and below. The negative
+   foreground, so it carries the safe-zone padding that format requires: at 136px the artwork only
+   occupies the middle ~88×74, leaving a ~31px transparent band above and below. The negative
    margins crop that band back off so the mark sits at a sane distance from the top of the screen
-   and from the word underneath. They are tied to this asset's proportions — recompute them if the
-   mark is ever redrawn. */
-.ob-mark{display:block;width:220px;height:auto;margin:-30px 0 -38px}
+   and from the word underneath. They are tied to this asset's proportions AND to the width —
+   recompute both if the mark is ever redrawn or resized. It was 220px with -30/-38 until the
+   screen had to fit a phone; the ratios are unchanged, only scaled by 136/220. */
+.ob-mark{display:block;width:136px;height:auto;margin:-19px 0 -23px}
 /* The wordmark is now plain text under the mark: the mark carries the colour, so a green badge
    behind the word as well was two logos stacked. Nunito 900 is the same weight the badge used. */
-.ob-wordmark{font-size:calc(34px * var(--fs-mult));font-weight:900;color:var(--txt);margin-bottom:6px;letter-spacing:.01em}
-.ob-tagline{font-size:calc(13px * var(--fs-mult));color:var(--txt3);font-weight:600;margin-bottom:40px}
+.ob-wordmark{font-size:calc(30px * var(--fs-mult));font-weight:900;line-height:1.1;color:var(--txt);margin-bottom:4px;letter-spacing:.01em}
+.ob-tagline{font-size:calc(13px * var(--fs-mult));color:var(--txt3);font-weight:600;margin-bottom:18px}
 .ob-label{font-size:calc(13px * var(--fs-mult));font-weight:800;color:var(--txt);margin-bottom:8px;text-align:left;width:100%;max-width:320px;letter-spacing:.04em;text-transform:uppercase}
-.ob-input{width:100%;max-width:320px;padding:14px 16px;font-size:calc(16px * var(--fs-mult));font-weight:700;border:none;border-radius:var(--r);background:var(--card);color:var(--txt);outline:none;margin-bottom:10px;text-align:center}
+.ob-input{width:100%;max-width:320px;padding:12px 16px;font-size:calc(16px * var(--fs-mult));font-weight:700;border:none;border-radius:var(--r);background:var(--card);color:var(--txt);outline:none;margin-bottom:8px;text-align:center}
 .ob-input:focus{background:var(--GL2)}
-.ob-hint{font-size:calc(11px * var(--fs-mult));color:var(--txt3);margin-bottom:28px;max-width:280px}
 .ob-btn{width:100%;max-width:320px;padding:15px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(15px * var(--fs-mult));font-weight:800;cursor:pointer}
-.ob-login-btn{width:100%;max-width:300px;padding:13px 20px;background:var(--YL);color:var(--YLT);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 3px 0 #c49030;margin-bottom:22px}
+.ob-login-btn{width:100%;max-width:300px;padding:13px 20px;background:var(--YL);color:var(--YLT);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:800;cursor:pointer;box-shadow:0 3px 0 #c49030;margin-bottom:14px}
 .ob-login-btn:active{transform:translateY(2px);box-shadow:none}
 .ob-btn:active{background:var(--GD)}
 .ob-btn:disabled{background:var(--border2);color:var(--txt3);cursor:not-allowed}
@@ -766,6 +772,11 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .prof-login-btn{width:100%;padding:13px;background:var(--card-grey);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:8px;box-shadow:0 3px 0 var(--border2)}
 .prof-acct-btn:active,.prof-login-btn:active{transform:translateY(2px);box-shadow:none}
 .logout-btn{width:100%;padding:13px;background:var(--card-grey);color:var(--txt2);border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:16px;box-shadow:0 3px 0 var(--border2)}
+/* An anchor wearing a button, so `display:block` and the text centring have to be said out
+   loud — a <button>'s defaults do both for free. Same green and same 3px lift as
+   .prof-acct-btn: this is an invitation, not a warning like the red ones below it. */
+.prof-feedback-btn{display:block;box-sizing:border-box;width:100%;padding:13px;background:var(--G);color:#fff;border:none;border-radius:var(--r);font-size:calc(13px * var(--fs-mult));font-weight:800;text-align:center;text-decoration:none;cursor:pointer;margin-top:16px;box-shadow:0 3px 0 var(--GD)}
+.prof-feedback-btn:active{transform:translateY(2px);box-shadow:none}
 .logout-btn:active{transform:translateY(2px);box-shadow:none}
 .danger-btn:active{background:var(--TCL)}
 
@@ -970,14 +981,14 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .acct-cancel{width:100%;padding:12px;background:none;border:none;color:var(--txt3);font-size:calc(12px * var(--fs-mult));font-weight:700;cursor:pointer;margin-top:8px}
 
 /* ── item 4: onboarding — live availability check + username-retention disclaimer ── */
-.ob-avail{font-size:calc(11px * var(--fs-mult));font-weight:700;margin:-6px 0 8px;min-height:14px;max-width:320px}
+.ob-avail{font-size:calc(11px * var(--fs-mult));font-weight:700;margin:-6px 0 6px;min-height:14px;max-width:320px}
 .ob-avail.ok{color:var(--GDK)}
 .ob-avail.bad{color:var(--TCB)}
 .ob-avail.checking{color:var(--txt3)}
-.ob-disclaimer{font-size:calc(10px * var(--fs-mult));color:var(--txt3);max-width:300px;margin:0 0 16px;line-height:1.4}
+.ob-disclaimer{font-size:calc(10px * var(--fs-mult));color:var(--txt3);max-width:300px;margin:0 0 12px;line-height:1.4}
 /* Two disclaimers that belong together read as one note when they sit close, and as two
    unrelated warnings when they sit apart. The first gets the tighter gap. */
-.ob-disclaimer.pair{margin-bottom:7px}
+.ob-disclaimer.pair{margin-bottom:6px}
 
 /* ══════════════════ CHAT 3.7 ══════════════════ */
 
