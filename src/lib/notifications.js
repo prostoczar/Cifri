@@ -29,6 +29,7 @@
 // queue is what makes pushing early safe, and it is the whole point of it.
 
 import { notificationTags } from './notificationTags.js';
+import { isNative, platformName } from './platform.js';
 
 const APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
 
@@ -58,6 +59,9 @@ export function notificationDiagnostics() {
   return {
     configured,
     initQueued,
+    // Reported so that "no push here" can be told apart from "push is broken here" when reading
+    // this back off a real device, which is the entire purpose of these diagnostics.
+    platform: platformName(),
     sdkPresent: typeof window !== 'undefined' && !!window.OneSignal,
     capability: pushCapability(),
     installed: isInstalled(),
@@ -116,6 +120,9 @@ function withOneSignal(fn) {
  */
 function ensureInit() {
   if (!configured) return false;
+  // See THE NATIVE GATE below. Returning before the SDK is even requested, so a native build
+  // cannot reach the live OneSignal app at all.
+  if (isNative()) return false;
   if (initQueued) return true;
   initQueued = true;
 
@@ -160,6 +167,30 @@ export function initNotifications() {
 export function pushCapability() {
   try {
     if (!configured) return 'unsupported';
+
+    // ── THE NATIVE GATE ───────────────────────────────────────────────────────────────────────
+    //
+    // This module is the OneSignal WEB SDK, and web push does not exist inside a native wrapper.
+    // On iOS the webview has no service worker at all under a custom scheme; on Android the
+    // webview has no browser push service behind PushManager. Native push is a different
+    // transport entirely — APNs and FCM, reached through OneSignal's native SDK — and wiring it
+    // up needs a paid Apple Developer account before an APNs key can even be created.
+    //
+    // Reporting 'unsupported' rather than adding a fourth capability state is deliberate: every
+    // caller already handles it correctly today. App.jsx suppresses the permission card, and
+    // ProfileSheet hides the reminders row instead of showing a toggle that could never come on.
+    // A new state would mean new branches and new copy in two languages to describe a situation
+    // the player can do nothing about anyway.
+    //
+    // The gate is also what protects the WEB setup, which is the part that currently works and
+    // has real subscribers. Ungated, a native build would load the web SDK against the live
+    // OneSignal app and register subscribers that can never be delivered to — polluting the
+    // audience the hourly reminder job sends to. Silence on native is the safe direction; a
+    // half-registered subscriber is not.
+    //
+    // isNative() is false in every browser, so nothing on cifri.app can reach this line.
+    if (isNative()) return 'unsupported';
+
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       // iPadOS reports itself as MacIntel, so the touch-point count is what tells a real Mac from
       // an iPad pretending to be one. Without it every iPad user would be told push is impossible.

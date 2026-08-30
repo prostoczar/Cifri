@@ -468,6 +468,107 @@ argument for having cut over before there were real ones. It also means the inst
 app has to be DELETED and re-added after such a move: the old service worker is bound to the old
 origin and a reload will not replace it.
 
+## The native wrappers (iOS and Android)
+
+The same web app, wrapped by [Capacitor](https://capacitorjs.com) so it can be installed from the
+App Store and Play Store. There is no second codebase and no second copy of any game rule: the
+wrapper serves the ordinary `dist/` build inside a system webview, so `cifri.app` and the installed
+app run identical JavaScript.
+
+| | |
+|---|---|
+| App identifier | `app.cifri` — the reverse of the domain, and **permanent once published** |
+| Display name | `Cifri` |
+| Committed | `ios/` and `android/` project folders, `capacitor.config.json` |
+| Not committed | each project's copy of `dist/`, build output, `android/local.properties` |
+
+The project folders are committed on purpose. They hold the bundle identifier, display name,
+permissions and icons — real configuration that `npx cap add` would regenerate with defaults if it
+were ever lost, silently changing the identity of a published app.
+
+### Building and running
+
+```
+npm run native:sync       # build the web app and copy it into both projects
+npm run native:ios        # ...and open Xcode
+npm run native:android    # ...and open Android Studio
+```
+
+`cap sync` copies `dist/`, so **a native build only ever shows the last `npm run build`.** A change
+that appears on the dev server but not in the simulator is almost always a missed sync.
+
+Android needs **JDK 21**, and this is the one piece of the toolchain that is not obvious. Android
+Studio bundles JDK 25, which Gradle 8.14.3 — the version Capacitor's Android template pins — rejects
+outright with `Unsupported class file major version 69`. Point Gradle at 21 instead:
+
+```
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+```
+
+iOS needs Xcode and nothing else. Capacitor 8 uses Swift Package Manager rather than CocoaPods, so
+`pod` is not required despite most guides still saying it is.
+
+### What the wrapper changes, and why
+
+Four things behave differently inside a webview than in a browser tab. All four are decided by
+`lib/platform.js`, which exists so that one test answers the question for every caller rather than
+three files each inventing their own.
+
+**Push notifications do not work, deliberately.** `lib/notifications.js` is the OneSignal *web*
+SDK, and web push has no native equivalent: iOS webviews have no service worker under a custom
+scheme, and Android webviews have no browser push service. So `pushCapability()` returns
+`'unsupported'` on native and the SDK is never even requested. The reminders row disappears from
+Settings, which is the behaviour that state already produced. Native push is a genuinely different
+transport — APNs and FCM through OneSignal's *native* SDK — and it needs a paid Apple Developer
+account before an APNs key can be created at all. **This gate is also what protects the web setup:**
+ungated, a native build would register subscribers against the live OneSignal app that could never
+be delivered to, polluting the audience the hourly reminder job sends to.
+
+**The service worker never registers.** Nothing in `src/` calls `navigator.serviceWorker.register()`
+— the only service worker is the one OneSignal registers for itself. Gating OneSignal off on native
+therefore removes the worker too, and the PWA manifest in `index.html` is simply inert inside a
+wrapper that is already installed. There is no conflict to resolve.
+
+**The app's address has to be stated rather than derived.** `lib/appUrl.js` returns
+`window.location.origin`, which is correct in a browser because the player is looking at that
+address. In the wrapper the origin is `capacitor://localhost`, which resolves to nothing and can be
+opened by nobody. Left alone it would print `localhost` across the footer of every shared card and
+hand Supabase an unopenable `redirectTo`. So on native — and only on native — `CANONICAL_APP_URL`
+from `lib/platform.js` is used instead.
+
+Auth emails therefore open **cifri.app in the phone's browser**, not the app. Login and signup are
+unaffected (they are plain API calls, and are proven working in the wrapper), but a password reset
+finishes on the website and the player returns to the app to sign in. Bringing that link back into
+the app needs deep linking — a custom URL scheme, a Supabase Redirect URLs entry, and Apple/Google
+domain-association files — and is not done.
+
+**Analytics would otherwise be discarded.** A native build's `window.location.hostname` is
+`localhost` on both platforms, so `detectEnvironment()` in `lib/analytics.js` would file every real
+player under `development` — precisely the bucket PostHog's internal-users filter throws away. The
+app would ship and the dashboard would stay empty. Native builds are now detected explicitly, but
+only when serving their own bundled assets: a live-reload build pointed at a laptop's Vite server
+still reports `development`. Events also carry a `platform` property (`ios` / `android` / `web`),
+because once native and browser players are both marked production, nothing else tells them apart.
+
+### Status bar and keyboard
+
+`lib/nativeShell.js` tells the status bar not to overlay the webview. Without it the header renders
+under the Dynamic Island and the Cifri logo is sliced in half. The alternative — adding
+`viewport-fit=cover` and safe-area padding — was rejected because `index.html` explains why that
+was already declined for the web: the header and bottom nav are both `position: fixed`, and both
+would slide under the system UI until every screen learned about insets. Confining the fix to the
+native shell leaves the browser build byte-for-byte unchanged. It also hides the iOS keyboard
+accessory bar, which offered field-stepping arrows over a number pad that has no fields.
+
+### Still to do before either store
+
+- **Signing.** Neither project is signed. iOS needs an Apple Developer account, a distribution
+  certificate and a provisioning profile; Android needs a release keystore, which must be backed up
+  because losing it means never updating the listing again.
+- **Icons and splash screens.** Both projects ship Capacitor's placeholder assets.
+- **Native push**, per above.
+- **Deep-linked auth returns**, per above.
+
 ## The reference prototype
 
 `reference/original-prototype.html` is the complete, tested prototype the rewrite was ported

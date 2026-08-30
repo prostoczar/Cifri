@@ -32,6 +32,8 @@
 // points posthog ships (dist/module.slim.js et al) were measured and rejected — see the note
 // above `loadPosthog` for the numbers.
 
+import { isBundledNativeBuild, platformName } from './platform.js';
+
 const KEY = import.meta.env.VITE_POSTHOG_KEY;
 const HOST = import.meta.env.VITE_POSTHOG_HOST;
 
@@ -81,8 +83,21 @@ let unavailable = false;
 // in for a host that genuinely serves players.
 const PRODUCTION_HOSTS = ['cifri.app', 'www.cifri.app', 'trycifri.com', 'www.trycifri.com'];
 
+// The native wrapper is the one case the hostname CANNOT answer, and it has to be tested first.
+// Inside the wrapper the app is served from the shell's own origin — capacitor://localhost on iOS,
+// https://localhost on Android — so `hostname` is the string "localhost" on a phone belonging to a
+// real player who installed the app from a store. Left to the rules below that reads as
+// development, and every native session would land in exactly the bucket the internal-users filter
+// throws away: the app would ship and the dashboard would stay empty.
+//
+// This does not weaken the allowlist rule above, because it is not a fallback either. It is a
+// positive test for a shipped wrapper serving its own bundled assets. A live-reload build — the
+// same native app pointed at a laptop's Vite server via `server.url` — fails that test and falls
+// through to the hostname rules like any other development session, which is why the check is
+// isBundledNativeBuild() rather than a bare isNative().
 function detectEnvironment() {
   try {
+    if (isBundledNativeBuild()) return 'production';
     const host = window.location.hostname;
     if (PRODUCTION_HOSTS.indexOf(host) !== -1) return 'production';
     if (/\.vercel\.app$/.test(host)) return 'staging';
@@ -94,6 +109,13 @@ function detectEnvironment() {
 }
 
 const ENVIRONMENT = detectEnvironment();
+
+// 'ios' | 'android' | 'web'. Separate from ENVIRONMENT because the two answer different questions
+// and collapsing them would lose one: environment says whether these numbers are real, platform
+// says whose numbers they are. Without it a native player is indistinguishable from a browser
+// player once both are marked production, and "is the wrapper worth maintaining" becomes an
+// unanswerable question about data that was collected but never labelled.
+const PLATFORM = platformName();
 
 // ── Keeping auth tokens out of the URL properties ──────────────────────────────
 //
@@ -303,7 +325,15 @@ function initPosthog(ph) {
           // leak, so it goes where nothing can be captured ahead of it. Deferring init does not
           // change that ordering: setPlayerContext() is buffered and replays after init, so the
           // $pageview still lands strictly before the first register().
-          if (event.properties) event.properties.environment = ENVIRONMENT;
+          if (event.properties) {
+            event.properties.environment = ENVIRONMENT;
+            // Stamped here for the same reason as `environment`, not merely alongside it: the
+            // initial $pageview is raised inside init, so anything registered as a super property
+            // would be missing from the one event every session is guaranteed to produce — and a
+            // platform tag absent from the first event of every session is worse than no tag,
+            // because it looks like data rather than a gap.
+            event.properties.platform = PLATFORM;
+          }
         } catch (e) {
           // A property bag that cannot be scrubbed is a property bag that cannot be shown to be
           // safe, so it does not get sent. Dropping one event costs a data point; sending an

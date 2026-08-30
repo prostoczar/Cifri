@@ -7,3 +7,33 @@ dist-ssr/
 .env.*.local
 *.log
 .vercel
+
+# ── Native wrappers (Capacitor) ───────────────────────────────────────────────
+# The ios/ and android/ PROJECTS are committed deliberately — they hold real
+# configuration (bundle id, display name, permissions, icons) that would be lost
+# and silently regenerated with defaults if they were ignored. Only the machine-
+# generated build output below is excluded.
+#
+# The exception is each project's copy of the web build: `npx cap sync` copies
+# dist/ into them, so committing it would put a second, staler copy of the whole
+# app in the repository — and dist/ itself is already ignored above.
+ios/App/App/public/
+android/app/src/main/assets/public/
+
+# Local machine paths — points at THIS Mac's SDK, wrong on every other machine.
+android/local.properties
+
+# Build output and caches.
+ios/App/build/
+ios/App/Pods/
+ios/App/output/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+ios/DerivedData/
+android/build/
+android/app/build/
+android/.gradle/
+android/captures/
+android/.idea/
+*.apk
+*.aab

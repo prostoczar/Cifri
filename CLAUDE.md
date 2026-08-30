@@ -170,6 +170,38 @@ of alignment with the source, which costs more than the tidiness is worth.
 **Achievement keys are permanent.** They are in players' saved data and on the server. Renaming one
 strands whoever earned it.
 
+## The native wrappers
+
+`ios/` and `android/` are Capacitor wrappers around the SAME `dist/` build — no second codebase, no
+second copy of any rule. App id `app.cifri`, display name `Cifri`, both **permanent once published**.
+
+**A native build shows the last `npm run build`, not your working tree.** `npx cap sync` copies
+`dist/` into both projects. A change that works on the dev server but not in the simulator is
+almost always a missed sync — run `npm run native:sync`.
+
+**Android needs JDK 21, not the one Android Studio ships.** Studio bundles JDK 25 and Gradle 8.14.3
+rejects it outright (`Unsupported class file major version 69`). Export
+`JAVA_HOME=/opt/homebrew/opt/openjdk@21` before any Gradle command. iOS needs only Xcode —
+Capacitor 8 uses Swift Package Manager, so CocoaPods is not required despite most guides saying so.
+
+**`src/lib/platform.js` is the one place that decides "are we native".** Four behaviours hang off
+it — push, the app's printed address, analytics environment, and the status bar — and a second copy
+of that test could only ever disagree with the first. It reads the injected `window.Capacitor`
+global rather than importing `@capacitor/core`, so the WEB bundle does not grow by ~15 kB to be
+told it is not native, and so the check scripts (which have no window at all) keep working.
+
+**Never un-gate OneSignal on native.** `notifications.js` is the WEB SDK and web push cannot work in
+a webview. The gate is not only about the native app being quiet — ungated, a native build would
+register undeliverable subscribers against the LIVE OneSignal app and pollute the audience the
+hourly reminder job sends to. Native push means the native SDK, APNs/FCM, and a paid Apple
+Developer account; it is a separate piece of work.
+
+**Native analytics are production only when serving bundled assets.** A wrapper's hostname is
+`localhost`, so the plain hostname rules would file every real player as `development` and PostHog's
+internal-users filter would discard them all. `isBundledNativeBuild()` is a positive test, not a
+fallback — a live-reload build pointed at a dev server stays `development`, which is the safe
+direction.
+
 ## House style
 
 Comments explain **why**, not what — including why an alternative was rejected. Much of this code

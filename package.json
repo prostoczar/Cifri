@@ -27,9 +27,18 @@
     "check:parity": "node scripts/check-parity.mjs",
     "check:anticheat": "node scripts/check-anticheat.mjs",
     "probe:anticheat": "node scripts/probe-anticheat.mjs",
-    "check:achievements-verified": "node scripts/check-achievements-verified.mjs"
+    "check:achievements-verified": "node scripts/check-achievements-verified.mjs",
+    "native:sync": "npm run build && cap sync",
+    "native:ios": "npm run build && cap sync ios && cap open ios",
+    "native:android": "npm run build && cap sync android && cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/status-bar": "^8.0.3",
     "@supabase/supabase-js": "^2.110.8",
     "posthog-js": "^1.415.4",
     "react": "^19.2.7",
