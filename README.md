@@ -218,6 +218,78 @@ what the device last confirmed the server to be holding:
 Written only after a confirmed upload or straight after a download, never optimistically, and
 dropped on sign-out. A genuine conflict — offline play on two devices at once — is last-writer-wins.
 
+### OPEN BUG — a signed-in device silently reset itself to a fresh install
+
+**Status: open, unreproduced, not fixed. Severity: data loss.** Observed once, on 1 September 2026,
+during the Capacitor session. It is written up at this length because it was seen exactly once and
+the evidence will not survive in anyone's memory.
+
+**This is not a native bug.** It was found on iOS, but nothing about the mechanism is specific to a
+webview — it lives in session handling and the day boundary, both of which are shared verbatim with
+the browser. **Assume web players are exposed until proven otherwise.** Filing it under the
+wrappers would bury the most important thing about it.
+
+**What was seen.** A device signed in as a real account, holding a played Challenge run, was
+killed and relaunched. It came back as a FIRST-RUN INSTALL: the onboarding screen, and
+`cifri_react_v1` rewritten to defaults — `username: ''`, `acctCreated: false`, `_loggedOut: true`,
+every `db` best back to `0`. The Supabase token `sb-<ref>-auth-token` was gone from `localStorage`
+entirely. So the app did not merely fail to restore a session; it took the logged-out branch and
+ran the wipe, writing the cleared state back to disk.
+
+Nothing was lost in that instance only because the scores had already reached the server, and a
+second device still held them. A player with one phone would have lost everything not yet synced,
+and would have been shown a brand-new app.
+
+**What is NOT the cause.** A later attempt to reproduce it — sign in, kill, relaunch — SURVIVED
+intact: token present, `username: 'Cifri'`, both bests correct. A plain restart is therefore fine,
+and `localStorage` persistence in the webview is not the problem. The wipe writes proved the
+storage works.
+
+**The two confounds.** Between the sign-in and the restart that wiped, exactly two unusual things
+happened, and the successful reproduction had neither:
+
+1. **Midnight passed.** The session was created at ~23:45 and the restart was at ~00:05.
+2. **A second device signed into the same account** and recorded a run against it.
+
+One observation cannot separate them, and they may both be required.
+
+**Why the second one is the prime suspect.** This is the third bug in this project with a second
+device in it, and the family resemblance is close enough to be worth stating plainly:
+
+- The **account-creation wipe** — a signup probing an existing email signed in on the real client,
+  which fired `SIGNED_IN`, which made the store adopt the server's copy over guest progress the
+  player was mid-way through saving. The fix is the separate probe client in `lib/supabaseClient.js`.
+- The **two-device race** that `lib/syncBaseline.js` exists to arbitrate, where "server differs from
+  local" was indistinguishable from "this device has unsynced play".
+
+Both had the same shape: **a routine, unattended write made a second actor's state look
+authoritative, and something local was discarded to match it.** That is what appears to have
+happened again.
+
+There is a third, even closer precedent, and it has ALREADY BEEN RULED OUT — recorded here so
+nobody spends an afternoon rediscovering it. Commit `2e03e02` fixed `signOut()` defaulting to
+Supabase's GLOBAL scope, which revoked the refresh token for every session on the account, so
+logging out on one device silently signed the player out everywhere. That is this bug's symptom
+almost exactly. It is not the cause: all five `supabase.auth.signOut()` call sites now pass
+`{ scope: 'local' }` and no Edge Function revokes anything. What it does establish is that
+"one device's action destroys another device's session" is a failure mode this codebase has
+produced before — and, since no local sign-out can now revoke a remote token, that the missing
+token arrived some OTHER way: a refresh that failed and was not retried, or the app clearing its
+own storage. Those two are worth separating first, because they need different fixes.
+
+**Where to start looking.** The **automatic midnight streak check** is the first hypothesis. The
+interval in `App.jsx` (~line 244) watches `dayKey()` and, the moment the day turns, dispatches
+`CHECK_STREAK_BREAK` and `AMBIENT_ACHIEVEMENTS_CHECK` with nobody touching the screen. That is
+precisely the ingredient the earlier race had — an unattended background write — now firing at the
+exact moment the observed failure occurred. Worth checking what it writes when the day rolls over
+while a second device is concurrently syncing the same account, and whether a baseline or a session
+can be invalidated by that interleaving.
+
+**How to reproduce.** Do not wait for a real midnight. Use the day-shifting technique: shift the
+stored day fields back, leave a second device signed into the same account, let the interval fire,
+then restart. `check:sync-conflict` and `check:signout` are the scripts closest to this ground, and
+neither currently covers "the day turns while another device is writing".
+
 ## Analytics
 
 PostHog, added because the pre-account period cannot be recovered once it is missed: most people

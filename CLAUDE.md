@@ -140,6 +140,19 @@ imports them. Keep it that way: a rule that can be driven headlessly is a rule t
 **`localStorage` is primary, the server is a mirror.** The app must work offline. Never make a
 game rule depend on a network call having succeeded.
 
+**There is an OPEN DATA-LOSS BUG: a signed-in device reset itself to a fresh install.** Seen once,
+1 September 2026 — the app relaunched into onboarding with `cifri_react_v1` wiped to defaults and
+the Supabase token gone, so the logged-out branch ran and the cleared state was written back. It
+was found on iOS but is **not** a native bug: it lives in session handling and the day boundary,
+both shared with the web, so treat browser players as exposed. The two confounds were a midnight
+rollover and a second device signing into the same account; a plain restart alone does NOT
+reproduce it. This is the third bug here with a second device in it — see the account-creation wipe
+(`lib/supabaseClient.js`) and the baseline race (`lib/syncBaseline.js`) — and all three share the
+shape "an unattended write made another actor look authoritative and something local was
+discarded". Start at the midnight interval in `App.jsx` (~line 244), which fires
+`CHECK_STREAK_BREAK` unattended at exactly the moment of the failure. Full write-up, including how
+to reproduce without waiting for midnight, is in the README under "Cross-device restore".
+
 **`SYNCED_KEYS` in `src/lib/syncedState.js` is the sync boundary.** New state that should follow a
 player between devices must be added there, or nested inside something already listed (the
 achievement counters live inside `milestones` for exactly this reason). State added outside it
