@@ -218,77 +218,57 @@ what the device last confirmed the server to be holding:
 Written only after a confirmed upload or straight after a download, never optimistically, and
 dropped on sign-out. A genuine conflict — offline play on two devices at once — is last-writer-wins.
 
-### OPEN BUG — a signed-in device silently reset itself to a fresh install
+### RESOLVED — the device that "reset itself" had been signed out
 
-**Status: open, unreproduced, not fixed. Severity: data loss.** Observed once, on 1 September 2026,
-during the Capacitor session. It is written up at this length because it was seen exactly once and
-the evidence will not survive in anyone's memory.
+**Status: closed, 2 September 2026. Not a bug.** Kept rather than deleted, because the investigation
+cost a day and the wrong conclusion is the kind that gets rediscovered.
 
-**This is not a native bug.** It was found on iOS, but nothing about the mechanism is specific to a
-webview — it lives in session handling and the day boundary, both of which are shared verbatim with
-the browser. **Assume web players are exposed until proven otherwise.** Filing it under the
-wrappers would bury the most important thing about it.
+**What was reported.** On 1 September 2026, during the Capacitor session, a device believed to be
+signed in was killed and relaunched at ~00:05 and came back as a FIRST-RUN INSTALL: the onboarding
+screen, `cifri_react_v1` rewritten to defaults with `_loggedOut: true`, and `sb-<ref>-auth-token`
+gone from `localStorage`. Two confounds sat alongside it — midnight had just passed, and a second
+device was signed into the same account — and the write-up treated the second-device angle as the
+prime suspect, this being the third bug here with a second device in it.
 
-**What was seen.** A device signed in as a real account, holding a played Challenge run, was
-killed and relaunched. It came back as a FIRST-RUN INSTALL: the onboarding screen, and
-`cifri_react_v1` rewritten to defaults — `username: ''`, `acctCreated: false`, `_loggedOut: true`,
-every `db` best back to `0`. The Supabase token `sb-<ref>-auth-token` was gone from `localStorage`
-entirely. So the app did not merely fail to restore a session; it took the logged-out branch and
-ran the wipe, writing the cleared state back to disk.
+**What it actually was.** The device had been signed out by hand, with the wipe confirmed, and the
+sign-in that was remembered as happening on it happened on a DIFFERENT device. Relaunching into
+onboarding was the sign-out working exactly as designed. Three devices were in play that evening,
+not two, which is what made the sequence so easy to misremember.
 
-Nothing was lost in that instance only because the scores had already reached the server, and a
-second device still held them. A player with one phone would have lost everything not yet synced,
-and would have been shown a brand-new app.
+**What settled it, in the order it was worth doing:**
 
-**What is NOT the cause.** A later attempt to reproduce it — sign in, kill, relaunch — SURVIVED
-intact: token present, `username: 'Cifri'`, both bests correct. A plain restart is therefore fine,
-and `localStorage` persistence in the webview is not the problem. The wipe writes proved the
-storage works.
+1. **The blob has a fingerprint.** `_loggedOut: true` is written in exactly one place —
+   `ACCOUNT_SIGNED_OUT`, reachable only from the logout button and only wiping once
+   `confirmProgressSaved()` has returned true. Swept mechanically: of the reducer's 32 actions,
+   under every payload shape, nothing else sets it. No unattended path — not the midnight
+   `CHECK_STREAK_BREAK`, not `adopt()`, not the conflict reconciler, not the `SIGNED_OUT` auth
+   event — can produce that state. `_loggedOut` is not a synced key either, so no server payload
+   and no second device can set it remotely.
+2. **The storage held up.** The simulator container was still on disk, and WebKit had written to it
+   at 00:02:09 and 00:05:44 — the incident window. Replaying the storage question on that same
+   device: a state change reached the SQLite store **within a second**, and a foreground `SIGKILL`
+   lost nothing. Quota was never close either — the whole origin held ~12 KB against WebKit's ~5 MB,
+   and the app's worst case (two years of play plus a full attempt outbox) is ~1 MB. The device also
+   wrote a signed-in state and a 2 KB token successfully at 12:03 the same day.
+3. **PostHog gave the order.** Two `logged_out` events (23:47:48 and 00:02:04) and a `logged_in`
+   (00:02:29) — all three on **different `$device_id`s**. The failing device was one of the two that
+   logged out; the login belonged to a third device.
 
-**The two confounds.** Between the sign-in and the restart that wiped, exactly two unusual things
-happened, and the successful reproduction had neither:
+**The trap worth remembering: PostHog's Person ID is the ACCOUNT, not the device.** `identifyPlayer()`
+identifies people by Supabase user id, so every device signed into one account collapses into a
+single Person. A shared Person ID looks like evidence that two events came from one device and is
+nothing of the sort. `$device_id` is the field that separates them, and this investigation nearly
+closed on the wrong answer twice for want of it.
 
-1. **Midnight passed.** The session was created at ~23:45 and the restart was at ~00:05.
-2. **A second device signed into the same account** and recorded a run against it.
+**What came out of it.** Two real weaknesses, found while ruling the bug out, both now fixed and
+guarded by `npm run check:storage`:
 
-One observation cannot separate them, and they may both be required.
-
-**Why the second one is the prime suspect.** This is the third bug in this project with a second
-device in it, and the family resemblance is close enough to be worth stating plainly:
-
-- The **account-creation wipe** — a signup probing an existing email signed in on the real client,
-  which fired `SIGNED_IN`, which made the store adopt the server's copy over guest progress the
-  player was mid-way through saving. The fix is the separate probe client in `lib/supabaseClient.js`.
-- The **two-device race** that `lib/syncBaseline.js` exists to arbitrate, where "server differs from
-  local" was indistinguishable from "this device has unsynced play".
-
-Both had the same shape: **a routine, unattended write made a second actor's state look
-authoritative, and something local was discarded to match it.** That is what appears to have
-happened again.
-
-There is a third, even closer precedent, and it has ALREADY BEEN RULED OUT — recorded here so
-nobody spends an afternoon rediscovering it. Commit `2e03e02` fixed `signOut()` defaulting to
-Supabase's GLOBAL scope, which revoked the refresh token for every session on the account, so
-logging out on one device silently signed the player out everywhere. That is this bug's symptom
-almost exactly. It is not the cause: all five `supabase.auth.signOut()` call sites now pass
-`{ scope: 'local' }` and no Edge Function revokes anything. What it does establish is that
-"one device's action destroys another device's session" is a failure mode this codebase has
-produced before — and, since no local sign-out can now revoke a remote token, that the missing
-token arrived some OTHER way: a refresh that failed and was not retried, or the app clearing its
-own storage. Those two are worth separating first, because they need different fixes.
-
-**Where to start looking.** The **automatic midnight streak check** is the first hypothesis. The
-interval in `App.jsx` (~line 244) watches `dayKey()` and, the moment the day turns, dispatches
-`CHECK_STREAK_BREAK` and `AMBIENT_ACHIEVEMENTS_CHECK` with nobody touching the screen. That is
-precisely the ingredient the earlier race had — an unattended background write — now firing at the
-exact moment the observed failure occurred. Worth checking what it writes when the day rolls over
-while a second device is concurrently syncing the same account, and whether a baseline or a session
-can be invalidated by that interleaving.
-
-**How to reproduce.** Do not wait for a real midnight. Use the day-shifting technique: shift the
-stored day fields back, leave a second device signed into the same account, let the interval fire,
-then restart. `check:sync-conflict` and `check:signout` are the scripts closest to this ground, and
-neither currently covers "the day turns while another device is writing".
+- The persist write swallowed every error behind a bare `catch { /* ignore quota */ }`. In an app
+  where `localStorage` is the PRIMARY store, a failed write is data loss in progress; it now reports
+  (`writeStateToStorage()`), tells the player, and records a `storage_write_failed` event.
+- `ACCOUNT_LOADED` would apply a server payload holding no progress over a device that had some,
+  emptying it. "The server's copy wins" is right whenever the server HAS a copy and never when it
+  does not. Removing that guard erases all five kinds of progress against a blank row.
 
 ## Analytics
 

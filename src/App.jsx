@@ -59,7 +59,7 @@ import BrainingGameScreen from './screens/BrainingGameScreen.jsx';
 import BrainingResultScreen from './screens/BrainingResultScreen.jsx';
 
 function AppShell() {
-  const { state, dispatch, beginSync, confirmProgressSaved } = useAppState();
+  const { state, dispatch, beginSync, confirmProgressSaved, saveFailed } = useAppState();
   const { t, lang } = useI18n();
   const soundOn = state.settings.sound;
 
@@ -123,6 +123,10 @@ function AppShell() {
   const [loginOpen, setLoginOpen] = useState(false);
   // Set when a sign-out could not confirm the upload, so the device was left as it was.
   const [logoutKeptData, setLogoutKeptData] = useState(false);
+  // Dismissing the storage-failure notice hides it for this sitting only. It is not stored —
+  // storing "already warned" on a device that cannot store anything is a contradiction, and the
+  // warning is worth repeating next launch if the device still cannot save.
+  const [saveFailedDismissed, setSaveFailedDismissed] = useState(false);
   // Opened by a password-reset email. Seeded synchronously from the URL because supabase-js
   // strips the token as it starts up; the PASSWORD_RECOVERY listener below is the second route
   // in, for the auth flow where the token is not visible in the address bar at all.
@@ -1599,6 +1603,12 @@ function AppShell() {
         title={t('logout_kept_title')} desc={t('logout_kept_desc')} confirmLabel={t('logout_kept_ok')}
         onCancel={() => setLogoutKeptData(false)}
         onConfirm={() => setLogoutKeptData(false)}
+      />
+      <ConfirmModal
+        open={saveFailed && !saveFailedDismissed} notice topmost
+        title={t('save_failed_title')} desc={t('save_failed_desc')} confirmLabel={t('save_failed_ok')}
+        onCancel={() => setSaveFailedDismissed(true)}
+        onConfirm={() => setSaveFailedDismissed(true)}
       />
       <ConfirmModal
         open={confirm === 'reset'} danger

@@ -48,6 +48,7 @@ logic rather than a copy of it.
 | `check:triggers` | an achievement wired to the wrong number, or firing on a near-miss |
 | `check:achievements-verified` | an achievement the Braining boost could buy, or one that needs the network |
 | `check:invariant` | the three places a day's score is computed disagreeing |
+| `check:storage` | a failed save passing for a successful one, or a blank account row emptying a device |
 | `check:notify` | a reminder addressed to the wrong player, or carrying something it should not |
 | `check:notify-identity` | tags stranded on an abandoned OneSignal user by a sign-in or sign-out |
 | `check:i18n` | user-facing text that never reached the translation table, and key parity |
@@ -140,18 +141,23 @@ imports them. Keep it that way: a rule that can be driven headlessly is a rule t
 **`localStorage` is primary, the server is a mirror.** The app must work offline. Never make a
 game rule depend on a network call having succeeded.
 
-**There is an OPEN DATA-LOSS BUG: a signed-in device reset itself to a fresh install.** Seen once,
-1 September 2026 — the app relaunched into onboarding with `cifri_react_v1` wiped to defaults and
-the Supabase token gone, so the logged-out branch ran and the cleared state was written back. It
-was found on iOS but is **not** a native bug: it lives in session handling and the day boundary,
-both shared with the web, so treat browser players as exposed. The two confounds were a midnight
-rollover and a second device signing into the same account; a plain restart alone does NOT
-reproduce it. This is the third bug here with a second device in it — see the account-creation wipe
-(`lib/supabaseClient.js`) and the baseline race (`lib/syncBaseline.js`) — and all three share the
-shape "an unattended write made another actor look authoritative and something local was
-discarded". Start at the midnight interval in `App.jsx` (~line 244), which fires
-`CHECK_STREAK_BREAK` unattended at exactly the moment of the failure. Full write-up, including how
-to reproduce without waiting for midnight, is in the README under "Cross-device restore".
+**A wipe of local progress has exactly one cause, and it is the logout button.** `_loggedOut: true`
+is set only by `ACCOUNT_SIGNED_OUT`, which only `handleLogout()` dispatches and which only wipes
+once `confirmProgressSaved()` has proved the server holds everything. Nothing unattended can reach
+it, and `_loggedOut` is not synced, so no server payload or second device can set it remotely. This
+is worth knowing because a device found sitting on the onboarding screen looks exactly like a
+spontaneous reset and is almost always a sign-out — see the RESOLVED write-up in the README under
+"Cross-device restore", which cost a day to reach that conclusion.
+
+**When investigating anything across devices, PostHog's Person ID is the ACCOUNT, not the device.**
+`identifyPlayer()` identifies people by Supabase user id, so every device on one account becomes a
+single Person. Compare **`$device_id`**; a shared Person ID proves nothing about which phone did
+what, and reading it as "same device" points an investigation at the wrong mechanism entirely.
+
+**A failed `localStorage` write is data loss, so it is never swallowed.** `writeStateToStorage()`
+in `AppStateContext.jsx` reports its failures rather than catching them silently; the provider warns
+once, shows the player a notice, and fires `storage_write_failed`. Keep it that way — a quiet catch
+here means the app carries on showing progress that is being recorded nowhere.
 
 **`SYNCED_KEYS` in `src/lib/syncedState.js` is the sync boundary.** New state that should follow a
 player between devices must be added there, or nested inside something already listed (the

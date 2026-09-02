@@ -8,7 +8,7 @@ import { hasUnsyncedProgress, sameSyncPayload, signOutResetKeys, toSyncPayload }
 import { projectDailyRows } from '../lib/dailyResults.js';
 import { clearBaseline, fingerprint, readBaseline, writeBaseline } from '../lib/syncBaseline.js';
 import { flushOutbox, setLogOwner } from '../lib/attemptLog.js';
-import { identifyPlayer, resetIdentity, setPlayerContext } from '../lib/analytics.js';
+import { identifyPlayer, resetIdentity, setPlayerContext, track } from '../lib/analytics.js';
 // Aliased on import so the two identity systems read as a pair at every call site rather than as
 // one obvious call and one mystery. Like analytics, these are called from the provider's effects
 // and never from the reducer — the reducer stays a pure function the check scripts can drive.
@@ -158,6 +158,36 @@ function loadInitialState() {
   return base;
 }
 
+// The one write in this app that must not fail quietly.
+//
+// localStorage is the PRIMARY store here, not a cache — the server is its mirror, and offline
+// play exists only on the device until it is uploaded. A `setItem` that throws (quota, a
+// private-browsing mode that refuses writes, storage disabled by policy) therefore means the
+// player's progress is not being recorded anywhere, while the app carries on showing it as
+// though it were. The previous version swallowed the error with an "ignore quota" comment,
+// which is how a device could keep playing for twenty minutes with nothing reaching disk and
+// nobody, including the app, any the wiser.
+//
+// Returns rather than throws, because the caller is a render effect and a throw there would
+// take the game down over a failed save — the opposite of the trade this app wants. The caller
+// is responsible for saying something out loud; see the persist effect below.
+//
+// `storage` is injectable so the check script can drive the failure path with a store that
+// refuses writes. It defaults to the real localStorage, and to null where there is none at all
+// (the check scripts run in Node), which is itself reported as a failure rather than a success.
+export function writeStateToStorage(state, storage) {
+  const store = storage !== undefined ? storage : (typeof localStorage !== 'undefined' ? localStorage : null);
+  if (!store) return { ok: false, reason: 'unavailable' };
+  try {
+    store.setItem(LS_KEY, JSON.stringify(state));
+    return { ok: true, reason: null };
+  } catch (e) {
+    // The name is enough to tell a full disk (QuotaExceededError) from a store that refuses
+    // outright (SecurityError), and unlike the message it carries nothing about the player.
+    return { ok: false, reason: (e && e.name) || 'error' };
+  }
+}
+
 function isRecordedSession(s) {
   return s.real === true || typeof s.real === 'undefined';
 }
@@ -187,6 +217,19 @@ export function hasMeaningfulProgress(s) {
   if ((ts.testPassed || []).length) return true;
   if ((s.streak || 0) > 0 || (s.bestStreakEver || 0) > 0) return true;
   return false;
+}
+
+// Would applying `incoming` leave this device with less than it started with, and nothing in
+// return? True only for the one combination that is pure loss: a payload holding no progress at
+// all, arriving at a device that holds some.
+//
+// One definition with two callers, deliberately. The reducer refuses such a payload
+// (ACCOUNT_LOADED) and the startup adoption has to know the refusal happened, so it can avoid
+// recording a download that did not take effect as this device's sync baseline. Written twice,
+// the two could disagree, and the shape of every sync bug this project has had is two places
+// answering the same question differently.
+export function wouldEmptyDevice(local, incoming) {
+  return hasMeaningfulProgress(local) && !hasMeaningfulProgress(incoming || {});
 }
 
 function chDoneToday(db) {
@@ -482,10 +525,32 @@ export function reducer(state, action) {
     // The server's copy wins over whatever is on the device. That is what makes "play on any
     // device" mean anything: the account's history is the truth, and a second phone adopts it
     // rather than competing with it.
-    case 'ACCOUNT_LOADED':
+    //
+    // With one exception, added after a review of the paths that can wipe a device:
+    // an empty payload can never empty a device that holds something.
+    //
+    // The rule above — the server's copy wins — is right in every case where the server actually
+    // HAS a copy. It is never right when the server has nothing: an account row holding no
+    // sessions, no achievements and no streak has nothing to teach this device, so applying it
+    // can only subtract. Left ungoverned, one blank or half-written row silently zeroes a
+    // player's whole history on all three paths that dispatch this (startup adoption, login, and
+    // conflict reconciliation), and the effects that call them are the only thing standing in
+    // the way. That is a rule, so it belongs here in the reducer where all three inherit it and
+    // where a script can prove it.
+    //
+    // Deliberately one-directional. It compares "does the incoming payload hold progress" with
+    // "does this device", and only refuses the one combination that is pure loss. A server copy
+    // with real progress is adopted exactly as before, which is what makes picking your history
+    // up on a new phone work; a blank device adopts whatever it is given, because there is
+    // nothing there to protect. The refusal drops the payload whole rather than merging field by
+    // field — a half-adopted state is a state neither side ever held, and view preferences are
+    // not worth inventing one for.
+    case 'ACCOUNT_LOADED': {
+      const incoming = action.synced || {};
+      const synced = wouldEmptyDevice(state, incoming) ? {} : incoming;
       return {
         ...state,
-        ...action.synced,
+        ...synced,
         _loggedOut: false,
         _showTutorial: false,
         username: action.username,
@@ -493,8 +558,11 @@ export function reducer(state, action) {
         acctData: { email: action.email, fullName: action.fullName },
         acctCreated: true,
         tutorialShown: true,
-        firstOpenDate: action.synced.firstOpenDate || state.firstOpenDate || dayKey(),
+        // Read off `synced` rather than `action.synced`, so a refused payload's date is refused
+        // with it — and so a missing payload cannot throw here.
+        firstOpenDate: synced.firstOpenDate || state.firstOpenDate || dayKey(),
       };
+    }
 
     // Signup succeeded. Every bit of existing local data stays exactly as it is — it has just
     // been uploaded to the new account, so device and server already agree.
@@ -1408,11 +1476,27 @@ export function AppStateProvider({ children }) {
 
   // Persist on every change. localStorage stays the primary store even when signed in — the
   // app must keep working offline, and the server copy is a mirror of it, not a replacement.
+  //
+  // A failure here is data loss in progress, so it is reported rather than swallowed: the player
+  // is told (see the notice in App.jsx), and the event is recorded so a failure nobody reports
+  // is still visible. Every subsequent state change retries, because the effect runs on each one
+  // — which is also how the flag clears itself the moment a write succeeds again.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const saveFailureReported = useRef(false);
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
-    } catch (e) {
-      /* ignore quota errors */
+    const res = writeStateToStorage(state);
+    if (res.ok) {
+      saveFailureReported.current = false;
+      setSaveFailed((prev) => (prev ? false : prev));
+      return;
+    }
+    setSaveFailed(true);
+    // Once per episode rather than once per state change: a device that cannot write is about to
+    // fail on every keystroke, and a hundred identical events would bury the first one.
+    if (!saveFailureReported.current) {
+      saveFailureReported.current = true;
+      console.warn('[cifri] progress could not be saved to this device:', res.reason);
+      track('storage_write_failed', { reason: res.reason });
     }
   }, [state]);
 
@@ -1496,7 +1580,13 @@ export function AppStateProvider({ children }) {
       const wouldDestroyUnsyncedWork =
         baseline === null && !local.acctCreated && hasMeaningfulProgress(local);
 
-      const keepLocal = deviceIsAhead || wouldDestroyUnsyncedWork;
+      // The third case, and the simplest one: the account row holds nothing at all. The reducer
+      // refuses such a payload outright (see ACCOUNT_LOADED), so treating it as keepLocal here is
+      // not a second opinion — it is this effect agreeing with the refusal, which matters because
+      // the else-branch below would otherwise record a download that never happened as the sync
+      // baseline, and the whole point of that file is that it never claims a sync it did not see.
+      const keepLocal =
+        deviceIsAhead || wouldDestroyUnsyncedWork || wouldEmptyDevice(local, res.syncedState);
 
       dispatch({
         type: 'ACCOUNT_LOADED',
@@ -1772,8 +1862,8 @@ export function AppStateProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ state, dispatch, beginSync, confirmProgressSaved }),
-    [state, beginSync, confirmProgressSaved],
+    () => ({ state, dispatch, beginSync, confirmProgressSaved, saveFailed }),
+    [state, beginSync, confirmProgressSaved, saveFailed],
   );
 
   return <AppStateStoreContext.Provider value={value}>{children}</AppStateStoreContext.Provider>;

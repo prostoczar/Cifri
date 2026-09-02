@@ -99,6 +99,12 @@ en:{
   logout_kept_title:"Signed out — progress kept here",
   logout_kept_desc:"This device couldn't reach the server, so your most recent progress hasn't been saved to your account yet. It's been left on this device rather than deleted. Log back in once you're online.",
   logout_kept_ok:"Got it",
+  // Shown when writing to this device's storage fails. Deliberately plain about what it means —
+  // the app looks completely normal while this is happening, so the notice is the only thing
+  // standing between a player and a session they think is saved.
+  save_failed_title:"This device isn't saving your progress",
+  save_failed_desc:"Something is stopping the app from storing anything on this device — often a full storage or a private browsing mode. What you play now may be lost when you close the app. Freeing up space, or logging in so your progress goes to your account, will protect it.",
+  save_failed_ok:"Got it",
   delete_account_title:"Delete your account?",
   delete_account_desc:"This is permanent. All your scores, streak, achievements, and history will be unrecoverable, and the app will return to a fresh install state.",
   delete_account_confirm:"Delete everything",
@@ -513,6 +519,9 @@ ru:{
   logout_kept_title:"Вы вышли — прогресс остался здесь",
   logout_kept_desc:"Не удалось связаться с сервером, поэтому последний прогресс ещё не сохранён в аккаунте. Он остался на этом устройстве, а не был удалён. Войдите снова, когда появится связь.",
   logout_kept_ok:"Понятно",
+  save_failed_title:"Это устройство не сохраняет прогресс",
+  save_failed_desc:"Приложению не удаётся ничего записать на это устройство — обычно из-за нехватки места или режима приватного просмотра. То, что вы сыграете сейчас, может пропасть при закрытии приложения. Освободите место или войдите в аккаунт, чтобы прогресс сохранялся там.",
+  save_failed_ok:"Понятно",
   delete_account_title:"Удалить ваш аккаунт?",
   delete_account_desc:"Это необратимо. Все ваши результаты, серия, достижения и история будут безвозвратно утеряны, и приложение вернётся в состояние новой установки.",
   delete_account_confirm:"Удалить всё",
