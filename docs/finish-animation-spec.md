@@ -10,6 +10,8 @@ A full-screen **Finish screen** now sits between the end of a counted game and t
 
 **Scope.** Challenge finish and Braining finish only. App launch animation is a separate, later spec.
 
+**The Practice tab skips the Finish screen (decided 5 Oct 2026).** A run started from the Practice tab keeps today's straight cut to its result screen. It has no difficulty and no personal best, so there is nothing for the ring to fill against, and it never moves the streak. (Braining's own practice runs *do* get the Finish screen, as V5.)
+
 **Locked visual rules (do not change).**
 
 - Nunito, weight 900, on every piece of text in this feature.
@@ -40,7 +42,7 @@ Five variants exist. Two facts decide which plays: did this game change the stre
 | Variant | When it plays | Flame pill ends | Background ends | Phrase |
 | --- | --- | --- | --- | --- |
 | **V1 First game** | First counted game of the day (either mode); flame goes grey → green | Green `#0f9d6c`, with shadow | Beige | Random |
-| **V2 Second game** | Counted game that completes both modes today; flame goes green → gold | Gold `#ffd166`, shadow removed | Yellow (pill floods outward) | Random |
+| **V2 Second game** | Counted game that completes both modes today; flame goes green → gold (the pill starts green, see Flame pill) | Gold `#ffd166`, shadow removed | Yellow (pill floods outward) | Random |
 | **V3 New best** | V1 conditions + new best | Green, with shadow (stays) | Yellow (ring engulfs) | New-best phrase |
 | **V4 New best + both games** | V2 conditions + new best | Gold, no shadow | Yellow (ring engulfs) | New-best phrase |
 | **V5 Uncounted run** | A run that does not move the streak: Braining practice (`isPrac`), any replay of a mode already done today, future Challenge practice | Already in its current color, no lighting step | Beige | Random |
@@ -67,7 +69,7 @@ Added 5 Oct 2026, after the Finish screen was built. The streak flame in the hea
 
 ## Visual elements
 
-The Finish screen has six elements, stacked top to bottom, horizontally centered. The base background is beige `#fdf8f3`. Reference sizes below are for a 288 px wide screen; scale with width and clamp so the ring never exceeds 300 px. Respect the top and bottom safe areas.
+The Finish screen has six elements, stacked top to bottom, horizontally centered. The base background is beige `#fdf8f3`. **Dark mode (decided 5 Oct 2026):** when the app's dark mode is on, the dark page colour replaces the beige and the ring track takes a dark shade; the grey label and tap prompt use the dark page's muted grey, returning to `#7a7167` once yellow covers the screen. Every yellow, green and gold moment is unchanged. Reference sizes below are for a 288 px wide screen; scale with width and clamp so the ring never exceeds 300 px. Respect the top and bottom safe areas.
 
 **1. Phrase pill.**
 
@@ -78,9 +80,10 @@ The Finish screen has six elements, stacked top to bottom, horizontally centered
 **2. Flame pill.** A large copy of the header streak pill.
 
 - Font 22 px, padding 10 × 20 px, gap 8 px, flame icon 30 px.
-- Starts grey `#e9e3da`, text `#444`, no shadow, showing yesterday's streak number.
+- In V1/V3 it starts grey `#e9e3da`, text `#444`, no shadow, showing yesterday's streak number.
+- **In V2/V4 it starts green, showing today's real streak number (decided 5 Oct 2026).** The first game of the day already turned the header pill green and counted the day, so starting grey with yesterday's number would show something untrue for a moment. The flame starts lit (white on green); catching reveals terracotta over it; lit turns the pill gold.
 - Ends per variant: green with text and flame white plus shadow `0 3px 0 #0a7a54`, or gold with text and flame `#2b2b2b` and no shadow (on yellow).
-- Streak number increments by 1 at the lit moment (V1–V4 only).
+- Streak number increments by 1 at the lit moment in V1/V3 only. In V2/V4 the number does not change: the day was already counted by the first game. In every variant the number shown at the end is the streak the header shows after the game.
 
 **3. Flame icon.** Same path as `avatar.js` `flame`, drawn in a 24 × 24 viewBox. Four states:
 
@@ -204,7 +207,7 @@ Sound plays on web and phones; haptics are phone-only. All sounds are synthesize
 | Topic | Web (cifri.app) | Phones (Capacitor iOS and Android) |
 | --- | --- | --- |
 | Haptics | None. iPhone browsers block vibration, so web stays the same everywhere. | Full haptic cues as in the table above |
-| Yellow screen edges | Yellow layer fills the browser viewport | Yellow must extend under the status bar and the home-indicator area. Switch status bar icons to dark while yellow, and back after the transition. On Android also tint the navigation bar. |
+| Yellow screen edges | Yellow layer fills the browser viewport | Yellow must extend under the status bar and the home-indicator area. Switch status bar icons to dark while yellow, and back after the transition. On Android also tint the navigation bar — **not done yet (decided 5 Oct 2026):** the status-bar plugin has no API for the navigation bar, and adding another plugin for one strip was deferred. |
 | Back button | Browser back = Continue | Android hardware back = Continue |
 | Silent switch | Follows the browser | Must behave exactly like the existing game sounds do today. Do not change the audio session. |
 | Performance | Fine on modern browsers | Test the ring engulf on a low-end Android phone. If animating stroke width stutters, replace it with a yellow circle scaled up behind the ring (same look, cheaper). |
