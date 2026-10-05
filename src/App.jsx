@@ -567,15 +567,19 @@ function AppShell() {
       // this time — a full ring for a new best time, or for a first trial with nothing to beat.
       // The new-best moment is the brain-age flag, and practice never celebrates.
       const time = brFmtTimer(Math.round(r.sec));
+      // Practice is measured against earlier PRACTICE only — 20 questions against 20 — which is
+      // the result screen's own "vs best" rule since the practice-best fix. Against the 50-question
+      // best, every practice ring would read full and every label "0:09 · best 1:36".
+      const ringBest = r.isPrac ? r.pracBestBefore : pre.prevBestTime;
       setFinish({
         key: 'br-' + r.reqId,
         mode: 'braining',
         number: r.age,
         countFrom: Math.max(...BR_SCALE.map((b) => b.age)),
-        fill: pre.prevBestTime == null || r.sec <= 0 ? 1 : Math.min(1, pre.prevBestTime / r.sec),
-        label: pre.prevBestTime == null
+        fill: ringBest == null || r.sec <= 0 ? 1 : Math.min(1, ringBest / r.sec),
+        label: ringBest == null
           ? time
-          : time + ' · ' + t('finish_best_label', { n: brFmtTimer(Math.round(pre.prevBestTime)) }),
+          : time + ' · ' + t('finish_best_label', { n: brFmtTimer(Math.round(ringBest)) }),
         best: !!r.isAgeBest && !r.isPrac,
         pill: {
           from: pre.pill,

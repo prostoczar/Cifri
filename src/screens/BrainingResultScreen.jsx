@@ -20,7 +20,7 @@ export default function BrainingResultScreen({
   guestConvoStarted, acctCreated, onCreateAccount, held,
 }) {
   const { t } = useI18n();
-  const { sec, age, isPrac, isFirst, isPR, isAgeBest } = result;
+  const { sec, age, isPrac, isFirst, isPR, isAgeBest, pracBestBefore } = result;
 
   // The celebration — ribbon, yellow stat boxes, confetti — is for a new best BRAIN AGE, the same
   // flag the Finish screen celebrates, so the two screens always agree (decided in
@@ -36,14 +36,18 @@ export default function BrainingResultScreen({
     setCelebrate(!!isAgeBest && !isPrac);
   }, [result, isAgeBest, isPrac]);
 
-  // "vs best time" cell — practice compares against the stored best but never celebrates.
+  // "vs best" cell. Practice is compared only with earlier PRACTICE runs: it is 20 questions to
+  // the trial's 50, so setting it against the stored best always showed a large green "faster"
+  // that meant nothing. With no earlier practice run there is nothing fair to compare with, and
+  // the cell is left out rather than filled with a dash. It never celebrates either way.
   let vsText = '--', vsColor = '';
+  const showVs = !isPrac || pracBestBefore != null;
   if (isPrac) {
-    if (brState.bestTime != null && sec !== brState.bestTime) {
-      const pdiff = sec - brState.bestTime;
+    if (pracBestBefore != null && sec !== pracBestBefore) {
+      const pdiff = sec - pracBestBefore;
       vsText = (pdiff > 0 ? '+' : '') + brFmtSec(Math.abs(pdiff), t);
       vsColor = pdiff < 0 ? 'var(--GDK)' : 'var(--TC)';
-    } else if (brState.bestTime != null) {
+    } else if (pracBestBefore != null) {
       vsText = t('ties_best');
       vsColor = 'var(--GDK)';
     }
@@ -118,14 +122,20 @@ export default function BrainingResultScreen({
           <div className="br-rcn">{brFmtSec(sec, t)}</div><div className="br-rcl">{t('completion_time')}</div>
         </div>
         <div className={'br-rcd' + (celebrate ? ' celebrate' : '')}>
-          <div className="br-rcn">{brState.bestAge || age}</div><div className="br-rcl">{t('stat_best_age')}</div>
+          {/* Practice never sets the best age, so a practice result must not stand in for one when
+              no real trial has been played yet. */}
+          <div className="br-rcn">{brState.bestAge || (isPrac ? '--' : age)}</div><div className="br-rcl">{t('stat_best_age')}</div>
         </div>
-        <div className={'br-rcd' + (celebrate ? ' celebrate' : '')}>
+        {/* With the comparison left out, the streak card spans the row so the 2×2 grid does not
+            end on a lone half-width card. */}
+        <div className={'br-rcd' + (celebrate ? ' celebrate' : '')} style={showVs ? undefined : { gridColumn: '1 / -1' }}>
           <div className="br-rcn">{isPrac ? '--' : streak || 1}</div><div className="br-rcl">{t('day_streak')}</div>
         </div>
-        <div className={'br-rcd' + (celebrate ? ' celebrate' : '')}>
-          <div className="br-rcn" style={{ color: vsColor }}>{vsText}</div><div className="br-rcl">{t('vs_best_time')}</div>
-        </div>
+        {showVs && (
+          <div className={'br-rcd' + (celebrate ? ' celebrate' : '')}>
+            <div className="br-rcn" style={{ color: vsColor }}>{vsText}</div><div className="br-rcl">{t(isPrac ? 'vs_best_practice' : 'vs_best_time')}</div>
+          </div>
+        )}
       </div>
 
       {opSummary && (

@@ -16,7 +16,7 @@ import { createServer } from 'vite';
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
 const { reducer, defaultState } = await server.ssrLoadModule('/src/store/AppStateContext.jsx');
 const { applyBrainingBoost } = await server.ssrLoadModule('/src/store/scoring.js');
-const { brScaleShown, BR_AGES, BR_SCALE, brAge } = await server.ssrLoadModule('/src/store/braining.js');
+const { brScaleShown, BR_AGES, BR_SCALE, brAge, repairBrainingBests } = await server.ssrLoadModule('/src/store/braining.js');
 const { t } = await server.ssrLoadModule('/src/i18n_data.js');
 
 // The scale exactly as the result screen builds it, in English. The translation check below builds
@@ -30,8 +30,12 @@ const ago = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ke
 
 const fresh = () => ({ ...defaultState() });
 
+// Every run carries an attemptId, as the app's own dispatch does. It matters: a non-real row
+// WITHOUT one is how a pre-October practice run is recognised, so leaving it off here would make
+// every retry in these checks look like practice to the repair.
+let attemptSeq = 0;
 function braining(s, { sec = 200, age = 30, isPrac = false, wrong = 1 } = {}) {
-  return reducer(s, { type: 'BRAINING_SESSION_COMPLETE', reqId: 1, sec, age, isPrac, wrong, opTimes: null, lang: 'en' });
+  return reducer(s, { type: 'BRAINING_SESSION_COMPLETE', reqId: 1, sec, age, isPrac, wrong, opTimes: null, lang: 'en', attemptId: 'att-' + ++attemptSeq });
 }
 function challenge(s, { diff = 'easy', score = 100, isPrac = false } = {}) {
   return reducer(s, {
@@ -72,6 +76,130 @@ check('a retry can still improve a personal best', () => {
   s = braining(s, { sec: 120, age: 21 });
   if (s.brState.bestTime !== 120) return 'bestTime ' + s.brState.bestTime;
   return s.brState.bestAge === 21 || 'bestAge ' + s.brState.bestAge;
+});
+
+// ── Practice and the personal best ───────────────────────────────────────────
+//
+// Practice is 20 questions to the trial's 50 on one time table, so a practice time can never be
+// a best: before 5 Oct 2026 one fast practice run set a best no real trial could beat, and the
+// new-best ribbon never fired again. These pin the rule, and the repair of saves made before it.
+
+check('a fast practice run leaves the best time and best age alone', () => {
+  let s = braining(fresh(), { sec: 200, age: 30 });
+  s = braining(s, { sec: 100, age: 20, isPrac: true });
+  if (s.brState.bestTime !== 200) return 'bestTime ' + s.brState.bestTime;
+  if (s.brState.bestAge !== 30) return 'bestAge ' + s.brState.bestAge;
+  return s._lastBrResult.isPR === false || 'practice reported isPR';
+});
+
+check('practice before any real trial sets no best, and the first trial then does', () => {
+  let s = braining(fresh(), { sec: 90, age: 20, isPrac: true });
+  if (s.brState.bestTime !== null || s.brState.bestAge !== null) {
+    return `practice set a best: ${s.brState.bestTime}s / ${s.brState.bestAge}`;
+  }
+  s = braining(s, { sec: 250, age: 28 });
+  if (s.brState.bestTime !== 250 || s.brState.bestAge !== 28) return `best ${s.brState.bestTime}s / ${s.brState.bestAge}`;
+  return s._lastBrResult.isPR === true || 'first trial after practice was not a new best';
+});
+
+check('after a fast practice run, a retry that beats the real best still celebrates', () => {
+  let s = braining(fresh(), { sec: 200, age: 30 });
+  s = braining(s, { sec: 100, age: 20, isPrac: true });
+  s = braining(s, { sec: 180, age: 20 });
+  if (s._lastBrResult.isPR !== true) return 'no new best for 180s over a real best of 200s';
+  return s.brState.bestTime === 180 || 'bestTime ' + s.brState.bestTime;
+});
+
+check('practice is marked as practice, and compared only with earlier practice', () => {
+  let s = braining(fresh(), { sec: 200, age: 30 });
+  s = braining(s, { sec: 120, age: 20, isPrac: true });
+  const row = s.brState.sessions[s.brState.sessions.length - 1];
+  if (row.prac !== true || row.real !== false) return 'practice row ' + JSON.stringify(row);
+  // The first practice run has nothing fair to compare with — the 200s trial is not one.
+  if (s._lastBrResult.pracBestBefore !== null) return 'first practice compared with ' + s._lastBrResult.pracBestBefore;
+  s = braining(s, { sec: 110, age: 20, isPrac: true });
+  if (s._lastBrResult.pracBestBefore !== 120) return 'second practice compared with ' + s._lastBrResult.pracBestBefore;
+  s = braining(s, { sec: 130, age: 20, isPrac: true });
+  // The best EARLIER practice, read before this run is added: 110, not the 130 just played.
+  if (s._lastBrResult.pracBestBefore !== 110) return 'third practice compared with ' + s._lastBrResult.pracBestBefore;
+  // And a real run is never given a practice comparison.
+  s = braining(s, { sec: 190, age: 28 });
+  return s._lastBrResult.pracBestBefore === null || 'real run carried pracBestBefore';
+});
+
+// A save from before the fix: a practice row as it was written then (real: false, no attemptId,
+// no prac mark) holding a best that the 50-question runs never reached.
+const poisoned = () => ({
+  ...fresh(),
+  brState: {
+    sessions: [
+      { date: ago(3), time: 200, age: 30, real: true, attemptId: 'a1' },
+      { date: ago(3), time: 100, age: 20, real: false },
+      { date: ago(2), time: 190, age: 28, real: false, attemptId: 'a2' },
+    ],
+    lastDay: ago(2), bestTime: 100, bestAge: 20,
+  },
+});
+
+check('the repair recomputes a best that practice set, keeping a real retry', () => {
+  const r = repairBrainingBests(poisoned().brState);
+  if (r.bestTime !== 190) return 'bestTime ' + r.bestTime + ', expected the 190s retry';
+  if (r.bestAge !== 28) return 'bestAge ' + r.bestAge;
+  return repairBrainingBests(r) === r || 'a second repair changed an already-repaired save';
+});
+
+check('the repair leaves a clean save untouched, and an empty one alone', () => {
+  const clean = { sessions: [{ date: ago(1), time: 200, age: 30, real: true, attemptId: 'a1' }], lastDay: ago(1), bestTime: 200, bestAge: 30 };
+  if (repairBrainingBests(clean) !== clean) return 'a clean save came back as a new object';
+  const empty = { sessions: [], lastDay: null, bestTime: 150, bestAge: 22 };
+  if (repairBrainingBests(empty) !== empty) return 'an empty history erased a best on no evidence';
+  // A history of nothing but practice holds no best at all.
+  const pracOnly = { sessions: [{ date: ago(1), time: 90, age: 20, real: false, prac: true }], lastDay: null, bestTime: 90, bestAge: 20 };
+  const r = repairBrainingBests(pracOnly);
+  return (r.bestTime === null && r.bestAge === null) || `practice-only history kept ${r.bestTime}s / ${r.bestAge}`;
+});
+
+check("the server's copy is repaired when an account loads", () => {
+  const s = reducer(fresh(), {
+    type: 'ACCOUNT_LOADED', synced: { brState: poisoned().brState },
+    username: 'p', email: 'p@example.test', fullName: '',
+  });
+  return (s.brState.bestTime === 190 && s.brState.bestAge === 28) || `loaded ${s.brState.bestTime}s / ${s.brState.bestAge}`;
+});
+
+check('on a save practice poisoned, a real run that beats the real best celebrates', () => {
+  // 150s beats the 190s retry but not the 100s practice, so it is only a new best if the reducer
+  // asks against the repaired figure — whichever path the state arrived by.
+  const s = braining(poisoned(), { sec: 150, age: 20 });
+  if (s._lastBrResult.isPR !== true) return 'no new best';
+  return (s.brState.bestTime === 150 && s.brState.bestAge === 20) || `best ${s.brState.bestTime}s / ${s.brState.bestAge}`;
+});
+
+// ── isAgeBest: the flag the Finish screen celebrates ─────────────────────────
+//
+// A new best BRAIN AGE, separate from isPR (a best time). Practice can never claim it, and a real
+// run is judged against the repaired best — not one a pre-fix practice run left in the save.
+
+check('practice never reports a new best age', () => {
+  // With an earlier real trial: 20 is younger than the real best of 30, and still not a best.
+  let s = braining(fresh(), { sec: 300, age: 30 });
+  s = braining(s, { sec: 100, age: 20, isPrac: true });
+  if (s._lastBrResult.isAgeBest !== false) return 'practice after a trial reported isAgeBest ' + s._lastBrResult.isAgeBest;
+  // Without one: there is no best age at all, and practice still does not become it.
+  s = braining(fresh(), { sec: 100, age: 20, isPrac: true });
+  return s._lastBrResult.isAgeBest === false || 'practice on a fresh save reported isAgeBest ' + s._lastBrResult.isAgeBest;
+});
+
+check('on a save practice poisoned, isAgeBest is judged against the repaired best age', () => {
+  // poisoned(): stored best age 20 from an old practice row; the real best is the 190s retry at 28.
+  // 25 is younger than 28, so it is a new best — but only if the comparison is with the repaired
+  // figure. Against the stored 20 it would wrongly be nothing.
+  const younger = braining(poisoned(), { sec: 230, age: 25 });
+  if (younger._lastBrResult.isAgeBest !== true) return 'age 25 over a real best of 28 was not a new best age';
+  if (younger.brState.bestAge !== 25) return 'bestAge ' + younger.brState.bestAge;
+  // Equal is not better: 28 ties the real best and does not count.
+  const tie = braining(poisoned(), { sec: 260, age: 28 });
+  return tie._lastBrResult.isAgeBest === false || 'age 28 tying the real best of 28 reported a new best age';
 });
 
 check('only the counting trial credits the streak', () => {

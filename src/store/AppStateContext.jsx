@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { dayKey, yesterday, addDaysStr, dateStrToDate, daysBetweenKeys } from './dates.js';
 import { ACHIEVEMENTS, earnedCount, streakAchievementKey, streakMilestoneThreshold } from './achievements.js';
 import { applyBrainingBoost } from './scoring.js';
-import { brainAge20Count, isSharperEveryDay } from './braining.js';
+import { bestPracticeTime, brainAge20Count, isSharperEveryDay, repairBrainingBests } from './braining.js';
 import { ERR, fetchAccount, getSession, onAuthChange, pushPlayerState, pushDailyResults } from '../lib/accountApi.js';
 import { hasUnsyncedProgress, sameSyncPayload, signOutResetKeys, toSyncPayload } from '../lib/syncedState.js';
 import { projectDailyRows } from '../lib/dailyResults.js';
@@ -155,6 +155,9 @@ function loadInitialState() {
   } catch (e) {
     /* ignore corrupt storage */
   }
+  // A best time or age a practice run set before 5 Oct 2026 is recomputed from the history.
+  // Usually a no-op that returns the same object; see repairBrainingBests.
+  base.brState = repairBrainingBests(base.brState);
   return base;
 }
 
@@ -548,9 +551,14 @@ export function reducer(state, action) {
     case 'ACCOUNT_LOADED': {
       const incoming = action.synced || {};
       const synced = wouldEmptyDevice(state, incoming) ? {} : incoming;
+      // The server's copy may still carry a best that practice set before 5 Oct 2026 — written by
+      // a device that had not been repaired yet — so it is repaired on the way in, exactly as the
+      // device's own storage is in loadInitialState.
+      const brState = repairBrainingBests(synced.brState || state.brState);
       return {
         ...state,
         ...synced,
+        brState,
         _loggedOut: false,
         _showTutorial: false,
         username: action.username,
@@ -1287,11 +1295,14 @@ export function reducer(state, action) {
     }
 
     // Mirrors the reference's brFinish(): records the session, updates best time/age, credits
-    // the unified streak, and collects achievement unlocks.
+    // the unified streak, and collects achievement unlocks. One deliberate departure: practice no
+    // longer touches the best time or age (see the practice branch below).
     case 'BRAINING_SESSION_COMPLETE': {
       const { sec, age, isPrac, lang } = action;
       const today = dayKey();
-      const br = state.brState;
+      // Repaired here as well as on load, so "is this a new best" is always asked of the best the
+      // 50-question runs actually set, whichever path the state arrived by.
+      const br = repairBrainingBests(state.brState);
       const sessions = br.sessions || [];
 
       let isFirst = false;
@@ -1299,10 +1310,13 @@ export function reducer(state, action) {
       // A new best BRAIN AGE — strictly younger than the stored best, or the first age ever stored.
       // Separate from `isPR`, which is a best TIME and keeps meaning exactly that. Brain age moves in
       // bands, so most faster times are not a younger age; this is the flag the Finish screen and
-      // the result screen's celebration read (docs/finish-animation-spec.md, "Braining
-      // differences"). Each assignment below sits beside the bestAge it describes and compares
-      // against the value from BEFORE this session, which is the one about to be overwritten.
+      // the result screen's celebration read. Each assignment below sits beside the bestAge it
+      // describes and compares against `br` — the REPAIRED best from before this session, so a
+      // best age that a pre-fix practice run left behind cannot swallow a real one. It stays false
+      // for practice, which never sets the best age and so can never beat it.
       let isAgeBest = false;
+      // Practice only: the fastest practice run BEFORE this one, read before this run is appended.
+      let pracBestBefore = null;
       let nextBr;
       let unlocked = [];
       let nextMilestones = state.milestones;
@@ -1400,18 +1414,18 @@ export function reducer(state, action) {
           nextGuestConvoStarted = credit.guestConvoStarted;
         }
       } else {
-        // Practice: recorded as non-counting, but may still improve the stored best. It grants
-        // no boost — `nextBrBoostDay` is untouched on this path — because the boost is the
-        // reward for the day's real trial, not for opening the practice mode.
-        const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
-        // Computed for practice too, because practice does move the stored best age. Nothing
-        // celebrates it: practice never celebrates, and both screens check `isPrac` first.
-        isAgeBest = br.bestAge === null || age < br.bestAge;
-        const bestAge = isAgeBest ? age : br.bestAge;
+        // Practice: recorded as non-counting, and it leaves the best time and best age alone.
+        // The prototype let it lower them, but practice is 20 questions to the trial's 50 on the
+        // same time table, so one practice run set a best no real trial could ever beat — see
+        // isPracticeSession in braining.js. `prac: true` is what marks the row as practice from
+        // here on; the result screen compares it with earlier practice runs instead.
+        //
+        // It grants no boost either — `nextBrBoostDay` is untouched on this path — because the
+        // boost is the reward for the day's real trial, not for opening the practice mode.
+        pracBestBefore = bestPracticeTime(sessions);
         nextBr = {
           ...br,
-          sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now() }],
-          bestTime, bestAge,
+          sessions: [...sessions, { date: today, time: sec, age, real: false, prac: true, ts: Date.now() }],
         };
       }
 
@@ -1444,7 +1458,7 @@ export function reducer(state, action) {
         bestStreakEver: nextBestStreakEver,
         _lastBrResult: {
           reqId: action.reqId,
-          sec, age, isPrac, isFirst, isPR, isAgeBest,
+          sec, age, isPrac, isFirst, isPR, isAgeBest, pracBestBefore,
           opTimes: action.opTimes,
           unlocked,
         },

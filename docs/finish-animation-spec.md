@@ -220,7 +220,7 @@ Braining uses the same Finish screen, variants, timeline, sounds and transition.
 | --- | --- | --- |
 | Time 0 | Timer hits zero | Last of the 50 answers submitted |
 | Number inside the ring | Score, counted up from 0 | Brain age, counted *down* from the oldest age on the brain-age scale to the result (younger is better) |
-| Ring fill | Score ÷ best score for this difficulty | Best time ÷ this time (capped at 100%). No best time yet = 100% |
+| Ring fill | Score ÷ best score for this difficulty | Best time ÷ this time (capped at 100%). No best time yet = 100%. **Practice (decided 5 Oct 2026, with the practice-best fix):** the fastest EARLIER practice run ÷ this time, and its label shows that practice best — practice is 20 questions to the trial's 50, so it is never set against the trial's best time |
 | Label under the number | "best {score}" | "{this time} · best {best time}", e.g. "1:24 · best 1:12" |
 | New best (V3/V4) | `isNewBest` (score above previous best) | Brain age **strictly lower** than the stored best age, or no stored best age yet |
 | Number color in the ring | Green | Green (blends to the result screen's brain-age color during the flight) |
