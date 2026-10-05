@@ -22,6 +22,13 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
 
   const gameRef = useRef(null);
   const ivRef = useRef(null);
+  // Set the moment a correct answer is accepted, cleared when the next question loads — the same
+  // lock Challenge and the trick screen have always had, and Braining was ported without. During
+  // the short pause before the next question the correct answer is still sitting in the input, so
+  // a second Submit (a double tap, or Enter pressed twice) used to be marked right AGAIN: it
+  // silently skipped the following question, or on the last one ended the game twice and recorded
+  // a duplicate session. A wrong answer does not lock — Braining lets you retype at once.
+  const alockRef = useRef(false);
   // Mirrors `input` synchronously. The reference reads the live DOM value at submit time, so it
   // is never stale; React state can still be a render behind if a digit and Submit are tapped
   // within the same frame, which this ref avoids.
@@ -75,13 +82,18 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     setInputBad(false);
     setHint('');
     setQcState('');
+    alockRef.current = false;
     pushUpdate();
   }, [pushUpdate, setInputBoth, lang]);
 
   const finishGame = useCallback(() => {
     clearTimer();
     const g = gameRef.current;
-    if (!g) return;
+    // Once per sitting, whatever calls it. The lock above is what stops a second Submit getting
+    // here; this is the backstop, because the price of a second onGameEnd is a duplicate session,
+    // a second verification request and achievements evaluated twice.
+    if (!g || g.finished) return;
+    g.finished = true;
     const sec = Math.floor((Date.now() - g.startTime) / 1000);
     // `total` is how many questions this sitting asked — 50 or 20. Reported for the cumulative
     // question count, which has no other way to know: Braining stores a time and a brain age on
@@ -128,8 +140,10 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
         sessionId: startSession(),
         lastTime: isPrac ? null : getLastTime(),
         todayTime: isPrac ? getTodayTime() : null,
+        finished: false,
       };
       gameRef.current = g;
+      alockRef.current = false;
       loadQuestion();
 
       clearTimer();
@@ -159,8 +173,9 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
   }, [setInputBoth]);
 
   const submitAnswer = useCallback(() => {
+    if (alockRef.current) return;
     const g = gameRef.current;
-    if (!g) return;
+    if (!g || g.finished) return;
     const raw = inputRef.current.trim();
     if (!raw || raw === '-') return;
     const val = parseFloat(raw);
@@ -196,6 +211,7 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
     if (ok) {
       if (!g.opTimes) g.opTimes = {};
       (g.opTimes[g.curOp] = g.opTimes[g.curOp] || []).push((Date.now() - g.qStart) / 1000);
+      alockRef.current = true;
       tick(soundOn);
       setQcState('ok');
       g.qIdx++;
