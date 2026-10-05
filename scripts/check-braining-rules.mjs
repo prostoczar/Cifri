@@ -175,6 +175,33 @@ check('on a save practice poisoned, a real run that beats the real best celebrat
   return (s.brState.bestTime === 150 && s.brState.bestAge === 20) || `best ${s.brState.bestTime}s / ${s.brState.bestAge}`;
 });
 
+// ── isAgeBest: the flag the Finish screen celebrates ─────────────────────────
+//
+// A new best BRAIN AGE, separate from isPR (a best time). Practice can never claim it, and a real
+// run is judged against the repaired best — not one a pre-fix practice run left in the save.
+
+check('practice never reports a new best age', () => {
+  // With an earlier real trial: 20 is younger than the real best of 30, and still not a best.
+  let s = braining(fresh(), { sec: 300, age: 30 });
+  s = braining(s, { sec: 100, age: 20, isPrac: true });
+  if (s._lastBrResult.isAgeBest !== false) return 'practice after a trial reported isAgeBest ' + s._lastBrResult.isAgeBest;
+  // Without one: there is no best age at all, and practice still does not become it.
+  s = braining(fresh(), { sec: 100, age: 20, isPrac: true });
+  return s._lastBrResult.isAgeBest === false || 'practice on a fresh save reported isAgeBest ' + s._lastBrResult.isAgeBest;
+});
+
+check('on a save practice poisoned, isAgeBest is judged against the repaired best age', () => {
+  // poisoned(): stored best age 20 from an old practice row; the real best is the 190s retry at 28.
+  // 25 is younger than 28, so it is a new best — but only if the comparison is with the repaired
+  // figure. Against the stored 20 it would wrongly be nothing.
+  const younger = braining(poisoned(), { sec: 230, age: 25 });
+  if (younger._lastBrResult.isAgeBest !== true) return 'age 25 over a real best of 28 was not a new best age';
+  if (younger.brState.bestAge !== 25) return 'bestAge ' + younger.brState.bestAge;
+  // Equal is not better: 28 ties the real best and does not count.
+  const tie = braining(poisoned(), { sec: 260, age: 28 });
+  return tie._lastBrResult.isAgeBest === false || 'age 28 tying the real best of 28 reported a new best age';
+});
+
 check('only the counting trial credits the streak', () => {
   let s = braining(fresh());
   const afterFirst = s.streak;
