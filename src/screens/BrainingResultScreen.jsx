@@ -9,19 +9,32 @@ import ShareButton from '../components/ShareButton.jsx';
 import { appUrl } from '../lib/appUrl.js';
 
 // Ported from the reference prototype's #scr-br-result markup + the display half of brFinish().
+// While `held` — the result screen still entering from the Finish screen — the cards and the
+// confetti wait, then run exactly as they always have. One shared empty list rather than a fresh
+// [] per render, because AchievementPopup restarts its queue whenever the list it is given changes.
+const NO_CARDS = [];
+
 export default function BrainingResultScreen({
   result, brState, streak, chDone, achievementQueue, onAchievementsDone,
   onTryAgain, onBack, onCompleteStreak,
-  guestConvoStarted, acctCreated, onCreateAccount,
+  guestConvoStarted, acctCreated, onCreateAccount, held,
 }) {
   const { t } = useI18n();
-  const [celebrate, setCelebrate] = useState(false);
+  const { sec, age, isPrac, isFirst, isPR, isAgeBest } = result;
 
-  const { sec, age, isPrac, isFirst, isPR } = result;
+  // The celebration — ribbon, yellow stat boxes, confetti — is for a new best BRAIN AGE, the same
+  // flag the Finish screen celebrates, so the two screens always agree (decided in
+  // docs/finish-animation-spec.md). The "vs best time" cell and the personal-record card below
+  // still speak about best TIME, through `isPR`, unchanged.
+  //
+  // Seeded from the result rather than switched on a frame later: the ribbon it adds pushes the
+  // brain age down, and arriving from the Finish screen that number's position is measured on the
+  // very first frame for the flying copy to land on.
+  const [celebrate, setCelebrate] = useState(!!isAgeBest && !isPrac);
 
   useEffect(() => {
-    setCelebrate(isPR && !isPrac);
-  }, [result, isPR, isPrac]);
+    setCelebrate(!!isAgeBest && !isPrac);
+  }, [result, isAgeBest, isPrac]);
 
   // "vs best time" cell — practice compares against the stored best but never celebrates.
   let vsText = '--', vsColor = '';
@@ -70,7 +83,9 @@ export default function BrainingResultScreen({
     <div className="br-rscr" style={{ position: 'relative', overflow: 'hidden' }}>
       <div className="br-rh">
         {celebrate && <div className="pb-ribbon show">{t('new_pb')}</div>}
-        <div className="br-age-n br-pop" style={{ color: brAgeColor(age) }}>{age}</div>
+        {/* No pop-in of its own (it used to carry .br-pop): every Braining result now arrives
+            from the Finish screen, whose flying number lands exactly here and replaces it. */}
+        <div className="br-age-n" style={{ color: brAgeColor(age) }}>{age}</div>
         <div className="br-age-l">{t(isPrac ? 'br_age_label_practice' : 'br_age_label')}</div>
         <div className="br-age-sub">{t('br_completed_in', { time: brFmtSec(sec, t) })}</div>
         <div className="br-badge-row">
@@ -161,9 +176,9 @@ export default function BrainingResultScreen({
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="br-btn-out" onClick={onBack}>{t('back_to_braining')}</button>
 
-      {celebrate && <ConfettiBurst />}
+      {celebrate && !held && <ConfettiBurst />}
       <AchievementPopup
-        queue={achievementQueue}
+        queue={held ? NO_CARDS : achievementQueue}
         onDone={onAchievementsDone}
         guestConvoStarted={guestConvoStarted}
         acctCreated={acctCreated}

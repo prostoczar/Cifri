@@ -13,7 +13,7 @@ import {
 import { ACHIEVEMENT_BY_KEY, earnedCount } from './store/achievements.js';
 import { track } from './lib/analytics.js';
 import { initNotifications, syncTags, notificationDiagnostics } from './lib/notifications.js';
-import { brAge, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
+import { BR_SCALE, brAge, brFmtTimer, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
 import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
@@ -57,6 +57,21 @@ import TrickGameScreen from './screens/TrickGameScreen.jsx';
 import BrainingHomeScreen from './screens/BrainingHomeScreen.jsx';
 import BrainingGameScreen from './screens/BrainingGameScreen.jsx';
 import BrainingResultScreen from './screens/BrainingResultScreen.jsx';
+import FinishScreen from './components/FinishScreen.jsx';
+import { pickFinishPhrase } from './components/finishPhrase.js';
+
+// The header streak pill's three states — the same test Header.jsx draws from (grey: nothing
+// played today; one: one mode done; both: both done). Kept beside the Finish screen's use of it
+// rather than moved out of Header, which this change does not otherwise touch.
+function streakPillState(db, brState) {
+  const ch = chDoneToday(db);
+  const br = brDoneToday(brState);
+  return ch && br ? 'both' : ch || br ? 'one' : 'grey';
+}
+
+// Screens on which the header's burning flame holds still. The same set the bottom nav hides on
+// (minus the Finish screen, where the header itself is hidden): the screens where a game is running.
+const FLAME_PAUSED_SCREENS = ['countdown', 'game', 'br-countdown', 'br-game', 'trickgame'];
 
 function AppShell() {
   const { state, dispatch, beginSync, confirmProgressSaved, saveFailed } = useAppState();
@@ -160,6 +175,25 @@ function AppShell() {
   const slideElsRef = useRef({ from: null, to: null });
   const soundOnRef = useRef(soundOn);
   soundOnRef.current = soundOn;
+
+  // ── The Finish screen ───────────────────────────────────────────────────────
+  //
+  // `finish` is what the Finish screen shows, or null when it is not up. It is mounted as an
+  // overlay while the game screen is still underneath, and `screen` becomes 'finish' only once
+  // the overlay has covered it (220 ms), which is what lets the game, header and nav fade out
+  // together beneath it rather than vanish.
+  const [finish, setFinish] = useState(null);
+  // True while the result screen is entering from the Finish screen (about 900 ms). Achievement
+  // cards, confetti and the reminder card wait for it, so none of them opens over moving pieces.
+  const [resultHold, setResultHold] = useState(false);
+  // The header streak pill as it stood just BEFORE a game was recorded. The variant (first game,
+  // second game, nothing changed) is the difference between this and the pill after the reducer
+  // has run — read off the same two facts the header draws from, never a rule decided again here.
+  // `stateRef` exists because a game's onGameEnd can be a closure from the render the game
+  // started in; the ref is always the state as last rendered, i.e. just before the dispatch.
+  const preFinishRef = useRef(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // ── Analytics ───────────────────────────────────────────────────────────────
   //
@@ -307,6 +341,21 @@ function AppShell() {
         return;
       }
       const reqId = ++pendingReqId.current;
+      // Before the dispatch, so this is the pill the player was looking at during the game. The
+      // standalone Practice tab keeps its straight cut to results (it has no difficulty, so no
+      // best to fill a ring against), and is not snapshotted.
+      if (summary.origin === 'challenge' && summary.diff) {
+        const s = stateRef.current;
+        preFinishRef.current = {
+          mode: 'challenge',
+          reqId,
+          pill: streakPillState(s.db, s.brState),
+          streak: s.streak || 0,
+          prevBest: (s.db[summary.diff] || {}).best || 0,
+        };
+      } else {
+        preFinishRef.current = null;
+      }
       dispatch({
         type: 'CHALLENGE_SESSION_COMPLETE',
         reqId,
@@ -369,7 +418,32 @@ function AppShell() {
     if (!r || r.reqId !== pendingReqId.current) return;
     setResultData(r);
     setAchievementQueue(r.unlocked || []);
-    setScreen('result');
+    const pre = preFinishRef.current;
+    preFinishRef.current = null;
+    if (pre && pre.mode === 'challenge' && pre.reqId === r.reqId) {
+      // Every figure here is read off the result and the state the reducer has just settled.
+      // The fill is this score against the best as it stood before the run: a new best (which
+      // includes a first-ever game) fills the ring, anything else shows its share of the record.
+      setFinish({
+        key: 'ch-' + r.reqId,
+        mode: 'challenge',
+        number: r.score,
+        countFrom: 0,
+        fill: r.isNewBest || !pre.prevBest ? 1 : Math.min(1, r.score / pre.prevBest),
+        label: pre.prevBest ? t('finish_best_label', { n: pre.prevBest }) : '',
+        best: !!r.isNewBest,
+        pill: {
+          from: pre.pill,
+          to: streakPillState(state.db, state.brState),
+          numFrom: pre.streak,
+          numTo: state.streak || 0,
+        },
+        phraseKey: pickFinishPhrase(!!r.isNewBest),
+        target: { container: '.rscr', head: '.rh', score: '.rsco' },
+      });
+    } else {
+      setScreen('result');
+    }
 
     // Reported from here rather than from onGameEnd because the reducer has now run: the db holds
     // this session, so the day's average — before and after — is a fact to be read rather than a
@@ -418,6 +492,17 @@ function AppShell() {
         isReal: !summary.isPrac && state.brState.lastDay !== dayKey(),
       });
       const reqId = ++pendingBrReqId.current;
+      // As for Challenge: the pill and the best time as they stood before this trial is recorded.
+      {
+        const s = stateRef.current;
+        preFinishRef.current = {
+          mode: 'braining',
+          reqId,
+          pill: streakPillState(s.db, s.brState),
+          streak: s.streak || 0,
+          prevBestTime: s.brState.bestTime,
+        };
+      }
       dispatch({
         type: 'BRAINING_SESSION_COMPLETE',
         reqId,
@@ -474,7 +559,36 @@ function AppShell() {
     if (!r || r.reqId !== pendingBrReqId.current) return;
     setBrResultData(r);
     setBrAchievementQueue(r.unlocked || []);
-    setScreen('br-result');
+    const pre = preFinishRef.current;
+    preFinishRef.current = null;
+    if (pre && pre.mode === 'braining' && pre.reqId === r.reqId) {
+      // Braining's ring (spec, "Braining differences"): the number is the brain age, counted DOWN
+      // from the oldest age on the scale, because younger is better. The arc is the best time over
+      // this time — a full ring for a new best time, or for a first trial with nothing to beat.
+      // The new-best moment is the brain-age flag, and practice never celebrates.
+      const time = brFmtTimer(Math.round(r.sec));
+      setFinish({
+        key: 'br-' + r.reqId,
+        mode: 'braining',
+        number: r.age,
+        countFrom: Math.max(...BR_SCALE.map((b) => b.age)),
+        fill: pre.prevBestTime == null || r.sec <= 0 ? 1 : Math.min(1, pre.prevBestTime / r.sec),
+        label: pre.prevBestTime == null
+          ? time
+          : time + ' · ' + t('finish_best_label', { n: brFmtTimer(Math.round(pre.prevBestTime)) }),
+        best: !!r.isAgeBest && !r.isPrac,
+        pill: {
+          from: pre.pill,
+          to: streakPillState(state.db, state.brState),
+          numFrom: pre.streak,
+          numTo: state.streak || 0,
+        },
+        phraseKey: pickFinishPhrase(!!r.isAgeBest && !r.isPrac),
+        target: { container: '.br-rscr', head: '.br-rh', score: '.br-age-n' },
+      });
+    } else {
+      setScreen('br-result');
+    }
 
     // A counting trial is also the moment the Challenge boost is granted, so this event doubles as
     // "boost earned". There is deliberately no separate event for that: the boost is spent on a
@@ -680,6 +794,9 @@ function AppShell() {
     if (trickAchievementQueue.length || ambientAchievementQueue.length) return;
     if (state.pendingRestore) return;
     if (NOTIF_ASK_SCREENS.indexOf(screen) === -1) return;
+    // Not while the result screen is still entering from the Finish screen — the same wait the
+    // achievement cards observe, for the same reason.
+    if (resultHold) return;
     setNotifCardOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -692,6 +809,7 @@ function AppShell() {
     trickAchievementQueue,
     ambientAchievementQueue,
     screen,
+    resultHold,
   ]);
 
   // Both answers record that the asking happened, so neither one leaves the card able to return.
@@ -1304,7 +1422,20 @@ function AppShell() {
     setScreen('braining');
   }
 
-  const showNav = ['countdown', 'game', 'br-countdown', 'br-game', 'trickgame'].indexOf(screen) === -1;
+  // Continue from the Finish screen. The result screen mounts underneath at once — in the same
+  // commit as the Finish screen's 'leaving' step, which is what lets that step measure it — and
+  // the Finish screen stays up for the flights, then reports in and is removed.
+  function handleFinishContinue() {
+    if (!finish) return;
+    setResultHold(true);
+    setScreen(finish.mode === 'braining' ? 'br-result' : 'result');
+  }
+  function handleFinishEntered() {
+    setFinish(null);
+    setResultHold(false);
+  }
+
+  const showNav = ['countdown', 'game', 'br-countdown', 'br-game', 'trickgame', 'finish'].indexOf(screen) === -1;
   const isTabScreen = TAB_ORDER.indexOf(screen) !== -1;
 
   // One tab's content, so the swipe animation can render two of them side by side.
@@ -1367,13 +1498,22 @@ function AppShell() {
 
   return (
     <div className="wrap">
-      <Header
+      {/* Hidden for the whole Finish screen. It comes back with the result screen. */}
+      {screen !== 'finish' && <Header
         db={state.db} brState={state.brState} streak={state.streak}
         streakRestoreAvailable={state.streakRestoreAvailable}
         username={state.username} avatar={state.avatar}
         onOpenProfile={() => setProfileOpen(true)}
-      />
-      <div className="scroll" ref={scrollRef}>
+        // Lit and still while a game is actually being played — a countdown, a Challenge or
+        // Practice-tab run, a Braining trial, a trick drill — and burning everywhere else.
+        flamePaused={FLAME_PAUSED_SCREENS.indexOf(screen) !== -1}
+      />}
+      {/* Inert while the Finish screen is up. It covers the game screen for its first 220 ms while
+          that screen is still mounted, and covers the result screen while it enters — and a cover
+          stops taps but not a keyboard: the game's answer box would otherwise keep focus, and Enter
+          could still submit into a game that has already ended. `inert` takes focus and input
+          away from everything underneath until the Finish screen has gone. */}
+      <div className="scroll" ref={scrollRef} inert={!!finish}>
         {slide ? (
           // Mid-swipe: both screens are on-screen and absolutely positioned (.swiping), sliding
           // horizontally past each other.
@@ -1410,6 +1550,7 @@ function AppShell() {
             streak={state.streak}
             lang={lang}
             achievementQueue={achievementQueue}
+            held={resultHold}
             onAchievementsDone={() => setAchievementQueue([])}
             guestConvoStarted={state.guestConvoStarted}
             acctCreated={state.acctCreated}
@@ -1444,6 +1585,7 @@ function AppShell() {
             streak={state.streak}
             chDone={chDone}
             achievementQueue={brAchievementQueue}
+            held={resultHold}
             onAchievementsDone={() => setBrAchievementQueue([])}
             guestConvoStarted={state.guestConvoStarted}
             acctCreated={state.acctCreated}
@@ -1454,6 +1596,16 @@ function AppShell() {
           />
         )}
       </div>
+      {finish && (
+        <FinishScreen
+          key={finish.key}
+          data={finish}
+          soundOn={soundOn}
+          onCovered={() => setScreen('finish')}
+          onContinue={handleFinishContinue}
+          onEntered={handleFinishEntered}
+        />
+      )}
       <BottomNav activeTab={activeTab} onSelectTab={handleSelectTab} chDone={chDone} brDone={brDone} visible={showNav} />
       <QuitModal open={quitOpen} onKeepGoing={() => setQuitOpen(false)} onQuit={handleQuitConfirm} />
       <NotifOptInCard

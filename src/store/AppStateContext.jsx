@@ -1296,6 +1296,13 @@ export function reducer(state, action) {
 
       let isFirst = false;
       let isPR = false;
+      // A new best BRAIN AGE — strictly younger than the stored best, or the first age ever stored.
+      // Separate from `isPR`, which is a best TIME and keeps meaning exactly that. Brain age moves in
+      // bands, so most faster times are not a younger age; this is the flag the Finish screen and
+      // the result screen's celebration read (docs/finish-animation-spec.md, "Braining
+      // differences"). Each assignment below sits beside the bestAge it describes and compares
+      // against the value from BEFORE this session, which is the one about to be overwritten.
+      let isAgeBest = false;
       let nextBr;
       let unlocked = [];
       let nextMilestones = state.milestones;
@@ -1324,7 +1331,8 @@ export function reducer(state, action) {
 
           const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
           if (br.bestTime === null || sec < br.bestTime) isPR = true;
-          const bestAge = br.bestAge === null || age < br.bestAge ? age : br.bestAge;
+          isAgeBest = br.bestAge === null || age < br.bestAge;
+          const bestAge = isAgeBest ? age : br.bestAge;
           nextBr = {
             ...br,
             // `ts` pairs with the one stamped on Challenge attempts: it is what lets a boosted
@@ -1341,6 +1349,7 @@ export function reducer(state, action) {
           if (br.bestTime !== null && sec < br.bestTime) {
             isPR = true;
             bestTime = sec;
+            isAgeBest = br.bestAge === null || age < br.bestAge;
             bestAge = Math.min(br.bestAge === null ? age : br.bestAge, age);
           }
           nextBr = {
@@ -1395,7 +1404,10 @@ export function reducer(state, action) {
         // no boost — `nextBrBoostDay` is untouched on this path — because the boost is the
         // reward for the day's real trial, not for opening the practice mode.
         const bestTime = br.bestTime === null || sec < br.bestTime ? sec : br.bestTime;
-        const bestAge = br.bestAge === null || age < br.bestAge ? age : br.bestAge;
+        // Computed for practice too, because practice does move the stored best age. Nothing
+        // celebrates it: practice never celebrates, and both screens check `isPrac` first.
+        isAgeBest = br.bestAge === null || age < br.bestAge;
+        const bestAge = isAgeBest ? age : br.bestAge;
         nextBr = {
           ...br,
           sessions: [...sessions, { date: today, time: sec, age, real: false, ts: Date.now() }],
@@ -1432,7 +1444,7 @@ export function reducer(state, action) {
         bestStreakEver: nextBestStreakEver,
         _lastBrResult: {
           reqId: action.reqId,
-          sec, age, isPrac, isFirst, isPR,
+          sec, age, isPrac, isFirst, isPR, isAgeBest,
           opTimes: action.opTimes,
           unlocked,
         },

@@ -11,12 +11,20 @@ import { appUrl } from '../lib/appUrl.js';
 
 // Ported from the reference prototype's #scr-result markup + the relevant parts of endGame()/
 // triggerResultCelebration().
+// While `held` — the result screen still entering from the Finish screen — the cards and the
+// confetti wait, then run exactly as they always have. One shared empty list rather than a fresh
+// [] per render, because AchievementPopup restarts its queue whenever the list it is given changes.
+const NO_CARDS = [];
+
 export default function ChallengeResultScreen({
   result, db, streak, lang, achievementQueue, onAchievementsDone, onPlayAgain, onBack,
-  guestConvoStarted, acctCreated, onCreateAccount,
+  guestConvoStarted, acctCreated, onCreateAccount, held,
 }) {
   const { t } = useI18n();
-  const [celebrate, setCelebrate] = useState(false);
+  // Seeded from the result rather than switched on a frame later: the ribbon it adds pushes the
+  // score down, and arriving from the Finish screen the score's position is measured on the very
+  // first frame for the flying number to land on.
+  const [celebrate, setCelebrate] = useState(!!result.isNewBest);
 
   useEffect(() => {
     setCelebrate(!!result.isNewBest);
@@ -122,9 +130,9 @@ export default function ChallengeResultScreen({
       )}
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="bbtn" onClick={onBack}>{t('back')}</button>
-      {celebrate && <ConfettiBurst />}
+      {celebrate && !held && <ConfettiBurst />}
       <AchievementPopup
-        queue={achievementQueue}
+        queue={held ? NO_CARDS : achievementQueue}
         onDone={onAchievementsDone}
         guestConvoStarted={guestConvoStarted}
         acctCreated={acctCreated}

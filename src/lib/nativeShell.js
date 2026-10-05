@@ -69,3 +69,71 @@ export function initNativeShell() {
   configureStatusBar();
   configureKeyboard();
 }
+
+// ── The Finish screen's yellow, edge to edge ──────────────────────────────────────────────────
+//
+// The Finish screen can turn the whole screen yellow (docs/finish-animation-spec.md, "Where web
+// and phone differ"). In a browser its fixed layer already fills the viewport. In the wrapper two
+// strips sit outside the page: the status bar, which configureStatusBar() above keeps OUT of the
+// webview, and on iPhone the home-indicator strip, which the page does not lay out into because
+// index.html deliberately has no viewport-fit=cover.
+//
+// So both are painted from here rather than by changing that layout decision: the status bar gets
+// the plugin's own background colour and dark icons, and the home-indicator strip — which iOS
+// fills with the page's root background — gets the body's. Everything is put back exactly as it
+// was found, read from getInfo() at the moment of painting rather than assumed, so this cannot
+// fight configureStatusBar() over what "normal" is.
+//
+// Android's navigation bar is not tinted: the status-bar plugin has no API for it, and adding a
+// second plugin for one strip was deferred (decided 5 Oct 2026).
+
+let paintedFrom = null;
+
+export async function paintSystemBarsYellow(on) {
+  if (!isNative()) return;
+  try {
+    const { StatusBar, Style } = await import('@capacitor/status-bar');
+    if (on && !paintedFrom) {
+      const info = await StatusBar.getInfo();
+      paintedFrom = { style: info.style, color: info.color, body: document.body.style.backgroundColor };
+      document.body.style.backgroundColor = '#ffd166';
+      await StatusBar.setStyle({ style: Style.Light }); // dark icons, for a light background
+      // Not available on Android 15+, where the app is drawn edge to edge anyway; the throw is
+      // caught below and the yellow layer underneath the bar shows through instead.
+      await StatusBar.setBackgroundColor({ color: '#ffd166' });
+    } else if (!on && paintedFrom) {
+      const was = paintedFrom;
+      paintedFrom = null;
+      document.body.style.backgroundColor = was.body;
+      await StatusBar.setStyle({ style: was.style });
+      if (was.color) await StatusBar.setBackgroundColor({ color: was.color });
+    }
+  } catch {
+    /* cosmetic only — a status bar that stays its usual colour is not worth a broken finish */
+  }
+}
+
+// ── Android's back button ─────────────────────────────────────────────────────────────────────
+//
+// While the Finish screen is up, the hardware back button means Continue — never "leave the app
+// in the middle of the game flow". Registered only for as long as the Finish screen asks, because
+// a registered listener replaces Android's default handling everywhere else in the app as well.
+//
+// Returns a function that removes it. Off native, does nothing (a browser's back button is
+// handled by the Finish screen itself, through the page's own history).
+export function onNativeBackButton(handler) {
+  if (!isNative()) return () => {};
+  let handle = null;
+  let removed = false;
+  import('@capacitor/app')
+    .then(({ App }) => App.addListener('backButton', handler))
+    .then((h) => {
+      handle = h;
+      if (removed) h.remove();
+    })
+    .catch(() => { /* without the plugin, back keeps its default behaviour */ });
+  return () => {
+    removed = true;
+    if (handle) handle.remove();
+  };
+}

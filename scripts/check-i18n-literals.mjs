@@ -85,6 +85,15 @@ const PLACEHOLDER_DIVERGENCE = new Map([
   ['mdl_today_body2', 'Russian rephrases to avoid a counted noun, so it needs no {{unit}}'],
 ]);
 
+// Keys whose Russian is deliberately the same Latin text as the English. The two checks they
+// would trip — "identical in both languages" and "no Cyrillic in ru" — catch an untranslated string
+// almost every time, so the exceptions are named here one by one rather than the rules loosened.
+const SAME_IN_BOTH = new Map([
+  // A Latin motto, "to the stars". It reads as Latin in any language, and the spec's copy table
+  // (docs/finish-animation-spec.md) gives it untranslated in both.
+  ['finish_p13', 'Latin motto, kept in Latin in both languages by the spec'],
+]);
+
 // ── Is this prose? ────────────────────────────────────────────────────────────
 //
 // Every rule below exists because a real string in this codebase demanded it. The SELF-TEST at the
@@ -358,8 +367,10 @@ if (!en || !ru) {
     if (typeof a !== 'string' || typeof b !== 'string') continue;
     // A value identical in both languages is usually an untranslated string. Some are legitimately
     // identical — a bare placeholder, a symbol — so the test is "identical AND contains letters".
-    if (a === b && /[A-Za-z]{2,}/.test(a)) parityProblems.push(`identical in both languages: ${k} = "${a}"`);
-    if (/[A-Za-zА-Яа-яЁё]{2,}/.test(b) && !/[А-Яа-яЁё]/.test(b)) parityProblems.push(`no Cyrillic in ru: ${k} = "${b}"`);
+    if (!SAME_IN_BOTH.has(k)) {
+      if (a === b && /[A-Za-z]{2,}/.test(a)) parityProblems.push(`identical in both languages: ${k} = "${a}"`);
+      if (/[A-Za-zА-Яа-яЁё]{2,}/.test(b) && !/[А-Яа-яЁё]/.test(b)) parityProblems.push(`no Cyrillic in ru: ${k} = "${b}"`);
+    }
     // Interpolation placeholders have to survive translation, or the value silently renders "{{n}}".
     const ph = (s) => (s.match(/\{\{\w+\}\}/g) || []).sort().join(',');
     if (ph(a) !== ph(b) && !PLACEHOLDER_DIVERGENCE.has(k)) {
