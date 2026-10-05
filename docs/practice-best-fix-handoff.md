@@ -1,12 +1,14 @@
 # Handoff — Braining practice no longer sets the best time / best age
 
-Written 5 Oct 2026. **Not merged yet, on purpose**: the Finish-screen session in the main checkout
-was editing the same reducer case (adding `isAgeBest`), and the merge was deferred until that work
-is committed. Delete this file in the merge commit, or once the follow-up below is done.
+Written 5 Oct 2026, updated the same day. **Not merged yet, on purpose**: the Finish-screen session
+in the main checkout was editing the same reducer case (adding `isAgeBest`), and the merge was
+deferred until that work is committed. The `isAgeBest` follow-up is already DONE on this branch, so
+the merge is now only conflict resolution plus the usual checks. Delete this file in the merge commit.
 
 - **Branch:** `claude/vigorous-jones-b3f8ae`
 - **Worktree:** `/Users/bml/Documents/Projects/cifri/.claude/worktrees/vigorous-jones-b3f8ae`
-- **Fix commit:** `9557a22` — "Stop Braining practice runs setting the best time and best age"
+- **Commits:** `9557a22` the fix · `31f6e84` this note · `35c0ebd` `isAgeBest` · plus the commit
+  that updated this note
 
 Until it is merged, `npm run check:worktrees` (and so `npm run check`) fails in every other checkout,
 naming this branch. That is the backstop doing its job; `CIFRI_ALLOW_WORKTREES=1 npm run check`
@@ -40,6 +42,10 @@ share cards.
   the best-age card no longer falls back to the practice age.
 - `src/i18n_data.js` — `vs_best_practice` in en and ru.
 - `scripts/check-braining-rules.mjs` — eight cases; six fail against the old reducer.
+- `isAgeBest` (`35c0ebd`), the new-best-BRAIN-AGE flag the Finish screen celebrates: the trial and
+  retry lines are the Finish-screen session's own, comparing against the repaired `br`; practice
+  leaves it `false`. Two more check cases (24 in all); the second fails if `br` is set back to
+  `state.brState`.
 
 Verified: `npm run check` and `npm run lint` clean; live in the browser, a poisoned save repaired
 from 1:40 / 20 to 3:10 / 28 on load, and a practice run left it there.
@@ -54,13 +60,17 @@ from 1:40 / 20 to 3:10 / 28 on load, and a practice run left it there.
    ```
 3. Expect a conflict in `BRAINING_SESSION_COMPLETE`. Resolve it as follows:
    - keep `const br = repairBrainingBests(state.brState);` at the top of the case;
-   - in the **practice** branch take this branch's version — no `bestTime`/`bestAge` update,
-     `prac: true` on the row, `pracBestBefore = bestPracticeTime(sessions)` — and set
-     `isAgeBest = false` there (see below);
-   - keep both `isAgeBest` and `pracBestBefore` in `_lastBrResult`.
+   - in the **practice** branch take THIS branch's side whole — no `bestTime`/`bestAge` update, no
+     `isAgeBest` assignment (it stays `false`), `prac: true` on the row,
+     `pracBestBefore = bestPracticeTime(sessions)`. The other side's practice lines, and their
+     comment saying practice "does move the stored best age", are exactly what this fix removes;
+   - the trial and retry `isAgeBest` lines are identical on both sides — keep one copy;
+   - keep one `let isAgeBest = false;` declaration (this branch's comment mentions the repair and
+     practice), and both `isAgeBest` and `pracBestBefore` in `_lastBrResult`.
    `BrainingResultScreen.jsx` and `i18n_data.js` may need hand-merging too. The hunks are separate
    from the Finish screen's, but they sit near each other.
-4. Do the `isAgeBest` follow-up below, then `npm run check` and `npm run lint`.
+4. Run `npm run check:braining` — all 24 must pass, in particular the two `isAgeBest` cases — then
+   `npm run check` and `npm run lint`.
 5. Stage explicit paths only (never `git add -A`) and commit. Delete this file in that commit.
 6. Remove the worktree and branch:
    ```bash
@@ -72,20 +82,23 @@ from 1:40 / 20 to 3:10 / 28 on load, and a practice run left it there.
    The worktree holds an ignored `.env.local` symlink to the main checkout's, added so the checks
    could boot. If `worktree remove` objects to it, delete the symlink first.
 
-## The isAgeBest follow-up
+## Why isAgeBest looks the way it does
 
-As of 5 Oct the Finish-screen session's uncommitted reducer sets `isAgeBest` on the practice path as
-well (`isAgeBest = br.bestAge === null || age < br.bestAge`, with practice still lowering
-`bestAge`). `App.jsx` masks it with `!!r.isAgeBest && !r.isPrac`, but the reducer should not claim
-it. After the merge:
+The Finish-screen session's uncommitted reducer (as of 5 Oct) set `isAgeBest` on the practice path
+too, with practice still lowering `bestAge`; `App.jsx` masks it with `!!r.isAgeBest && !r.isPrac`.
+That mask can stay, but the reducer no longer needs it. On this branch:
 
-- **Practice:** `isAgeBest = false`, always. Practice never sets the best age, so it can never beat
-  it.
-- **Trial and retry:** `isAgeBest` must compare against the REPAIRED `br.bestAge`. That holds as long
-  as `br` is the `repairBrainingBests(...)` result above and not `state.brState`.
-- **Check case** to add to `scripts/check-braining-rules.mjs`, next to the practice cases:
-  - a practice run at age 20 on a save whose real best age is 30 reports `isAgeBest === false`, both
-    with and without an earlier real trial;
-  - on the `poisoned()` save (stored best age 20 from an old practice row, real best 28), a real run
-    at age 25 reports `isAgeBest === true`, while a real run at age 28 reports `false`.
-  Confirm the second case fails if `br` is set back to `state.brState`.
+- **Practice:** `isAgeBest` is never assigned, so it is `false`. Practice never sets the best age,
+  so it can never beat it.
+- **Trial and retry:** compared against the REPAIRED `br.bestAge`. That holds only while `br` is the
+  `repairBrainingBests(...)` result, not `state.brState` — keep it that way through the merge.
+- **Checks** (in `scripts/check-braining-rules.mjs`): "practice never reports a new best age", and
+  "on a save practice poisoned, isAgeBest is judged against the repaired best age" (age 25 over a
+  real best of 28 is a new best; 28 ties and is not).
+
+## Also unmerged, not part of this
+
+On 5 Oct `check:worktrees` also flagged `claude/vigilant-matsumoto-50437f` — one commit, "Lock
+Braining's Submit after a correct answer, so a double tap counts once" (`useBrainingGame.js`,
+`check-double-submit.mjs`). It does not touch this branch's files, but `npm run check` will keep
+failing on it after this merge until it is merged or discarded too.
