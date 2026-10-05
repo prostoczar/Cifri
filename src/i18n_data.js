@@ -255,6 +255,7 @@ en:{
   completion_time_cap:"Completion time",
   day_streak:"day streak",
   vs_best_time:"vs. best time",
+  vs_best_practice:"vs. best practice",
   // ── The Braining result screen ──────────────────────────────────────────────
   // Every one of these was rendered as an English literal until the 2026-08-14 audit found them.
   // The whole result screen was English regardless of the language setting, which is the screen a
@@ -650,6 +651,7 @@ ru:{
   completion_time_cap:"Время выполнения",
   day_streak:"серия дней",
   vs_best_time:"к лучшему времени",
+  vs_best_practice:"к лучшей тренировке",
   br_age_label:"возраст мозга",
   br_age_label_practice:"возраст мозга (практика)",
   br_completed_in:"Пройдено за {{time}}",

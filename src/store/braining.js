@@ -203,3 +203,62 @@ export function getTodayBrainingTime(brState, todayKey) {
   }
   return null;
 }
+
+
+// ── Practice runs and the personal best ───────────────────────────────────────
+//
+// Practice is 20 questions; the day's trial and its retries are 50. Brain age is read off ONE
+// time table for both, so a practice time is not comparable with a real one: 100 seconds is age
+// 20 over 20 questions and roughly 4 minutes' pace over 50. The prototype let practice lower the
+// stored best anyway — copied from Challenge, where practice and the real run are both 60
+// seconds and the comparison is fair — and here it meant one practice run could set a best no
+// real trial could ever beat, after which the new-best ribbon never fired again. Until 5 Oct 2026
+// the rewrite did the same; firstBrainingAge above had already been fixed for the same reason.
+//
+// A practice row is marked `prac: true` from that date. Older ones carry no mark, but they are
+// still recognisable: they are the only rows that are not real AND have no attemptId, which every
+// counting trial and retry has carried since 10 Aug 2026, before launch. A pre-August retry would
+// read as practice too, which can only make a repaired best slower, never faster — the safe side.
+export function isPracticeSession(s) {
+  return !!s && (s.prac === true || (s.real === false && !s.attemptId));
+}
+
+// The best time and age among the 50-question runs — the trial and its retries — or nulls when
+// there are none. Age is read off the stored rows rather than recomputed from the best time, so a
+// future change to the scale cannot quietly rewrite an age a player was shown.
+export function countingBest(sessions) {
+  let bestTime = null, bestAge = null;
+  for (const s of sessions || []) {
+    if (isPracticeSession(s)) continue;
+    if (typeof s.time === 'number' && (bestTime === null || s.time < bestTime)) bestTime = s.time;
+    if (typeof s.age === 'number' && (bestAge === null || s.age < bestAge)) bestAge = s.age;
+  }
+  return { bestTime, bestAge };
+}
+
+// The fastest earlier practice run, or null. What a practice result is compared with, so that a
+// 20-question time is only ever set against other 20-question times.
+export function bestPracticeTime(sessions) {
+  let best = null;
+  for (const s of sessions || []) {
+    if (isPracticeSession(s) && typeof s.time === 'number' && (best === null || s.time < best)) best = s.time;
+  }
+  return best;
+}
+
+// Repairs a best that practice set, by recomputing it from the history. Every completed run is
+// kept in `sessions` and nothing ever trims it, so the history is the truth and the stored pair is
+// only a cache of it. Applied wherever a saved brState enters the app — the device's own storage
+// and the server's copy — so every phone, and through them the server, ends up holding the same
+// corrected numbers. For an affected player the best gets SLOWER and the age OLDER: that is the
+// repair, not a loss, since those numbers were never achieved over 50 questions.
+//
+// Returns the SAME object when nothing needs changing, so an untouched save stays byte-identical
+// and does not look like new progress to the sync. An empty history is left alone: there is
+// nothing to derive from, and erasing a best on no evidence is not a repair.
+export function repairBrainingBests(brState) {
+  if (!brState || !Array.isArray(brState.sessions) || !brState.sessions.length) return brState;
+  const { bestTime, bestAge } = countingBest(brState.sessions);
+  if (brState.bestTime === bestTime && brState.bestAge === bestAge) return brState;
+  return { ...brState, bestTime, bestAge };
+}
