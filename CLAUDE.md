@@ -44,6 +44,7 @@ logic rather than a copy of it.
 | `check:tricks` | a trick Test that credits a fail, or un-credits a pass |
 | `check:trick-variety` | a trick whose 20-question Test has to repeat itself to fill up |
 | `check:braining` | brain-age, the Sharper Every Day tiers, and the displayed scale disagreeing with the computed age |
+| `check:double-submit` | a second tap on Submit counted again — a skipped question, or a game ending twice |
 | `check:achievements` | a catalogue row that renders wrong, or unlocks a reward it should not |
 | `check:triggers` | an achievement wired to the wrong number, or firing on a near-miss |
 | `check:achievements-verified` | an achievement the Braining boost could buy, or one that needs the network |
