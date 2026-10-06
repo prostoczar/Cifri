@@ -254,6 +254,17 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .cdd{font-size:calc(12px * var(--fs-mult));color:var(--txt3);font-weight:600}
 @keyframes pop{0%{transform:scale(1.4) rotate(-15deg);opacity:.3}100%{transform:scale(1) rotate(0deg);opacity:1}}
 .cdn{animation:pop .4s ease}
+/* 3-2-1-GO polish (docs/launch-celebrations-spec.md, Feature 4). Each number leaves in the last
+   160 ms of its beat instead of vanishing; GO pops in; GO's exit is CountdownScreen.jsx's. The game
+   screen then settles in from 0.92× — `backwards` only, so no transform is left on the game screen
+   afterwards to become the containing block of anything fixed inside it. */
+.cdn.leave{animation:cdLeave .16s ease-in forwards}
+@keyframes cdLeave{from{transform:translateY(0) scale(1);opacity:1}to{transform:translateY(-30px) scale(.5);opacity:0}}
+.cdgo{animation:cdGoPop .32s ease-out}
+@keyframes cdGoPop{0%{transform:scale(.3)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+.gpad,.br-gpad{animation:gameIn .28s ease-out backwards}
+@keyframes gameIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){.cdgo,.gpad,.br-gpad{animation:none}}
 
 /* GAME */
 /* v16 item 5: a flex column that fills the space it is given, rather than a stack whose height
