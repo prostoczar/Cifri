@@ -292,7 +292,9 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 /* Answer input — no border, card bg */.ai{width:100%;padding:11px;font-size:calc(22px * var(--fs-mult));line-height:1.36;text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:8px;outline:none;transition:all .15s;caret-color:transparent;flex-shrink:0}
 .ai:focus{box-shadow:none;background:var(--GL2)}
 .ai.ok{background:var(--GL2);color:var(--GDK)}
-.ai.bad{background:#fcebeb;color:#c0654a}
+/* The terracotta tint on a wrong answer is a 300 ms flash drawn by src/lib/answerFx.js rather than a
+   background held here; the red digits stay for as long as the answer is on screen. */
+.ai.bad{color:#c0654a}
 /* `flex:0 1 auto` — shrink when the scribble pad needs room, never GROW to fill a tall phone,
    which would have changed how every existing screen looks. `minmax(0,1fr)` rows plus
    `min-height:0` on the keys is what lets them compress; the text's own line box is the floor,
@@ -603,7 +605,8 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .br-hint.bad{color:#a32d2d;font-weight:600}
 .br-ai{width:100%;padding:11px;font-size:calc(24px * var(--fs-mult));line-height:1.36;text-align:center;border:none;border-radius:var(--rs);background:var(--card);color:var(--txt);font-weight:800;margin-bottom:8px;outline:none;caret-color:transparent;flex-shrink:0}
 .br-ai:focus{box-shadow:none;background:var(--GL2)}
-.br-ai.bad{background:#fcebeb;color:#c0654a}
+/* As .ai.bad: the tint is answerFx.js's 300 ms flash. */
+.br-ai.bad{color:#c0654a}
 /* Result */
 .br-rscr{padding:20px 16px}
 .br-rh{text-align:center;padding:14px 0 10px}

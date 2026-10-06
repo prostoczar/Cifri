@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { DIFFS, makeQ, calcSc, opName, fn } from '../store/questionEngine.js';
 import { makePracticeQ } from '../store/practiceEngine.js';
 import { tick, buzz, urgentTick } from '../store/sound.js';
+import { doubleTap, impact } from '../lib/haptics.js';
 import { startSession } from '../lib/attemptLog.js';
 import { t } from '../i18n_data.js';
 
@@ -18,6 +19,10 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
   const [inputClass, setInputClass] = useState('ai');
   const [feedback, setFeedback] = useState({ text: '', cls: 'fb' });
   const [qcFlash, setQcFlash] = useState(false);
+  // One entry per answer given, for the screen's answer feedback (src/lib/answerFx.js). A counter
+  // rather than a flag, so two wrong answers in a row are two events, not one state that never
+  // changed. Nothing in the game reads it.
+  const [fx, setFx] = useState({ kind: null, n: 0 });
 
   const curRef = useRef(null); // mutable session data mirroring the reference's `cur`
   const alockRef = useRef(false);
@@ -299,6 +304,8 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       c.correct++;
       applyPts();
       tick(soundOn);
+      impact('light');
+      setFx((f) => ({ kind: 'ok', n: f.n + 1 }));
       setInputClass('ai ok');
       setFeedback({ text: '+' + pts + ' ' + t(lang, 'pts'), cls: 'fb ok' });
       setQcFlash(true);
@@ -317,6 +324,8 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
       c.wrong++;
       applyPts();
       buzz(soundOn);
+      doubleTap();
+      setFx((f) => ({ kind: 'bad', n: f.n + 1 }));
       alockRef.current = true;
       setInputClass('ai bad');
       setFeedback({ text: t(lang, 'answer_colon') + ' ' + fn(c.answer), cls: 'fb bad' });
@@ -344,5 +353,5 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
     return { origin: c ? c.origin : 'challenge', sessionId: c ? c.sessionId : null };
   }, [clearTimer]);
 
-  return { session, question, input, inputClass, feedback, qcFlash, begin, padInput, backspace, submitAnswer, quit };
+  return { session, question, input, inputClass, feedback, qcFlash, fx, begin, padInput, backspace, submitAnswer, quit };
 }

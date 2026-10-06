@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { brMakeSession, brFmtTimer } from '../store/braining.js';
 import { opName } from '../store/questionEngine.js';
 import { tick, buzz } from '../store/sound.js';
+import { doubleTap, impact } from '../lib/haptics.js';
 import { startSession } from '../lib/attemptLog.js';
 import { t } from '../i18n_data.js';
 
@@ -19,6 +20,9 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
   const [inputBad, setInputBad] = useState(false);
   const [qcState, setQcState] = useState(''); // '' | 'ok' | 'bad'
   const [hint, setHint] = useState('');
+  // One entry per answer, for the screen's answer feedback — see the same counter in
+  // useChallengeGame.js. Nothing in the game reads it.
+  const [fx, setFx] = useState({ kind: null, n: 0 });
 
   const gameRef = useRef(null);
   const ivRef = useRef(null);
@@ -213,6 +217,8 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
       (g.opTimes[g.curOp] = g.opTimes[g.curOp] || []).push((Date.now() - g.qStart) / 1000);
       alockRef.current = true;
       tick(soundOn);
+      impact('light');
+      setFx((f) => ({ kind: 'ok', n: f.n + 1 }));
       setQcState('ok');
       g.qIdx++;
       if (g.qIdx >= g.total) {
@@ -225,6 +231,8 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
       // Flawless Brain can ask whether this session had any.
       g.wrong++;
       buzz(soundOn);
+      doubleTap();
+      setFx((f) => ({ kind: 'bad', n: f.n + 1 }));
       setInputBad(true);
       setQcState('bad');
       setHint(t(lang, 'wrong_try_again'));
@@ -250,7 +258,7 @@ export function useBrainingGame({ lang, soundOn, onGameEnd, onAttempt, getLastTi
   }, [lang]);
 
   return {
-    session, question, input, inputBad, qcState, hint,
+    session, question, input, inputBad, qcState, hint, fx,
     begin, padInput, backspace, submitAnswer, quit, quitWarningFor,
     fmtTimer: brFmtTimer,
   };

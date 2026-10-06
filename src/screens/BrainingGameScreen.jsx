@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
+import { answerCorrect, answerWrong, questionIn } from '../lib/answerFx.js';
 import ScribblePad from '../components/ScribblePad.jsx';
 import { brFmtTimer } from '../store/braining.js';
 
@@ -7,7 +8,27 @@ import { brFmtTimer } from '../store/braining.js';
 export default function BrainingGameScreen({ game, onShowQuit }) {
   const { t } = useI18n();
   const [scribbleOpen, setScribbleOpen] = useState(false);
-  const { session, question, input, inputBad, qcState, hint, padInput, backspace, submitAnswer } = game;
+  const { session, question, input, inputBad, qcState, hint, fx, padInput, backspace, submitAnswer } = game;
+
+  // ── Answer feedback (src/lib/answerFx.js) ──
+  // Braining moves on 180 ms after a right answer — sooner than the 250 ms the other modes take — so
+  // the slide is shortened to fit (out at 105 ms for 65 ms) rather than the question being held
+  // back. All of it happens while the hook's Submit lock is on; nothing here touches that lock.
+  const cardRef = useRef(null);
+  const boxRef = useRef(null);
+  const lastFxRef = useRef(null);
+  useEffect(() => {
+    if (!fx || !fx.n) return;
+    lastFxRef.current = fx.kind;
+    const els = { box: boxRef.current, card: cardRef.current };
+    if (fx.kind === 'ok') answerCorrect(els, { outAt: 105, outMs: 65 });
+    else answerWrong(els);
+  }, [fx]);
+  useLayoutEffect(() => {
+    questionIn({ box: boxRef.current, card: cardRef.current }, lastFxRef.current === 'ok');
+    lastFxRef.current = null;
+  }, [question]);
+
   if (!session) return null;
 
   const overLast = session.lastTime != null && session.elapsed > session.lastTime;
@@ -42,7 +63,7 @@ export default function BrainingGameScreen({ game, onShowQuit }) {
       {session.isPrac && (
         <div className="br-pbadge"><span>{t('practice_mode_not_counted')}</span></div>
       )}
-      <div className={'br-qc' + (qcState ? ' ' + qcState : '')}>
+      <div className={'br-qc' + (qcState ? ' ' + qcState : '')} ref={cardRef}>
         <div className="br-ob">{question.opLabel}</div>
         <div className="br-qt">{question.text}</div>
         <div className={'br-hint' + (hint ? ' bad' : '')}>{hint}</div>
@@ -50,6 +71,7 @@ export default function BrainingGameScreen({ game, onShowQuit }) {
       <input
         type="text"
         className={'br-ai' + (inputBad ? ' bad' : '')}
+        ref={boxRef}
         placeholder="?"
         autoComplete="off"
         inputMode="decimal"

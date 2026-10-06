@@ -52,3 +52,10 @@ export function selection() {
     await Haptics.selectionEnd();
   });
 }
+
+/** Two quick light taps, 80 ms apart — a wrong answer. */
+export function doubleTap() {
+  if (!isNative()) return;
+  impact('light');
+  setTimeout(() => impact('light'), 80);
+}

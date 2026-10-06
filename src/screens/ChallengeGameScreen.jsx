@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import ScribblePad from '../components/ScribblePad.jsx';
 import { fn } from '../store/questionEngine.js';
+import { answerCorrect, answerWrong, questionIn } from '../lib/answerFx.js';
 
 // Ported from the reference prototype's #scr-game markup + updateTUI().
 export default function ChallengeGameScreen({ game, onShowQuit }) {
@@ -9,7 +10,27 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
   // Owned here rather than inside the pad because the layout above and below it reacts to the
   // open state — the card and keypad give up height only while it is out.
   const [scribbleOpen, setScribbleOpen] = useState(false);
-  const { session, question, input, inputClass, feedback, qcFlash, padInput, backspace, submitAnswer } = game;
+  const { session, question, input, inputClass, feedback, qcFlash, fx, padInput, backspace, submitAnswer } = game;
+
+  // ── Answer feedback (src/lib/answerFx.js) ──
+  // The game loads the next question 250 ms after a right answer, so the slide-out runs 150–240 ms
+  // and the new question slides in as it appears. A wrong answer only shakes: the right answer is
+  // on screen for the player to read, and the next question simply replaces it.
+  const cardRef = useRef(null);
+  const boxRef = useRef(null);
+  const lastFxRef = useRef(null);
+  useEffect(() => {
+    if (!fx || !fx.n) return;
+    lastFxRef.current = fx.kind;
+    const els = { box: boxRef.current, card: cardRef.current };
+    if (fx.kind === 'ok') answerCorrect(els, { outAt: 150, outMs: 90 });
+    else answerWrong(els);
+  }, [fx]);
+  useLayoutEffect(() => {
+    questionIn({ box: boxRef.current, card: cardRef.current }, lastFxRef.current === 'ok');
+    lastFxRef.current = null;
+  }, [question]);
+
   if (!session) return null;
 
   let tn, ts, pbWidth, pbBg, urgent = false;
@@ -48,7 +69,7 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
         </button>
       </div>
       <div className="pw"><div className="pb" style={{ width: pbWidth, background: pbBg }}></div></div>
-      <div className={'qc' + (qcFlash ? ' fok' : '')}>
+      <div className={'qc' + (qcFlash ? ' fok' : '')} ref={cardRef}>
         <div className="ob">{question.opLabel}</div>
         <div className="qt">{question.text}</div>
         {/* Inside the card, the way Braining's .br-hint already sits inside .br-qc. As a sibling
@@ -58,7 +79,7 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
             the keypad under the player's thumb mid-run. */}
         <div className={feedback.cls}>{feedback.text}</div>
       </div>
-      <input type="text" className={inputClass} placeholder="?" autoComplete="off" inputMode="decimal" readOnly value={input}
+      <input type="text" className={inputClass} ref={boxRef} placeholder="?" autoComplete="off" inputMode="decimal" readOnly value={input}
         onKeyDown={(e) => { if (e.key === 'Enter') submitAnswer(); }} />
       {/* Between the answer box and the keypad, where a hand already is. `session.qIdx` is the
           per-question reset key: a new question wipes the pad, so nothing carries over. */}
