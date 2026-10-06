@@ -37,7 +37,7 @@ import { useNotificationStatus } from './hooks/useNotificationStatus.js';
 import ProfileSheet from './components/ProfileSheet.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
-import StreakRestoreModal from './components/StreakRestoreModal.jsx';
+import StreakLostScene from './components/StreakLostScene.jsx';
 import { SavePromptModal, GuestBanner } from './components/GuestConversion.jsx';
 import OnboardingScreen from './screens/OnboardingScreen.jsx';
 import LoginScreen from './screens/LoginScreen.jsx';
@@ -202,6 +202,9 @@ function AppShell() {
   // True while the result screen is entering from the Finish screen (about 900 ms). Achievement
   // cards, confetti and the reminder card wait for it, so none of them opens over moving pieces.
   const [resultHold, setResultHold] = useState(false);
+  // The streak-lost scene's snapshot of the restore offer, while the scene is up. See "The
+  // streak-lost scene" below.
+  const [lostScene, setLostScene] = useState(null);
   // The header streak pill as it stood just BEFORE a game was recorded. The variant (first game,
   // second game, nothing changed) is the difference between this and the pill after the reducer
   // has run — read off the same two facts the header draws from, never a rule decided again here.
@@ -302,6 +305,7 @@ function AppShell() {
   // nothing is recorded and nothing syncs. `import.meta.env.DEV` is false in every real build, so
   // the live app never has it. See docs/launch-celebrations-spec.md's test notes.
   const [previewCards, setPreviewCards] = useState(NO_CARDS);
+  const [previewLost, setPreviewLost] = useState(null);
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined;
     window.__cifriPreview = {
@@ -322,6 +326,9 @@ function AppShell() {
           : (thr ? [{ icon: 'flame', nameKey: 'ms_streak_name', descKey: 'ms_streak_desc', vars: { n } }] : []);
         setPreviewCards([...card, { streakStep: { from: n - 1, to: n } }]);
       },
+      // The streak-lost scene for a streak of `n`, with or without a restore on offer. Its buttons
+      // play the scene but change nothing: e.g. __cifriPreview.lost(12) or .lost(12, false).
+      lost: (n = 12, available = true) => setPreviewLost({ key: Date.now(), brokenValue: n, available }),
     };
     return () => { delete window.__cifriPreview; };
   }, []);
@@ -883,7 +890,7 @@ function AppShell() {
     if (notifStatus.capability === 'unsupported' || notifStatus.blocked) return;
     // Never stack on top of something else that is already talking.
     if (trickAchievementQueue.length || ambientAchievementQueue.length) return;
-    if (state.pendingRestore) return;
+    if (state.pendingRestore || lostScene) return;
     if (NOTIF_ASK_SCREENS.indexOf(screen) === -1) return;
     // Not while the result screen is still entering from the Finish screen — the same wait the
     // achievement cards observe, for the same reason.
@@ -901,6 +908,7 @@ function AppShell() {
     ambientAchievementQueue,
     screen,
     resultHold,
+    lostScene,
   ]);
 
   // Both answers record that the asking happened, so neither one leaves the card able to return.
@@ -1022,6 +1030,27 @@ function AppShell() {
   // Onboarding shows for a brand-new player, and again after logging out — the reference
   // returns you there with your username prefilled rather than to a bare login screen.
   const needsOnboarding = !state.username || !!state._loggedOut;
+
+  // ── The streak-lost scene ───────────────────────────────────────────────────
+  //
+  // WHEN a restore is offered is the reducer's (CHECK_STREAK_BREAK sets `pendingRestore`) and is
+  // unchanged. What changes is only when the scene that offers it is put on screen: never under the
+  // launch animation, never over a game in progress or the Finish screen (a break noticed at
+  // midnight with the app open waits for the game to end), and never over onboarding.
+  //
+  // The scene keeps a snapshot of the offer, because choosing clears `pendingRestore` at once while
+  // the scene still has its relight or fresh start to play; it closes itself when done. (The state
+  // itself is declared near the top, beside the others, because the reminder card's guard reads it.)
+  useEffect(() => {
+    if (lostScene || !state.pendingRestore) return;
+    if (!launchDone || finish || needsOnboarding) return;
+    if (FLAME_PAUSED_SCREENS.indexOf(screen) !== -1 || screen === 'finish') return;
+    setLostScene({
+      key: state.pendingRestore.brokenAtMs,
+      brokenValue: state.pendingRestore.brokenValue,
+      available: !!state.pendingRestore.availableAtBreak,
+    });
+  }, [state.pendingRestore, launchDone, finish, needsOnboarding, screen, lostScene]);
 
   // `source` is which of the six conversion surfaces sent us here. It is threaded from the button
   // that was tapped rather than guessed at, because all six used to arrive here as one
@@ -1726,31 +1755,40 @@ function AppShell() {
           onCreateAccount={() => setPreviewCards(NO_CARDS)}
         />
       )}
+      {/* Rebirth, earned by tapping Restore, waits for the streak-lost scene to finish handing over. */}
       <Ceremonies
-        cards={launchDone ? ambientAchievementQueue : NO_CARDS}
+        cards={launchDone && !lostScene ? ambientAchievementQueue : NO_CARDS}
         onDone={() => setAmbientAchievementQueue([])}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}
         onCreateAccount={(src, key) => { setAmbientAchievementQueue([]); openAccountCreation(src, key); }}
       />
-      <StreakRestoreModal
-        pendingRestore={state.pendingRestore}
-        // Restoring earns Rebirth, so it carries a reqId like every other card-producing action.
-        // Both are tracked against the same condition the reducer guards on, so an event is never
-        // recorded for a restore the reducer went on to refuse.
-        onRestore={() => {
-          if (state.pendingRestore && state.pendingRestore.availableAtBreak) {
-            track('streak_restored', { restored_value: state.pendingRestore.brokenValue });
-          }
-          dispatch({ type: 'STREAK_RESTORE', reqId: ++pendingAmbientReqId.current });
-        }}
-        onStartOver={() => {
-          track('streak_start_over', {
-            broken_value: state.pendingRestore ? state.pendingRestore.brokenValue : null,
-          });
-          dispatch({ type: 'STREAK_START_OVER' });
-        }}
-      />
+      {import.meta.env.DEV && previewLost && (
+        <StreakLostScene key={previewLost.key} data={previewLost}
+          onRestore={() => {}} onStartOver={() => {}} onExited={() => setPreviewLost(null)} />
+      )}
+      {lostScene && (
+        <StreakLostScene
+          key={lostScene.key}
+          data={lostScene}
+          // Restoring earns Rebirth, so it carries a reqId like every other card-producing action.
+          // Both are tracked against the same condition the reducer guards on, so an event is never
+          // recorded for a restore the reducer went on to refuse.
+          onRestore={() => {
+            if (state.pendingRestore && state.pendingRestore.availableAtBreak) {
+              track('streak_restored', { restored_value: state.pendingRestore.brokenValue });
+            }
+            dispatch({ type: 'STREAK_RESTORE', reqId: ++pendingAmbientReqId.current });
+          }}
+          onStartOver={() => {
+            track('streak_start_over', {
+              broken_value: state.pendingRestore ? state.pendingRestore.brokenValue : null,
+            });
+            dispatch({ type: 'STREAK_START_OVER' });
+          }}
+          onExited={() => setLostScene(null)}
+        />
+      )}
 
       <ProfileSheet
         open={profileOpen}

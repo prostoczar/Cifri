@@ -16,7 +16,9 @@ import { AVATAR_ICONS } from '../store/avatar.js';
 //
 // Props: `base` ('unlit' | 'lit' | 'cold') is what shows before anything happens; `catching`, `lit` and
 // `burning` switch the later states on; `edge` is the dark-edge colour; `paused` holds a burning
-// flame lit and still (the header does this while a game is being played).
+// flame lit and still (the header does this while a game is being played). `coolMs`, on a burning
+// flame, cools it: grey drains down through it from the top over that many ms while its edge greys
+// and its wave slows to a stop (the streak-lost scene, docs/launch-celebrations-spec.md Feature 7).
 //
 // Reduced motion: a burning flame is drawn still — solid in the pill's colour, with its dark edge,
 // no wave and no colour flow. That is also what the Finish screen's reduced-motion version ends on,
@@ -53,10 +55,16 @@ function useReducedMotion() {
   return reduced;
 }
 
-export default function Flame({ base = 'lit', catching = false, lit = false, burning = false, edge, paused = false }) {
-  const gradId = 'flame-grad-' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
+const COLD_FILL = '#d9d1c6';
+const COLD_EDGE = '#b9b0a4';
+
+export default function Flame({ base = 'lit', catching = false, lit = false, burning = false, edge, paused = false, coolMs = 0 }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradId = 'flame-grad-' + uid;
+  const coolId = 'flame-cool-' + uid;
   const reduced = useReducedMotion();
   const burnRef = useRef(null);
+  const coolRectRef = useRef(null);
 
   // A paused flame is a lit one. A still one (reduced motion) keeps its dark edge.
   const moving = burning && !paused && !reduced;
@@ -82,6 +90,30 @@ export default function Flame({ base = 'lit', catching = false, lit = false, bur
       /* cosmetic: an unsynchronised flame is still a flame */
     }
   }, [moving]);
+
+  // ── Cooling ──
+  //
+  // Inside the burning flame's own SVG, so the grey waves with the flame it is covering rather than
+  // sitting still on top of a shape that is still moving. Driven frame by frame because the grey is
+  // a clip rectangle's height, which not every browser will animate from CSS. The wave is slowed
+  // through the same frames, to a standstill as the grey reaches the bottom.
+  const cooling = coolMs > 0 && moving;
+  useEffect(() => {
+    if (!cooling) return undefined;
+    const rect = coolRectRef.current;
+    const svg = burnRef.current;
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / coolMs);
+      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      if (rect) rect.setAttribute('height', (26 * e).toFixed(2));
+      if (svg && svg.getAnimations) svg.getAnimations().forEach((a) => { a.playbackRate = Math.max(0.0001, 1 - p); });
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [cooling, coolMs]);
 
   return (
     <span className={'flame' + (moving ? ' burn' : '')}>
@@ -112,16 +144,27 @@ export default function Flame({ base = 'lit', catching = false, lit = false, bur
               <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="0 -24" dur={FLOW_MS / 1000 + 's'} repeatCount="indefinite" />
             )}
           </linearGradient>
+          {cooling && (
+            <clipPath id={coolId}>
+              <rect ref={coolRectRef} x="-2" y="-1" width="28" height="0" />
+            </clipPath>
+          )}
         </defs>
         {/* The thin dark edge: a back copy 4 wide in a darker shade of the pill, and the front
             copy 2 wide on top, leaving a rim about one unit wide. */}
-        <path d={FLAME_D} fill={edge} stroke={edge} strokeWidth="4" />
+        <path
+          d={FLAME_D} fill={edge} stroke={edge} strokeWidth="4"
+          style={cooling ? { fill: COLD_EDGE, stroke: COLD_EDGE, transition: 'fill ' + coolMs + 'ms, stroke ' + coolMs + 'ms' } : undefined}
+        />
         <path
           d={FLAME_D}
           fill={still ? 'currentColor' : 'url(#' + gradId + ')'}
           stroke={still ? 'currentColor' : 'url(#' + gradId + ')'}
           strokeWidth="2"
         />
+        {cooling && (
+          <path d={FLAME_D} fill={COLD_FILL} stroke={COLD_FILL} strokeWidth="2" clipPath={'url(#' + coolId + ')'} />
+        )}
       </svg>
     </span>
   );

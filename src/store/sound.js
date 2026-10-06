@@ -458,3 +458,42 @@ export function dotNote(soundOn, i) {
     /* ignore */
   }
 }
+
+/** A streak cooling into embers: a short, sad, descending tune. */
+export function streakCool(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    [659, 587, 523, 392].forEach((freq, i) => note(ac, { freq, at: i * 0.22, dur: i === 3 ? 0.6 : 0.26, gain: 0.05 }));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** A streak relit by a restore: a whoosh, a rising four-note chime, and a low warm note under it. */
+export function streakRelight(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    sweep(ac, { dur: 0.35, filter: 'bandpass', from: 400, to: 2800, gain: 0.04, swell: true });
+    [523, 659, 784, 1047].forEach((freq, i) => note(ac, { type: 'triangle', freq, at: 0.12 + i * 0.08, dur: 0.24, gain: 0.04 }));
+    note(ac, { freq: 196, at: 0.12, dur: 0.6, gain: 0.04 });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Starting a streak afresh: a soft two-note tone. */
+export function freshTone(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    note(ac, { freq: 440, dur: 0.22, gain: 0.05 });
+    note(ac, { freq: 587, at: 0.18, dur: 0.32, gain: 0.05 });
+  } catch {
+    /* ignore */
+  }
+}

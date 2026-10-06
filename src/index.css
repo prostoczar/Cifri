@@ -503,18 +503,6 @@ button,input,select,textarea{font-family:'Nunito',system-ui,-apple-system,sans-s
 .mcancel{background:var(--border);color:var(--txt2)}
 .mquit{background:var(--TC);color:#fff}
 
-/* v14.5 item 5: streak restore modal — yellow-tinted card, reuses .mbg for the dim centered overlay */
-.restore-card{background:#fff6df;border-radius:var(--r);padding:20px;width:300px;max-width:90vw}
-.restore-card h3{font-size:calc(16px * var(--fs-mult));font-weight:900;margin-bottom:10px;color:#000}
-.restore-card p{font-size:calc(13px * var(--fs-mult));color:var(--txt2);margin-bottom:14px;line-height:1.6}
-.restore-btns{display:flex;gap:8px}
-.restore-btn{flex:1;padding:12px;border:none;border-radius:var(--rs);cursor:pointer;font-size:calc(13px * var(--fs-mult));font-weight:800;transition:all .15s;text-align:center}
-.restore-btn.grn{background:var(--G);color:#fff;box-shadow:0 3px 0 var(--GD)}
-.restore-btn.grn:active{transform:translateY(2px);box-shadow:none}
-.restore-btn.grn.disabled{background:#d8d8d8!important;color:#999!important;box-shadow:none!important;cursor:default}
-.restore-btn.red{background:var(--TC);color:#fff;box-shadow:0 3px 0 var(--TCB)}
-.restore-btn.red:active{transform:translateY(2px);box-shadow:none}
-
 /* ── BRAINING ──────────────────────────────────────────── */
 /* v14.8 item 8: top padding approximates the gap Challenge gets "for free" from its difficulty-
    chip row (.drow: 12px+8px padding around a ~32px chip = ~52px) sitting above its stat boxes —
@@ -1410,3 +1398,57 @@ body.dark .fin.s-yellow,body.dark .fin.s-flood{--fin-muted:#7a7167}
 .cer.s-label .sk-label,.cer.s-text .sk-text{opacity:1;transform:none;transition:opacity .3s ease-out,transform .3s cubic-bezier(.2,.7,.2,1)}
 /* Reduced motion: the final layout — lit, still flame and a full ring of dots — fades in. */
 .cer.reduced.s-tier .sk-dots{opacity:1}
+
+/* ── STREAK LOST — docs/launch-celebrations-spec.md, Feature 7 (StreakLostScene.jsx) ──────────────
+   A full screen on beige (the page colour in dark mode, as the Finish screen decided). The flame and
+   the number never leave the screen: they cool, and relight or count down, and finally fly into the
+   header pill. Classes: s-cool (grey drains through the flame, 1000 ms), s-cold (embers; the choice
+   appears, 2300 ms), chose-restore / chose-fresh, s-relight and s-lit (the restore), s-exit. */
+.sl{position:fixed;inset:0;z-index:690;background:var(--sl-bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 28px calc(24px + env(safe-area-inset-bottom));text-align:center;font-family:'Nunito',system-ui,-apple-system,sans-serif;--sl-bg:#fdf8f3;--sl-ink:#2b2b2b;--sl-muted:#8a8178;--sl-disc-shadow:#e3dbd0;animation:slIn .3s ease-out both}
+body.dark .sl{--sl-bg:var(--bg);--sl-ink:var(--txt);--sl-muted:var(--txt3);--sl-disc-shadow:var(--border2)}
+.sl *{font-weight:900}
+@keyframes slIn{from{opacity:0}to{opacity:1}}
+.sl-missed{position:absolute;top:calc(48px + env(safe-area-inset-top));left:0;right:0;font-size:14px;color:var(--sl-muted);transition:opacity .25s ease-out}
+.sl-stage{position:relative;width:120px;height:120px;margin-bottom:18px;flex-shrink:0}
+.sl-disc{position:absolute;inset:0;border-radius:50%;background:#fff;box-shadow:0 5px 0 var(--sl-disc-shadow);transition:background .3s ease-out,box-shadow .3s ease-out,opacity .25s ease-out}
+.sl-flame{position:absolute;left:25px;top:25px;width:70px;height:70px;display:flex;color:#d65a3a;transform-origin:50% 60%}
+.sl-flame .flame{width:70px;height:70px}
+.sl-flame .flame-catch{transition-duration:350ms}
+.sl.s-cool .sl-flame{transform:scale(.92);transition:transform 1.2s ease-in-out}
+.sl.s-relight .sl-flame{transform:scale(1);transition:transform .35s ease-out}
+.sl.s-lit .sl-flame{animation:skFlamePop .52s cubic-bezier(.2,.8,.3,1)}
+.sl.chose-restore .sl-disc{background:#0f9d6c;box-shadow:0 5px 0 #0a7a54;animation:slDiscPop .3s ease-out}
+@keyframes slDiscPop{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}
+.sl-smoke{position:absolute;left:50%;top:20px}
+.sl-smoke span{position:absolute;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:#cfc7bc;opacity:0;animation:slSmoke 1.1s ease-out both}
+@keyframes slSmoke{0%{transform:translateY(0) scale(.6);opacity:.85}100%{transform:translateY(-56px) scale(1.7);opacity:0}}
+.sl-embers{position:absolute;left:50%;top:44px}
+.sl-embers span{position:absolute;width:4px;height:4px;margin-left:-2px;border-radius:50%;opacity:0;animation:slEmber 1.76s ease-out infinite backwards}
+@keyframes slEmber{0%{transform:translateY(0);opacity:0}12%{opacity:1}100%{transform:translateY(-64px);opacity:0}}
+.sl-sparks{position:absolute;left:50%;top:50%}
+.sl-num{font-size:48px;line-height:1.05;color:#d65a3a;font-variant-numeric:tabular-nums;transition:color .3s ease-out,opacity .25s ease-out}
+.sl.s-cool .sl-num{color:#b9b0a4;transition:color 1.2s ease-in-out}
+.sl.s-lit .sl-num{color:#0f9d6c;animation:finPop .38s ease-out}
+.sl-label{font-size:15px;color:var(--sl-muted);margin-bottom:22px;transition:opacity .25s ease-out}
+.sl-title{font-size:22px;color:var(--sl-ink);margin-bottom:8px;opacity:0;transform:translateY(10px);transition:opacity .3s ease-out,transform .3s cubic-bezier(.2,.7,.2,1)}
+.sl-text{font-size:14px;line-height:1.5;color:var(--sl-muted);max-width:300px;margin-bottom:20px;opacity:0;transform:translateY(10px);transition:opacity .3s ease-out,transform .3s cubic-bezier(.2,.7,.2,1)}
+.sl-btns{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;max-width:300px;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .3s ease-out,transform .3s cubic-bezier(.2,.7,.2,1)}
+.sl.s-cold .sl-title,.sl.s-cold .sl-text,.sl.s-cold .sl-btns{opacity:1;transform:none}
+.sl.s-cold .sl-btns{pointer-events:auto}
+.sl-title.changed{opacity:1;transform:none;animation:finPop .38s ease-out}
+.sl-btn{width:100%;padding:14px;border:none;border-radius:var(--rs);font-size:15px;cursor:pointer}
+.sl-btn.grn{background:#0f9d6c;color:#fff;box-shadow:0 3px 0 #0a7a54}
+.sl-btn.grn:active{transform:translateY(2px);box-shadow:none}
+.sl-btn.off{background:#e9e3da;color:#a39d96;box-shadow:none;cursor:default}
+.sl-plain{background:none;border:none;padding:12px;font-size:14px;color:var(--sl-muted);cursor:pointer}
+/* A choice made: the reading and the buttons go; for a restore "You missed a day" goes too. */
+.sl.chose .sl-text,.sl.chose .sl-btns{opacity:0;pointer-events:none;transition:opacity .25s ease-out}
+.sl.chose-restore .sl-missed{opacity:0}
+/* The hand-over: everything but the flame fades, and the flame flies (StreakLostScene.jsx). */
+.sl.s-exit .sl-disc,.sl.s-exit .sl-num,.sl.s-exit .sl-label,.sl.s-exit .sl-title,.sl.s-exit .sl-missed{opacity:0;transition:opacity .25s ease-out}
+/* Reduced motion: the cold state at once, then crossfades. */
+.sl.reduced,.sl.reduced *{animation:none!important}
+.sl.reduced .sl-flame{transform:scale(.92)}
+.sl.reduced .sl-num{color:#b9b0a4}
+.sl.reduced.chose-restore .sl-flame{transform:none}
+.sl.reduced.chose-restore .sl-num{color:#0f9d6c}
