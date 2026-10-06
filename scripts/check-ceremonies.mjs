@@ -1,11 +1,14 @@
 // Does a batch of unlocks play the ceremonies it should, in the order it should?
 //
-// docs/launch-celebrations-spec.md, Feature 5: lowest rarity first so the run builds to its biggest
+// docs/launch-celebrations-spec.md, Features 5 and 6 — and, for the streak days, the "Decisions made
+// during build" at the end of it. Feature 5: lowest rarity first so the run builds to its biggest
 // moment; at most three ceremonies, the rest on one "+{n} more" card in the highest remaining tier;
 // the first-streak sign-up prompt always its own ceremony. None of it throws when it is wrong —
 // a legendary played before a common, or a sign-up ask folded into "+3 more", just quietly happens,
 // and the batches that expose it (four unlocks in one run) are rare enough that nobody would see it
-// in testing. So the real queue builder is driven here with every awkward batch there is.
+// in testing. The streak days are worse: which of 7, 120, 180, 360 and 365 gets which ceremony —
+// or none — is a table of special cases that only shows itself once a year. So the real queue
+// builder is driven here with every awkward batch there is.
 //
 // Run it with:  npm run check:ceremonies
 
@@ -19,6 +22,7 @@ const k = (key) => ({ key });
 
 // What a list of items looks like, compactly: "lit, ach:ch_first, more:2/rare, legacy".
 const show = (items) => items.map((it) => {
+  if (it.kind === 'streak') return 'streak:' + it.days + '/' + it.tier + (it.ach ? '+reward' : '');
   if (it.kind === 'ach') return 'ach:' + it.card.key;
   if (it.kind === 'more') return 'more:' + it.entries.length + '/' + it.tier;
   if (it.kind === 'legacy') return 'legacy:' + (it.card.nameKey || '?');
@@ -50,6 +54,28 @@ expect('the first-streak prompt is never folded into "+more"',
   [k('ch_first'), k('br_first'), k('ch_easy'), k('q_100'), LIT],
   'lit, ach:br_first, ach:ch_easy, ach:q_100, more:1/common');
 expect('an unknown key is not an achievement ceremony', [{ key: 'not_a_real_key', nameKey: 'x' }], 'legacy:x');
+
+// ── Streak days (spec Feature 6, and its "Decisions made during build") ──
+// `step(a, b)` is the card App.jsx adds when a game moves the streak from a to b; `plain(n)` is the
+// reducer's ad-hoc "{n}-day streak" card for a day with no catalogue row.
+const step = (from, to) => ({ streakStep: { from, to } });
+const plain = (n) => ({ icon: 'flame', nameKey: 'ms_streak_name', descKey: 'ms_streak_desc', vars: { n } });
+expect('day 7: the streak ceremony carries its achievement', [k('streak_7'), step(6, 7)], 'streak:7/common+reward');
+expect('day 7 again, already earned: ceremony, no reward row', [step(6, 7)], 'streak:7/common');
+expect('day 120 replaces the plain card', [plain(120), step(119, 120)], 'streak:120/uncommon');
+expect('day 183 needs no card at all', [step(182, 183)], 'streak:183/rare');
+expect('day 180 is the achievement ceremony, in its rarity', [k('streak_180'), step(179, 180)], 'ach:streak_180');
+expect('day 240 is green', [plain(240), step(239, 240)], 'streak:240/epic');
+expect('day 360 keeps the simple card', [plain(360), step(359, 360)], 'legacy:ms_streak_name');
+expect('day 365: gold, with its reward', [k('streak_365'), step(364, 365)], 'streak:365/legendary+reward');
+expect('day 390: gold, no reward row', [plain(390), step(389, 390)], 'streak:390/legendary');
+expect('day 391 is not a milestone', [step(390, 391)], '');
+expect('an ordinary day plays nothing', [step(5, 6)], '');
+expect('the streak goes first, achievements after it', [k('ch_moon'), k('streak_30'), k('ch_first'), step(29, 30)],
+  'streak:30/common+reward, ach:ch_first, ach:ch_moon');
+expect('a streak card with no step still celebrates', [k('streak_14')], 'streak:14/common+reward');
+expect('the streak never counts towards the three', [k('ch_first'), k('ch_perfect'), k('ch_hard'), k('streak_60'), step(59, 60)],
+  'streak:60/uncommon+reward, ach:ch_first, ach:ch_perfect, ach:ch_hard');
 
 const w = (s, n) => String(s).padEnd(n);
 console.log(w('case', 64) + 'verdict');

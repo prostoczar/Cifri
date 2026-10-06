@@ -1280,6 +1280,7 @@ body.dark .fin.s-yellow,body.dark .fin.s-flood{--fin-muted:#7a7167}
 .flame-l{position:absolute;inset:0;width:100%;height:100%;overflow:visible;opacity:0;stroke-linecap:round;stroke-linejoin:round}
 .flame-l.on{opacity:1}
 .flame-unlit path{fill:none;stroke:#9a9186;stroke-width:2}
+.flame-cold path{fill:#d9d1c6;stroke:#b9b0a4;stroke-width:2}
 .flame-lit path{fill:currentColor;stroke:currentColor;stroke-width:2}
 .flame-catch path{fill:#d65a3a;stroke:#d65a3a;stroke-width:2}
 .flame-catch{clip-path:inset(100% 0 0 0);transition:clip-path 300ms cubic-bezier(.3,.7,.2,1)}
@@ -1380,3 +1381,32 @@ body.dark .fin.s-yellow,body.dark .fin.s-flood{--fin-muted:#7a7167}
 .cer.reduced .cer-fly-pos,.cer.reduced .cel-sparks,.cer.reduced .cer-inf-pos{display:none}
 .cer.reduced .cer-body,.cer.reduced .cel-twinkle{animation:none!important}
 .cer.reduced.is-ready .cer-tap{animation:finTapIn 200ms ease-out forwards}
+
+/* ── STREAK CEREMONY — docs/launch-celebrations-spec.md, Feature 6 (StreakCeremony.jsx) ───────────
+   The ceremony styles above, plus: the white disc with the flame on it, the ring of sixteen dots
+   that fills, and the big day count. The tier ring opens at the tier moment (s-tier) rather than at
+   a stamp. */
+.cer.s-tier .cer-ring-pos{opacity:1;animation:celSpinIn .5s cubic-bezier(.2,.8,.3,1) both}
+.cer.s-tier .cer-inf-pos{opacity:0;transition:opacity .2s ease-out}
+.sk-disc{position:absolute;left:-50px;top:-50px;width:100px;height:100px;border-radius:50%;background:#fff;box-shadow:0 5px 0 var(--t-shadow);display:flex;align-items:center;justify-content:center;opacity:0}
+.cer.s-disc .sk-disc{opacity:1;animation:finPop .42s ease-out both}
+.sk-flame{display:flex;opacity:0;color:#d65a3a}
+.sk-flame .flame{width:64px;height:64px}
+.sk-flame .flame-catch{transition-duration:320ms}
+.cer.s-flame .sk-flame{opacity:1;transition:opacity .25s ease-out}
+.cer.s-tier .sk-flame{animation:skFlamePop .52s cubic-bezier(.2,.8,.3,1)}
+@keyframes skFlamePop{0%{transform:none}35%{transform:scale(1.4) rotate(-8deg)}70%{transform:scale(.95) rotate(2deg)}100%{transform:none}}
+.sk-dots{position:absolute;left:0;top:0}
+.sk-dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:rgba(255,255,255,.45);box-shadow:inset 0 0 0 2px var(--t-dot);opacity:0}
+.cer.s-dots .sk-dot{opacity:1;transition:opacity .2s ease-out}
+.sk-dot.on{background:var(--t-dot);animation:skDotPop .24s ease-out}
+@keyframes skDotPop{0%{transform:scale(1)}40%{transform:scale(1.7)}100%{transform:scale(1)}}
+.cer.s-tier .sk-dots{opacity:0;transition:opacity .3s ease-out}
+.sk-info{gap:4px}
+.sk-num{font-size:58px;line-height:1;color:var(--t-title);font-variant-numeric:tabular-nums;opacity:0}
+.cer.s-tier .sk-num{opacity:1;transition:opacity .2s ease-out}
+.sk-label{font-size:22px;color:var(--t-title);opacity:0;transform:translateY(10px)}
+.cer-desc.sk-text{font-size:15px;margin-top:4px}
+.cer.s-label .sk-label,.cer.s-text .sk-text{opacity:1;transform:none;transition:opacity .3s ease-out,transform .3s cubic-bezier(.2,.7,.2,1)}
+/* Reduced motion: the final layout — lit, still flame and a full ring of dots — fades in. */
+.cer.reduced.s-tier .sk-dots{opacity:1}

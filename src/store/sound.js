@@ -443,3 +443,18 @@ export function rewardPing(soundOn) {
     /* ignore */
   }
 }
+
+/**
+ * One dot of a streak ceremony's ring filling: a soft note, `i` of 16, rising one octave from the
+ * first dot to the last.
+ */
+export function dotNote(soundOn, i) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    note(ac, { freq: 523 * Math.pow(2, i / 15), dur: 0.09, gain: 0.04 });
+  } catch {
+    /* ignore */
+  }
+}

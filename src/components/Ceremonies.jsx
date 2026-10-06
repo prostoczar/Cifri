@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildCeremonies } from './ceremonyQueue.js';
 import CeremonyScene from './CeremonyScene.jsx';
+import StreakCeremony from './StreakCeremony.jsx';
 import AchievementPopup from './AchievementPopup.jsx';
 
 // Plays a batch of unlocked cards as ceremonies, one after another (docs/launch-celebrations-spec.md,
-// Feature 5). The drop-in successor to AchievementPopup everywhere a batch of cards is shown: after
+// Features 5 and 6). The drop-in successor to AchievementPopup everywhere a batch of cards is shown: after
 // a result screen has finished entering, over the Tricks screens, and over whatever screen an
 // achievement earned outside a game happens to find.
 //
@@ -28,6 +29,9 @@ export default function Ceremonies({ cards, onDone, guestConvoStarted, acctCreat
 
   if (item.kind === 'legacy') {
     return <AchievementPopup key={idx} queue={item.queue} onDone={next} {...cta} />;
+  }
+  if (item.kind === 'streak') {
+    return <StreakCeremony key={idx + ':streak:' + item.days} item={item} onDone={next} {...cta} />;
   }
   return <CeremonyScene key={idx + ':' + item.kind + ':' + (item.card ? item.card.key || item.card.nameKey : 'more')} item={item} onDone={next} {...cta} />;
 }

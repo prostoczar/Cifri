@@ -10,7 +10,7 @@ import { diffLabel, engineFor } from './store/questionEngine.js';
 import {
   getYestChallengeScore, getTodayChallengeScore, countingSessions, todaySessionsFor, dayAverage,
 } from './store/selectors.js';
-import { ACHIEVEMENT_BY_KEY, earnedCount } from './store/achievements.js';
+import { ACHIEVEMENT_BY_KEY, earnedCount, streakAchievementKey, streakMilestoneThreshold } from './store/achievements.js';
 import { track } from './lib/analytics.js';
 import { initNotifications, syncTags, notificationDiagnostics } from './lib/notifications.js';
 import { BR_SCALE, brAge, brFmtTimer, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
@@ -72,6 +72,18 @@ function streakPillState(db, brState) {
 
 // One shared empty list, because Ceremonies restarts its queue whenever the list it is given changes.
 const NO_CARDS = [];
+
+// The cards a finished game shows, plus — when the game has just moved the streak — one more saying
+// from what to what. The streak ceremonies are derived from that step (components/ceremonyQueue.js),
+// never stored. `pre` is the streak as it stood before the game was recorded (preFinishRef below);
+// a run that moved nothing, or has no snapshot (the Practice tab, which never moves the streak),
+// adds nothing.
+function withStreakStep(unlocked, pre, streakAfter) {
+  const cards = unlocked || [];
+  const after = streakAfter || 0;
+  if (!pre || !(after > pre.streak)) return cards;
+  return cards.concat([{ streakStep: { from: pre.streak, to: after } }]);
+}
 
 // Screens on which the header's burning flame holds still. The same set the bottom nav hides on
 // (minus the Finish screen, where the header itself is hidden): the screens where a game is running.
@@ -298,6 +310,18 @@ function AppShell() {
       ceremony: (...keys) => setPreviewCards(keys.map((k) => (k === 'lit'
         ? { icon: 'flame', nameKey: 'ms_streaklit_name', descKey: 'ms_streaklit_desc', cta: true }
         : { key: k }))),
+      // The streak reaching `n` today, e.g. __cifriPreview.streak(30). `withAchievement` adds that
+      // day's streak achievement as just unlocked (7, 14, 30, 60, 90, 365), for the reward row.
+      // Days the game counts with no catalogue row (120, 360, 390…) bring the plain card the reducer
+      // would send, so 360 shows the simple card it keeps.
+      streak: (n, withAchievement = true) => {
+        const thr = streakMilestoneThreshold(n);
+        const key = thr ? streakAchievementKey(thr) : null;
+        const card = key
+          ? (withAchievement ? [{ key }] : [])
+          : (thr ? [{ icon: 'flame', nameKey: 'ms_streak_name', descKey: 'ms_streak_desc', vars: { n } }] : []);
+        setPreviewCards([...card, { streakStep: { from: n - 1, to: n } }]);
+      },
     };
     return () => { delete window.__cifriPreview; };
   }, []);
@@ -480,9 +504,9 @@ function AppShell() {
     const r = state._lastSessionResult;
     if (!r || r.reqId !== pendingReqId.current) return;
     setResultData(r);
-    setAchievementQueue(r.unlocked || []);
     const pre = preFinishRef.current;
     preFinishRef.current = null;
+    setAchievementQueue(withStreakStep(r.unlocked, pre && pre.reqId === r.reqId ? pre : null, state.streak));
     if (pre && pre.mode === 'challenge' && pre.reqId === r.reqId) {
       // Every figure here is read off the result and the state the reducer has just settled.
       // The fill is this score against the best as it stood before the run: a new best (which
@@ -621,9 +645,9 @@ function AppShell() {
     const r = state._lastBrResult;
     if (!r || r.reqId !== pendingBrReqId.current) return;
     setBrResultData(r);
-    setBrAchievementQueue(r.unlocked || []);
     const pre = preFinishRef.current;
     preFinishRef.current = null;
+    setBrAchievementQueue(withStreakStep(r.unlocked, pre && pre.reqId === r.reqId ? pre : null, state.streak));
     if (pre && pre.mode === 'braining' && pre.reqId === r.reqId) {
       // Braining's ring (spec, "Braining differences"): the number is the brain age, counted DOWN
       // from the oldest age on the scale, because younger is better. The arc is the best time over

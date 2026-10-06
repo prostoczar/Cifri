@@ -444,6 +444,28 @@ en:{
   cer_new_achievement:"New achievement!",
   cer_new_avatar:"New avatar unlocked",
   cer_more:"+{{n}} more",
+  // Streak milestone ceremonies (spec Feature 6). The chip and the label under the big number agree
+  // with the number, so each has three forms picked by tPlural() — see that function.
+  streak_chip_one:"{{n}}-day streak",
+  streak_chip_few:"{{n}}-day streak",
+  streak_chip_many:"{{n}}-day streak",
+  streak_label_one:"day streak!",
+  streak_label_few:"day streak!",
+  streak_label_many:"day streak!",
+  sm_7:"One week down. Your brain has noticed.",
+  sm_14:"Two weeks. It's officially a habit.",
+  sm_30:"A whole month. Your neurons now pay rent here.",
+  sm_60:"Two months. Your brain renewed its subscription.",
+  sm_90:"Ninety days. A whole season of sharp thinking.",
+  sm_120:"120 days. Mental math is now your native language.",
+  sm_150:"150 days. Calculators are filing complaints.",
+  sm_183:"You are a Cifri tax resident.",
+  sm_210:"210 days. Your streak is older than some houseplants.",
+  sm_240:"Eight months. Numbers line up when you walk in.",
+  sm_270:"270 days. Three quarters of the way around the sun.",
+  sm_300:"300 days. Your brain runs on Cifri now.",
+  sm_330:"330 days. The finish line is in sight.",
+  sm_365:"A full lap around the sun. Legend status.",
   tut_welcome_title:"Welcome to Cifri",
   tut_welcome_desc:"A few minutes of daily practice keeps your mental math sharp. Each day, do your Challenge and Braining to build your streak. Here's a quick look at how it all works.",
   tut_challenge_desc:"A 60-second daily drill — solve as many problems as you can before time runs out. Easy, Medium, and Hard each step up the numbers and operations. Play as often as you like: your score for the day is the average of every attempt, so a second run can pull it down just as easily as lift it. Your streak is safe either way — one play is all it takes to count the day.",
@@ -850,6 +872,26 @@ ru:{
   cer_new_achievement:"Новое достижение!",
   cer_new_avatar:"Новый аватар открыт",
   cer_more:"Ещё +{{n}}",
+  streak_chip_one:"Серия: {{n}} день",
+  streak_chip_few:"Серия: {{n}} дня",
+  streak_chip_many:"Серия: {{n}} дней",
+  streak_label_one:"день подряд!",
+  streak_label_few:"дня подряд!",
+  streak_label_many:"дней подряд!",
+  sm_7:"Неделя позади. Мозг это заметил.",
+  sm_14:"Две недели. Это уже привычка.",
+  sm_30:"Целый месяц. Нейроны теперь платят здесь аренду.",
+  sm_60:"Два месяца. Мозг продлил подписку.",
+  sm_90:"Девяносто дней. Целый сезон острого ума.",
+  sm_120:"120 дней. Устный счёт теперь ваш родной язык.",
+  sm_150:"150 дней. Калькуляторы подают жалобы.",
+  sm_183:"Вы налоговый резидент Cifri.",
+  sm_210:"210 дней. Ваша серия старше некоторых комнатных растений.",
+  sm_240:"Восемь месяцев. Цифры выстраиваются, когда вы входите.",
+  sm_270:"270 дней. Три четверти пути вокруг Солнца.",
+  sm_300:"300 дней. Ваш мозг теперь работает на Cifri.",
+  sm_330:"330 дней. Финиш уже виден.",
+  sm_365:"Полный круг вокруг Солнца. Статус: легенда.",
   tut_welcome_title:"Добро пожаловать в Cifri",
   tut_welcome_desc:"Несколько минут практики каждый день поддерживают острый ум. Каждый день выполняйте Челлендж и Брейнинг, чтобы наращивать серию. Вот краткий обзор того, как всё это работает.",
   tut_challenge_desc:"60-секундный ежедневный забег — решайте как можно больше примеров, пока не закончится время. Легко, Средне и Сложно постепенно усложняют числа и операции. Играйте сколько хотите: результат за день — это среднее всех попыток, поэтому вторая попытка может его как поднять, так и опустить. Серии это не грозит: чтобы день засчитался, достаточно одной игры.",
@@ -894,6 +936,22 @@ export function dayWord(lang, n) {
   if (mod10 === 1 && mod100 !== 11) return 'день';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
   return 'дней';
+}
+
+// A string that agrees with a number: `key` + `_one`, `_few` or `_many`, by the same rule as
+// dayWord() above — in Russian 1 день, 2–4 дня, 5+ дней, with 11–14 always taking the third form
+// (so 21 is "one", 183 is "few", 112 is "many"); in English 1 is "one" and everything else "many".
+// The app's table is its own rather than i18next's, so these are plain keys, all three in both
+// languages so the parity check holds.
+export function pluralForm(lang, n) {
+  if (lang !== 'ru') return n === 1 ? 'one' : 'many';
+  var mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'one';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'few';
+  return 'many';
+}
+export function tPlural(lang, key, n, vars) {
+  return t(lang, key + '_' + pluralForm(lang, n), Object.assign({ n: n }, vars || {}));
 }
 
 export function t(lang, key, vars) {

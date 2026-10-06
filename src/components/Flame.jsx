@@ -7,12 +7,14 @@ import { AVATAR_ICONS } from '../store/avatar.js';
 //
 // The states (docs/finish-animation-spec.md, "Flame icon"):
 //   unlit     outline only, warm grey
+//   cold      solid grey with a slightly darker grey edge — a flame that has gone out, or is yet to
+//             catch (the streak ceremonies, docs/launch-celebrations-spec.md Features 6 and 7)
 //   catching  terracotta revealed from the bottom up, over whatever was showing
 //   lit       solid, in the pill's own text colour (currentColor)
 //   burning   a white → yellow → terracotta → white gradient flowing upward, a slow wave, and a
 //             thin dark edge in a darker shade of the pill
 //
-// Props: `base` ('unlit' | 'lit') is what shows before anything happens; `catching`, `lit` and
+// Props: `base` ('unlit' | 'lit' | 'cold') is what shows before anything happens; `catching`, `lit` and
 // `burning` switch the later states on; `edge` is the dark-edge colour; `paused` holds a burning
 // flame lit and still (the header does this while a game is being played).
 //
@@ -84,6 +86,9 @@ export default function Flame({ base = 'lit', catching = false, lit = false, bur
   return (
     <span className={'flame' + (moving ? ' burn' : '')}>
       <svg className={'flame-l flame-unlit' + (showBase && base === 'unlit' ? ' on' : '')} viewBox="0 0 24 24" aria-hidden="true">
+        <path d={FLAME_D} />
+      </svg>
+      <svg className={'flame-l flame-cold' + (showBase && base === 'cold' ? ' on' : '')} viewBox="0 0 24 24" aria-hidden="true">
         <path d={FLAME_D} />
       </svg>
       <svg className={'flame-l flame-lit' + ((showBase && base === 'lit') || showLit ? ' on' : '')} viewBox="0 0 24 24" aria-hidden="true">

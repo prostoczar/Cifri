@@ -1,9 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import { useAppState } from '../store/AppStateContext.jsx';
 import { ACHIEVEMENTS, achDesc, achName, earnedCount } from '../store/achievements.js';
 import { achievementFanfare, ceremonyChime, rewardPing } from '../store/sound.js';
-import { impact, success } from '../lib/haptics.js';
+import { impact } from '../lib/haptics.js';
+import { stampHaptic, useCeremonyLayout } from './ceremonyLayout.js';
 import { appUrl } from '../lib/appUrl.js';
 import { useScene, prefersReducedMotion } from '../hooks/useScene.js';
 import { TIERS, tierShakes, tierVars } from './celebrateTiers.js';
@@ -42,28 +43,6 @@ function stepsFor(item) {
   return s.sort((a, b) => a[0] - b[0]);
 }
 
-// The haptic at the stamp, by tier.
-function stampHaptic(tier) {
-  if (tier === 'common') impact('light');
-  else if (tier === 'uncommon' || tier === 'rare') impact('medium');
-  else {
-    impact('heavy');
-    if (tier === 'legendary') setTimeout(success, 160);
-  }
-}
-
-// An element's position inside `root`, ignoring transforms — so a piece can be measured at its
-// resting place while it is still waiting, offset, to fade up into it.
-function offsetWithin(el, root) {
-  let x = 0, y = 0, e = el;
-  while (e && e !== root) {
-    x += e.offsetLeft;
-    y += e.offsetTop;
-    e = e.offsetParent;
-  }
-  return { x, y };
-}
-
 export default function CeremonyScene({ item, onDone, guestConvoStarted, acctCreated, onCreateAccount }) {
   const { t, lang } = useI18n();
   const { state } = useAppState();
@@ -88,36 +67,10 @@ export default function CeremonyScene({ item, onDone, guestConvoStarted, acctCre
   });
   const { reached, skipped, onTap, classes } = scene;
 
-  // ── Layout, measured: the medallion's centre, the flood's reach, where the pill flies to, and
-  // where the reward symbol lands. ──
+  // ── Layout, measured from the real screen (ceremonyLayout.js) ──
   const rootRef = useRef(null);
   const avatarRef = useRef(null);
-  const [vars, setVars] = useState({});
-  useLayoutEffect(() => {
-    const measure = () => {
-      const root = rootRef.current;
-      if (!root) return;
-      const W = root.clientWidth, H = root.clientHeight;
-      const mx = W / 2;
-      const my = Math.round(Math.max(170, Math.min(H * 0.3, H - 440)));
-      const chipY = Math.max(18, my - 172);
-      const R = Math.ceil(Math.max(Math.hypot(mx, my), Math.hypot(mx, H - my))) + 8;
-      const v = {
-        '--mx': mx + 'px', '--my': my + 'px', '--R': R + 'px', '--chip-y': chipY + 'px',
-        '--pill-dy': (chipY + 14 - my) + 'px',
-      };
-      const av = avatarRef.current;
-      if (av) {
-        const o = offsetWithin(av, root);
-        v['--fx'] = (o.x + av.offsetWidth / 2 - mx) + 'px';
-        v['--fy'] = (o.y + av.offsetHeight / 2 - my) + 'px';
-      }
-      setVars(v);
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+  const vars = useCeremonyLayout(rootRef, avatarRef);
 
   const p = TIERS[tier] || TIERS.common;
   const ach = item.ach;
