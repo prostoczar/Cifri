@@ -31,6 +31,32 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
     lastFxRef.current = null;
   }, [question]);
 
+  // ── The last five seconds (spec Feature 3) ──
+  // On each whole second from 5 down to 1 the number pops and the bar pulses, in step with the urgent
+  // tick the hook already plays; at 0 the number pulses once more as the Finish screen takes over.
+  // Only a counting Challenge run, the same runs that get the urgent tick. Reduced motion: none of it.
+  const numRef = useRef(null);
+  const barRef = useRef(null);
+  const timer = session ? session.timer : null;
+  const countsDown = !!session && !session.isPrac && !session.isUnlim && !session.isCountMode;
+  useEffect(() => {
+    if (!countsDown || timer == null || timer > 5 || timer < 0) return;
+    let reduced = false;
+    try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { /* moving is the default */ }
+    if (reduced) return;
+    const num = numRef.current;
+    const bar = barRef.current;
+    if (timer === 0) {
+      if (num) num.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.5)', offset: 0.4 }, { transform: 'scale(1)' }],
+        { duration: 300, easing: 'ease-out' });
+      return;
+    }
+    if (num) num.animate([{ transform: 'scale(1.35)' }, { transform: 'scale(1)' }],
+      { duration: 260, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    if (bar) bar.animate([{ transform: 'scaleY(1)' }, { transform: 'scaleY(1.8)', offset: 0.35 }, { transform: 'scaleY(1)' }],
+      { duration: 240, easing: 'ease-out' });
+  }, [timer, countsDown]);
+
   if (!session) return null;
 
   let tn, ts, pbWidth, pbBg, urgent = false;
@@ -53,7 +79,7 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
     <div className={'gpad' + (scribbleOpen ? ' scribbling' : '')}>
       <div className="gtop">
         <div className={'tc2' + (urgent ? ' urg' : '')}>
-          <div className="tn">{tn}</div>
+          <div className="tn" ref={numRef}>{tn}</div>
           <div className="ts">{ts}</div>
         </div>
         <div className="scd">
@@ -68,7 +94,7 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
           <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
       </div>
-      <div className="pw"><div className="pb" style={{ width: pbWidth, background: pbBg }}></div></div>
+      <div className="pw"><div className="pb" ref={barRef} style={{ width: pbWidth, background: pbBg }}></div></div>
       <div className={'qc' + (qcFlash ? ' fok' : '')} ref={cardRef}>
         <div className="ob">{question.opLabel}</div>
         <div className="qt">{question.text}</div>

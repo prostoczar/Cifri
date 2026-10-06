@@ -210,7 +210,11 @@ export function useChallengeGame({ lang, soundOn, onGameEnd, onAttempt, getYestS
         ivRef.current = setInterval(() => {
           c.timer--;
           pushTuiUpdate();
-          if (!c.isPrac && c.timer <= 5 && c.timer > 0) urgentTick(soundOn);
+          if (!c.isPrac && c.timer <= 5 && c.timer > 0) {
+            urgentTick(soundOn);
+            // On the same tick as the sound, so the phone's tap and the urgent tick land together.
+            impact('light');
+          }
           if (c.timer <= 0) {
             finishGame();
           }
