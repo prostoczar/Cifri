@@ -387,3 +387,59 @@ export function launchSpark(soundOn) {
     /* ignore */
   }
 }
+
+/** "New achievement!" popping in: a short two-note chime. */
+export function ceremonyChime(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    note(ac, { type: 'triangle', freq: 880, dur: 0.12, gain: 0.06 });
+    note(ac, { type: 'triangle', freq: 1175, at: 0.09, dur: 0.16, gain: 0.06 });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * The fanfare at an achievement's stamp (and a streak ceremony's tier moment), growing with the
+ * tier: a short rising chime; a longer one; plus a whoosh; plus a low boom and an octave-up chord;
+ * plus a deep sub-boom and a sparkling run on top. The layers are kept quiet enough that even the
+ * legendary pile-up stays around the tick's loudness rather than above it.
+ */
+export function achievementFanfare(soundOn, tier) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  const rank = ['common', 'uncommon', 'rare', 'epic', 'legendary'].indexOf(tier);
+  try {
+    const run = rank === 0 ? [784, 1047] : [659, 784, 988, 1319];
+    const g = rank >= 3 ? 0.035 : 0.05;
+    run.forEach((freq, i) => note(ac, { type: 'triangle', freq, at: i * 0.07, dur: 0.24, gain: g }));
+    if (rank >= 2) sweep(ac, { dur: 0.4, filter: 'bandpass', from: 500, to: 3000, gain: 0.035, swell: true });
+    if (rank >= 3) {
+      note(ac, { freq: 130, freqTo: 55, dur: 0.45, gain: 0.05 });
+      [1319, 1568, 1976].forEach((freq) => note(ac, { freq, at: 0.3, dur: 0.5, gain: 0.02 }));
+    }
+    if (rank >= 4) {
+      note(ac, { freq: 62, freqTo: 38, dur: 0.7, gain: 0.05 });
+      [1568, 1760, 1976, 2349, 2637, 3136].forEach((freq, i) => {
+        note(ac, { type: 'triangle', freq, at: 0.45 + i * 0.045, dur: 0.14, gain: 0.02 });
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** A reward landing in its place: a soft high ping. */
+export function rewardPing(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    note(ac, { freq: 2093, dur: 0.18, gain: 0.045 });
+  } catch {
+    /* ignore */
+  }
+}

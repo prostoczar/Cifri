@@ -4,14 +4,14 @@ import { brAgeColor, brFmtSec, brScaleShown } from '../store/braining.js';
 import { computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
-import AchievementPopup from '../components/AchievementPopup.jsx';
+import Ceremonies from '../components/Ceremonies.jsx';
 import ShareButton from '../components/ShareButton.jsx';
 import { appUrl } from '../lib/appUrl.js';
 
 // Ported from the reference prototype's #scr-br-result markup + the display half of brFinish().
 // While `held` — the result screen still entering from the Finish screen — the cards and the
 // confetti wait, then run exactly as they always have. One shared empty list rather than a fresh
-// [] per render, because AchievementPopup restarts its queue whenever the list it is given changes.
+// [] per render, because Ceremonies restarts its queue whenever the list it is given changes.
 const NO_CARDS = [];
 
 export default function BrainingResultScreen({
@@ -187,8 +187,8 @@ export default function BrainingResultScreen({
       <button className="br-btn-out" onClick={onBack}>{t('back_to_braining')}</button>
 
       {celebrate && !held && <ConfettiBurst />}
-      <AchievementPopup
-        queue={held ? NO_CARDS : achievementQueue}
+      <Ceremonies
+        cards={held ? NO_CARDS : achievementQueue}
         onDone={onAchievementsDone}
         guestConvoStarted={guestConvoStarted}
         acctCreated={acctCreated}

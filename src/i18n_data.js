@@ -439,6 +439,11 @@ en:{
   // The launch animation's slow-load line. Shown by index.html before the app's code has loaded,
   // so vite.config.js copies it into the page at build time; this table stays the one source.
   launch_slow:"Hold tight, crunching numbers…",
+  // Achievement ceremonies (docs/launch-celebrations-spec.md, Feature 5). The rarity chip reuses
+  // rarity_*, and "Tap to continue" reuses finish_tap.
+  cer_new_achievement:"New achievement!",
+  cer_new_avatar:"New avatar unlocked",
+  cer_more:"+{{n}} more",
   tut_welcome_title:"Welcome to Cifri",
   tut_welcome_desc:"A few minutes of daily practice keeps your mental math sharp. Each day, do your Challenge and Braining to build your streak. Here's a quick look at how it all works.",
   tut_challenge_desc:"A 60-second daily drill — solve as many problems as you can before time runs out. Easy, Medium, and Hard each step up the numbers and operations. Play as often as you like: your score for the day is the average of every attempt, so a second run can pull it down just as easily as lift it. Your streak is safe either way — one play is all it takes to count the day.",
@@ -842,6 +847,9 @@ ru:{
   finish_best_label:"рекорд {{n}}",
   finish_new_best:"новый рекорд!",
   launch_slow:"Минутку, считаем цифры…",
+  cer_new_achievement:"Новое достижение!",
+  cer_new_avatar:"Новый аватар открыт",
+  cer_more:"Ещё +{{n}}",
   tut_welcome_title:"Добро пожаловать в Cifri",
   tut_welcome_desc:"Несколько минут практики каждый день поддерживают острый ум. Каждый день выполняйте Челлендж и Брейнинг, чтобы наращивать серию. Вот краткий обзор того, как всё это работает.",
   tut_challenge_desc:"60-секундный ежедневный забег — решайте как можно больше примеров, пока не закончится время. Легко, Средне и Сложно постепенно усложняют числа и операции. Играйте сколько хотите: результат за день — это среднее всех попыток, поэтому вторая попытка может его как поднять, так и опустить. Серии это не грозит: чтобы день засчитался, достаточно одной игры.",

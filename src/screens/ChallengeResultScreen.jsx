@@ -4,7 +4,7 @@ import { diffLabel, opName } from '../store/questionEngine.js';
 import { todayChallengeAvg, computeOpSummary } from '../store/selectors.js';
 import ConfettiBurst from '../components/ConfettiBurst.jsx';
 import { ResultAccountButton } from '../components/GuestConversion.jsx';
-import AchievementPopup from '../components/AchievementPopup.jsx';
+import Ceremonies from '../components/Ceremonies.jsx';
 import ScoreBreakdown from '../components/ScoreBreakdown.jsx';
 import ShareButton from '../components/ShareButton.jsx';
 import { appUrl } from '../lib/appUrl.js';
@@ -13,7 +13,7 @@ import { appUrl } from '../lib/appUrl.js';
 // triggerResultCelebration().
 // While `held` — the result screen still entering from the Finish screen — the cards and the
 // confetti wait, then run exactly as they always have. One shared empty list rather than a fresh
-// [] per render, because AchievementPopup restarts its queue whenever the list it is given changes.
+// [] per render, because Ceremonies restarts its queue whenever the list it is given changes.
 const NO_CARDS = [];
 
 export default function ChallengeResultScreen({
@@ -131,8 +131,8 @@ export default function ChallengeResultScreen({
       <ResultAccountButton visible={!acctCreated} onClick={onCreateAccount} />
       <button className="bbtn" onClick={onBack}>{t('back')}</button>
       {celebrate && !held && <ConfettiBurst />}
-      <AchievementPopup
-        queue={held ? NO_CARDS : achievementQueue}
+      <Ceremonies
+        cards={held ? NO_CARDS : achievementQueue}
         onDone={onAchievementsDone}
         guestConvoStarted={guestConvoStarted}
         acctCreated={acctCreated}

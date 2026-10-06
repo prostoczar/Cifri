@@ -31,7 +31,7 @@ import { issueChallengeSet, submitChallengeAttempt, issueBrainingSet, submitBrai
 import Header from './components/Header.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import QuitModal from './components/QuitModal.jsx';
-import AchievementPopup from './components/AchievementPopup.jsx';
+import Ceremonies from './components/Ceremonies.jsx';
 import NotifOptInCard from './components/NotifOptInCard.jsx';
 import { useNotificationStatus } from './hooks/useNotificationStatus.js';
 import ProfileSheet from './components/ProfileSheet.jsx';
@@ -69,6 +69,9 @@ function streakPillState(db, brState) {
   const br = brDoneToday(brState);
   return ch && br ? 'both' : ch || br ? 'one' : 'grey';
 }
+
+// One shared empty list, because Ceremonies restarts its queue whenever the list it is given changes.
+const NO_CARDS = [];
 
 // Screens on which the header's burning flame holds still. The same set the bottom nav hides on
 // (minus the Finish screen, where the header itself is hidden): the screens where a game is running.
@@ -277,6 +280,26 @@ function AppShell() {
   useEffect(() => {
     attachAudioUnlock();
     attachGlobalClickSound(() => soundOnRef.current);
+  }, []);
+
+  // ── Development-only previews ───────────────────────────────────────────────
+  //
+  // The celebrations are triggered by things that take days to reach — a 365-day streak, a
+  // legendary unlock, a missed day. On the dev server only, `__cifriPreview` plays any of them
+  // straight away, from the console, WITHOUT touching saved progress: nothing here dispatches, so
+  // nothing is recorded and nothing syncs. `import.meta.env.DEV` is false in every real build, so
+  // the live app never has it. See docs/launch-celebrations-spec.md's test notes.
+  const [previewCards, setPreviewCards] = useState(NO_CARDS);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+    window.__cifriPreview = {
+      // e.g. __cifriPreview.ceremony('ch_first', 'ch_perfect', 'ch_moon'), or 'lit' for the
+      // first-streak sign-up card.
+      ceremony: (...keys) => setPreviewCards(keys.map((k) => (k === 'lit'
+        ? { icon: 'flame', nameKey: 'ms_streaklit_name', descKey: 'ms_streaklit_desc', cta: true }
+        : { key: k }))),
+    };
+    return () => { delete window.__cifriPreview; };
   }, []);
 
   // ── The launch animation's hand-off (index.html) ────────────────────────────
@@ -1661,15 +1684,26 @@ function AppShell() {
         onAllow={handleNotifAllow}
         onDismiss={() => closeNotifCard(notifStatus.capability === 'needs-install' ? 'needs_install' : 'dismissed')}
       />
-      <AchievementPopup
-        queue={trickAchievementQueue}
+      {/* Achievements earned outside a game play the same ceremonies, over whatever screen the
+          player is on. Never underneath the launch animation. */}
+      <Ceremonies
+        cards={launchDone ? trickAchievementQueue : NO_CARDS}
         onDone={handleTrickAchievementsDone}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}
         onCreateAccount={(src, key) => { setTrickAchievementQueue([]); openAccountCreation(src, key); }}
       />
-      <AchievementPopup
-        queue={ambientAchievementQueue}
+      {import.meta.env.DEV && (
+        <Ceremonies
+          cards={previewCards}
+          onDone={() => setPreviewCards(NO_CARDS)}
+          guestConvoStarted={state.guestConvoStarted}
+          acctCreated={state.acctCreated}
+          onCreateAccount={() => setPreviewCards(NO_CARDS)}
+        />
+      )}
+      <Ceremonies
+        cards={launchDone ? ambientAchievementQueue : NO_CARDS}
         onDone={() => setAmbientAchievementQueue([])}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}

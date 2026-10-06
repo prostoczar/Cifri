@@ -47,6 +47,7 @@ logic rather than a copy of it.
 | `check:double-submit` | a second tap on Submit counted again — a skipped question, or a game ending twice |
 | `check:achievements` | a catalogue row that renders wrong, or unlocks a reward it should not |
 | `check:triggers` | an achievement wired to the wrong number, or firing on a near-miss |
+| `check:ceremonies` | a batch of unlocks playing its ceremonies in the wrong order, or folding the sign-up ask into "+N more" |
 | `check:achievements-verified` | an achievement the Braining boost could buy, or one that needs the network |
 | `check:invariant` | the three places a day's score is computed disagreeing |
 | `check:storage` | a failed save passing for a successful one, or a blank account row emptying a device |

@@ -80,11 +80,11 @@ const URL_Y = 1224;
 // From `.ms-rarity.r-*` in index.css. The light-mode pair only — see the note above about the
 // card staying light. If those rules change, these follow.
 const RARITY_COLORS = {
-  common: { bg: '#d8d0c6', fg: '#7a7266' },
-  uncommon: { bg: '#ebf7f3', fg: '#075c3d' },
-  rare: { bg: '#dbeafe', fg: '#1e5fa8' },
-  epic: { bg: '#ede4f7', fg: '#6b3fa0' },
-  legendary: { bg: '#ffd166', fg: '#7a4f00' },
+  common: { bg: '#e3dfda', fg: '#2b2b2b' },
+  uncommon: { bg: '#efdcc0', fg: '#3d2c14' },
+  rare: { bg: '#d65a3a', fg: '#ffffff' },
+  epic: { bg: '#0f9d6c', fg: '#ffd166' },
+  legendary: { bg: '#ffd166', fg: '#3d2a00' },
 };
 
 function palette() {
