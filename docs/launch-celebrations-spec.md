@@ -456,3 +456,18 @@ Agreed on 6 Oct 2026, before any code was written, after the code had been read 
 
 - **C. Header pill after Restore.** The flame lands in the real header pill, which stays grey with the restored number. Restoring does not count as playing today, and a green pill would claim the day is done when it is not.
 - **When it appears.** The scene waits until the launch animation, any game in progress, or the Finish screen is over. In practice this only matters when the break is noticed at midnight while the app is open.
+
+**Smaller choices made while building** (6–7 Oct 2026, within the rules above).
+
+- **Launch on wide screens.** Sizes are proportions of the app's column (at most 420 px wide), not of a desktop window, so a laptop sees the same picture as a phone.
+- **Streak ceremonies keep Create account and Share** too, by the same rule as achievement ceremonies (decision A).
+- **"+{n} more" card.** No chip: a big "+{n} more" title in the tier's title colour, and the remaining medallions in a row.
+- **Rarity chips everywhere.** The achievements list and the share card both use each tier's flood colour with its title colour (common `#e3dfda`/`#2b2b2b`, uncommon `#efdcc0`/`#3d2c14`, rare `#d65a3a`/white, epic `#0f9d6c`/`#ffd166`, legendary `#ffd166`/`#3d2a00`), the same in dark mode.
+- **Dark mode for the beige scenes.** Streak lost, Account created and Welcome back use the dark page colour in dark mode, as the Finish screen decided for itself.
+- **Streak lost, Android back.** Does nothing while the choice is on screen: the player must choose, as the spec intends, rather than leave the app mid-decision.
+- **Account created, reduced motion.** The chips are shown in their places in the final layout (as the spec's reduced-motion line says), although in the full version they end inside the avatar.
+- **Timer's last seconds.** Only counted Challenge runs, the same runs that already get the urgent tick; a timed Practice-tab run does not.
+- **Braining's wrong answer.** The answer box's tint is the 300 ms flash; the question card's existing pale-red tint until the player types is unchanged.
+- **Ordering guard.** `npm run check:ceremonies` (in `npm run check`) drives the real ceremony queue with every awkward batch: rarity order, the three-plus-"+{n} more" rule, the sign-up card never folded away, and which ceremony each streak day gets (7, 120, 180, 183, 360, 365, 390).
+
+**Testing without real data.** On the dev server only (`npm run dev`; never in a real build), the browser console has `__cifriPreview`: `.ceremony('ch_first', 'ch_moon', …)` (any achievement keys, or `'lit'`), `.streak(n)`, `.lost(n, available)` and `.account('created' | 'back')`. Each plays the scene without dispatching anything, so nothing is saved or synced.
