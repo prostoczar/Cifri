@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launch screen's colour: the app's own page background, so the launch animation in
+     index.html draws onto a screen that already matches it. Dark mode is values-night. -->
+<resources>
+    <color name="launch_background">#FFFFFF</color>
+</resources>

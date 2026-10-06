@@ -35,8 +35,578 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
 
     <title>Cifri</title>
+
+    <!-- ── The page's colour before anything else has loaded ──────────────────────────────────
+         The app's own background (index.css) arrives with the app's code, which is exactly what
+         the launch animation below is covering for. Until then the page would be the browser's
+         white — a white flash for a dark-mode player. So the saved theme is read here, in the head,
+         before the first paint, and the page is painted the app's own --bg: #ffffff, or #161513 in
+         dark mode. The same rule the app applies (App.jsx, the dark-mode effect): the saved choice,
+         or the system's on a first-ever open. Removed again by the launch animation once the app's
+         own stylesheet is in charge, so the body's background goes back to colouring the canvas. -->
+    <script>
+      (function () {
+        var dark = false;
+        try {
+          var raw = localStorage.getItem('cifri_react_v1');
+          var s = raw ? (JSON.parse(raw) || {}).settings || {} : {};
+          dark = typeof s.dark === 'boolean' ? s.dark
+            : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        } catch (e) { /* unreadable storage: the light page is the safe default */ }
+        window.__cifriDark = dark;
+        document.documentElement.style.background = dark ? '#161513' : '#ffffff';
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#161513' : '#ffffff');
+      })();
+    </script>
+
+    <!-- ── Launch animation styles ── see the script at the top of <body> -->
+    <style>
+      #cifri-launch{position:fixed;inset:0;z-index:2147483000;overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:none;-webkit-user-select:none;user-select:none}
+      #cifri-launch svg{position:absolute;overflow:visible}
+      #cifri-launch .cl-logo{position:absolute}
+      #cifri-launch .cl-ray,#cifri-launch .cl-dot,#cifri-launch .cl-spark{transform-box:fill-box;transform-origin:center}
+      #cifri-launch .cl-word{position:absolute;left:0;right:0;text-align:center;font-family:'Nunito',system-ui,-apple-system,sans-serif;font-weight:900;line-height:1.1;letter-spacing:.01em;white-space:nowrap}
+      #cifri-launch .cl-word-in{display:inline-block}
+      #cifri-launch .cl-word span{display:inline-block;opacity:0}
+      #cifri-launch .cl-msg{position:absolute;left:16px;right:16px;text-align:center;font-family:'Nunito',system-ui,-apple-system,sans-serif;font-weight:900;font-size:15px;opacity:0;transition:opacity .2s ease-in-out}
+      #cifri-launch .cl-msg.on{transition-duration:.4s;opacity:1;animation:clMsgPulse .9s ease-in-out .4s infinite alternate}
+      #cifri-launch.cl-reduced .cl-msg.on{animation:none}
+      @keyframes clMsgPulse{from{opacity:1}to{opacity:.45}}
+      /* A first-time player's ending: the logo and wordmark fly onto the onboarding screen's own,
+         and the rest of that screen waits, then fades in with its usual obFadeIn (index.css),
+         starting 520 ms into the ending and 50 ms apart. The real logo and wordmark stay hidden
+         until the flying ones have landed on them. */
+      html.cl-ob .ob-screen > *{animation:none!important;opacity:0!important}
+      html.cl-ob-go .ob-screen > *{animation:obFadeIn .4s ease both!important}
+      html.cl-ob-go .ob-screen > :nth-child(3){animation-delay:.52s!important}
+      html.cl-ob-go .ob-screen > :nth-child(4){animation-delay:.57s!important}
+      html.cl-ob-go .ob-screen > :nth-child(5){animation-delay:.62s!important}
+      html.cl-ob-go .ob-screen > :nth-child(6){animation-delay:.67s!important}
+      html.cl-ob-go .ob-screen > :nth-child(7){animation-delay:.72s!important}
+      html.cl-ob-go .ob-screen > :nth-child(8){animation-delay:.77s!important}
+      html.cl-ob-go .ob-screen > :nth-child(9){animation-delay:.82s!important}
+      html.cl-ob-go .ob-screen > :nth-child(10){animation-delay:.87s!important}
+      html.cl-ob-go .ob-screen > :nth-child(11){animation-delay:.92s!important}
+      html.cl-ob-go .ob-screen > :nth-child(n+12){animation-delay:.97s!important}
+      html.cl-ob-go .ob-screen > .ob-mark,html.cl-ob-go .ob-screen > .ob-wordmark{animation:none!important;opacity:1!important;visibility:hidden}
+      html.cl-ob-go.cl-ob-shown .ob-screen > .ob-mark,html.cl-ob-go.cl-ob-shown .ob-screen > .ob-wordmark{visibility:visible}
+    </style>
   </head>
   <body>
+    <!-- ── The launch animation (docs/launch-celebrations-spec.md, Feature 1) ──────────────────
+         Plain script rather than part of the app, because its job is to cover the app loading: it
+         has to be drawing before the app's code has even arrived. A green and a yellow line chase
+         each other round a lopsided ∞ for as long as loading takes. When the app has worked out
+         which screen to open on, it fires `cifri:ready` (App.jsx); the lines then spiral into the
+         C and the i of the logo, the dot lights, the rays burst, "Cifri" appears, and the overlay
+         hands over — growing away into the Challenge screen, or flying onto the onboarding logo.
+
+         It builds its own DOM, so if anything here ever throws, there is no overlay at all and
+         the app is simply visible as it loads — never a page stuck behind a frozen animation.
+         `window.__cifriLaunch.active` tells the app one is running; `cifri:launched` says it has
+         gone, which is what the app's own ceremonies wait for. -->
+    <script>
+      (function () {
+        var WIN = window, DOC = document, HTML = DOC.documentElement;
+        var launch = { active: true };
+        WIN.__cifriLaunch = launch;
+        var overlay = null;
+        var timers = [];
+        var raf = 0;
+
+        function finish() {
+          if (!launch.active) return;
+          launch.active = false;
+          timers.forEach(clearTimeout);
+          cancelAnimationFrame(raf);
+          if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          HTML.style.background = '';
+          WIN.__cifriLaunchDone = true;
+          try { WIN.dispatchEvent(new CustomEvent('cifri:launched')); } catch (e) { /* very old browser */ }
+        }
+        function abort() {
+          HTML.classList.remove('cl-ob', 'cl-ob-go', 'cl-ob-shown');
+          finish();
+        }
+        function at(ms, fn) {
+          timers.push(setTimeout(function () { try { fn(); } catch (e) { abort(); } }, ms));
+        }
+        function anim(el, frames, opts) {
+          return el && el.animate ? el.animate(frames, opts) : null;
+        }
+
+        try {
+          // ── Settings, read straight from the app's own saved data ──
+          var saved = {};
+          try {
+            var raw = localStorage.getItem('cifri_react_v1');
+            if (raw) saved = (JSON.parse(raw) || {}).settings || {};
+          } catch (e) { /* defaults below */ }
+          var mq = function (q) {
+            try { return !!(WIN.matchMedia && WIN.matchMedia(q).matches); } catch (e) { return false; }
+          };
+          var dark = !!WIN.__cifriDark;
+          var lang = typeof saved.lang === 'string' ? saved.lang
+            : ((navigator.language || 'en').toLowerCase().indexOf('ru') === 0 ? 'ru' : 'en');
+          var reduced = mq('(prefers-reduced-motion: reduce)');
+          // The app's own --bg, --txt and a muted grey, light and dark (index.css).
+          var BG = dark ? '#161513' : '#ffffff';
+          var INK = dark ? '#f2f0ec' : '#2b2b2b';
+          var MUTED = dark ? '#84806f' : '#8a8178';
+          var STRINGS = __CIFRI_LAUNCH_STRINGS__;
+          var GREEN = '#0f9d6c', YELLOW = '#ffd166', TERRA = '#d65a3a';
+
+          // ── Layout ──
+          //
+          // Proportions are of the app's column (at most 420 px wide), not of a desktop window, so
+          // a laptop gets the same picture a phone does rather than a 250 px wordmark.
+          var W = WIN.innerWidth, H = WIN.innerHeight;
+          var col = Math.min(W, 420);
+          var B = Math.min(0.83 * col, 320);              // the logo's 1024-unit box, in px
+          var U = 0.742 * B / 1024;                        // px per logo unit (the artwork's own units)
+          var boxLeft = (W - B) / 2 + 0.03 * col;          // nudged right: the heavy C reads as off-centre
+          var fontPx = 0.18 * col;
+          var lineH = fontPx * 1.1;
+          // The artwork occupies box rows 240..785 (the C's top edge to its bottom edge); the box
+          // around it is mostly air. It is the artwork plus the wordmark that are centred, not the box.
+          var artH = (785 - 240) * B / 1024;
+          var artTop = (H - (artH + 20 + lineH)) / 2;
+          var boxTop = artTop - 240 * B / 1024;
+          var LX = function (x) { return boxLeft + (122.8 + 0.742 * x) * B / 1024; };
+          var LY = function (y) { return boxTop + (156.9 + 0.742 * y) * B / 1024; };
+
+          // ── The ∞ ──
+          //
+          // A lemniscate whose left loop is drawn 1.15× and right loop 0.78× — the big C and the
+          // small i. Sampled once by arc length, so a line can travel it at an even speed.
+          var SPEED = 4.5 * U;                             // px per ms: one lap in about 0.7 s
+          var CX = W / 2, CY = H / 2;
+          var N = 720, raw8 = [];
+          for (var i = 0; i <= N; i++) {
+            var t = (i / N) * Math.PI * 2, s = Math.sin(t), c = Math.cos(t), d = 1 + s * s;
+            var lx = c / d, ly = (s * c) / d, sc = lx < 0 ? 1.15 : 0.78;
+            raw8.push([lx * sc, -ly * sc]);
+          }
+          var rawLen = 0;
+          for (i = 1; i <= N; i++) rawLen += Math.hypot(raw8[i][0] - raw8[i - 1][0], raw8[i][1] - raw8[i - 1][1]);
+          var A = (SPEED * 700) / rawLen;                  // lap length = 0.7 s at loop speed
+          var loop = { x: [], y: [], c: [0] };
+          for (i = 0; i <= N; i++) {
+            loop.x.push(CX + A * raw8[i][0]);
+            loop.y.push(CY + A * raw8[i][1]);
+            if (i) loop.c.push(loop.c[i - 1] + Math.hypot(loop.x[i] - loop.x[i - 1], loop.y[i] - loop.y[i - 1]));
+          }
+          var LAP = loop.c[N];
+          var maxDy = 0;
+          for (i = 0; i <= N; i++) maxDy = Math.max(maxDy, Math.abs(loop.y[i] - CY));
+
+          // A point `s` along a sampled polyline.
+          function polyAt(p, s) {
+            var n = p.c.length - 1;
+            if (s <= 0) return [p.x[0], p.y[0]];
+            if (s >= p.c[n]) return [p.x[n], p.y[n]];
+            var lo = 0, hi = n;
+            while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (p.c[mid] <= s) lo = mid; else hi = mid; }
+            var f = (s - p.c[lo]) / (p.c[hi] - p.c[lo] || 1);
+            return [p.x[lo] + (p.x[hi] - p.x[lo]) * f, p.y[lo] + (p.y[hi] - p.y[lo]) * f];
+          }
+          function loopAt(s) { return polyAt(loop, ((s % LAP) + LAP) % LAP); }
+          function poly(points) {
+            var p = { x: [], y: [], c: [0] };
+            points.forEach(function (q, j) {
+              p.x.push(q[0]); p.y.push(q[1]);
+              if (j) p.c.push(p.c[j - 1] + Math.hypot(q[0] - p.x[j - 1], q[1] - p.y[j - 1]));
+            });
+            p.len = p.c[p.c.length - 1];
+            return p;
+          }
+
+          // Where each line joins the loop. Green joins the top of the left loop; yellow joins half a
+          // loop further on, which is the top of the right loop.
+          var topLeft = N / 2, topY = Infinity;
+          for (i = N / 2; i <= (3 * N) / 4; i++) if (loop.y[i] < topY) { topY = loop.y[i]; topLeft = i; }
+          var GJ = loop.c[topLeft];
+          var YJ = (GJ + LAP / 2) % LAP;
+          function lineFor(join, exitAt, color, width, formMs) {
+            var p = loopAt(join), q = loopAt(join + 1), r = loopAt(join - 1);
+            var dx = q[0] - r[0], dy = q[1] - r[1], dl = Math.hypot(dx, dy) || 1;
+            return { join: join, exitAt: exitAt, p: p, dir: [dx / dl, dy / dl], color: color, width: width, formMs: formMs };
+          }
+          // The far-left point of the big loop is sample N/2; the far-right point of the small one is 0.
+          var green = lineFor(GJ, loop.c[N / 2], GREEN, 135 * U, 820);
+          var yellow = lineFor(YJ, 0, YELLOW, 134.6 * U, 780);
+          var LINES = [green, yellow];
+          var WINDOW = 0.3 * LAP;                          // each line is 30% of the loop
+
+          // ── Entry: from beyond the screen edge, fast, slowing to loop speed ──
+          //
+          // s(u) = De·(a·u + (1−a)·u²) over T = 450 ms. Its speed at the end is De·(2−a)/T, which is
+          // loop speed when De = v·T/(2−a); with a = 1.5 the line starts 2·v·T back, well offscreen,
+          // and arrives decelerating — three times loop speed at the start, loop speed at the join.
+          var ENTRY_MS = 450, EA = 1.5, DE = (SPEED * ENTRY_MS) / (2 - EA);
+          function headBeforeForm(t) {
+            if (t < ENTRY_MS) { var u = t / ENTRY_MS; return -DE + DE * (EA * u + (1 - EA) * u * u); }
+            return SPEED * (t - ENTRY_MS);
+          }
+          // A point along a line's whole track: the straight entry, the loop, then (once formed) its
+          // spiral and its final shape.
+          function trackAt(L, s) {
+            if (s < 0) return [L.p[0] + L.dir[0] * s, L.p[1] + L.dir[1] * s];
+            if (!L.form || s < L.form.exit) return loopAt(L.join + s);
+            var f = L.form, k = s - f.exit;
+            if (k < f.spiral.len) return polyAt(f.spiral, k);
+            return polyAt(f.final, k - f.spiral.len);
+          }
+          function smooth(u) { return u * u * (3 - 2 * u); }
+
+          // ── Formation: each line carries on from wherever it is ──
+          //
+          // Green leaves at the far-left point of the big loop and spirals clockwise, at least 1.1
+          // turns, closing onto the C's own radius, then traces the C. Yellow leaves at the far-right
+          // point of the small loop, spirals the other way onto the top of the stem and runs down it.
+          // The head's motion is a Hermite curve that starts at loop speed and eases to a stop, so the
+          // line never jolts as it peels off.
+          function plan(L, head) {
+            var here = ((L.join + head) % LAP + LAP) % LAP;
+            var toExit = ((L.exitAt - here) % LAP + LAP) % LAP;
+            var exit = head + toExit;
+            var E = loopAt(L.exitAt);
+            var pts = [], fin = [], j, M = 240;
+            if (L === green) {
+              var ox = LX(447.4), oy = LY(478.5), rEnd = 299.5 * U;   // the C's centre and radius
+              var a0 = Math.atan2(E[1] - oy, E[0] - ox);
+              var a1 = Math.atan2(747 - 478.5, 580.1 - 447.4);         // the C's lower tip
+              var a2 = Math.atan2(220.7 - 478.5, 599.9 - 447.4) + Math.PI * 2; // its upper tip
+              while (a1 < a0 + 1.1 * Math.PI * 2) a1 += Math.PI * 2;
+              a2 += a1 - Math.atan2(747 - 478.5, 580.1 - 447.4);
+              var r0 = Math.hypot(E[0] - ox, E[1] - oy);
+              for (j = 0; j <= M; j++) {
+                var u = j / M, ang = a0 + (a1 - a0) * u, rr = r0 + (rEnd - r0) * smooth(u);
+                pts.push([ox + rr * Math.cos(ang), oy + rr * Math.sin(ang)]);
+              }
+              for (j = 1; j <= 160; j++) {
+                var ag = a1 + (a2 - a1) * (j / 160);
+                fin.push([ox + rEnd * Math.cos(ag), oy + rEnd * Math.sin(ag)]);
+              }
+            } else {
+              var tx = LX(746), ty = LY(637.8), by = LY(775.2);         // the stem's top and bottom
+              var r2 = 110 * U, cx2 = tx + r2, cy2 = ty;                // arrives heading straight down
+              var b0 = Math.atan2(E[1] - cy2, E[0] - cx2), b1 = Math.PI;
+              while (b1 > b0 - 0.75 * Math.PI * 2) b1 -= Math.PI * 2;
+              var q0 = Math.hypot(E[0] - cx2, E[1] - cy2);
+              for (j = 0; j <= M; j++) {
+                var v = j / M, bg = b0 + (b1 - b0) * v, rq = q0 + (r2 - q0) * smooth(v);
+                pts.push([cx2 + rq * Math.cos(bg), cy2 + rq * Math.sin(bg)]);
+              }
+              for (j = 1; j <= 20; j++) fin.push([tx, ty + (by - ty) * (j / 20)]);
+            }
+            var spiral = poly(pts);
+            var final = poly([pts[pts.length - 1]].concat(fin));
+            var total = exit + spiral.len + final.len - head;
+            L.form = {
+              exit: exit, spiral: spiral, final: final, head: head, total: total,
+              // Starting slope = loop speed, as a share of the whole distance over the whole time.
+              m0: Math.min(2.5, (SPEED * L.formMs) / total),
+            };
+          }
+
+          // ── DOM ──
+          overlay = DOC.createElement('div');
+          overlay.id = 'cifri-launch';
+          overlay.style.background = BG;
+          if (reduced) overlay.className = 'cl-reduced';
+          overlay.setAttribute('aria-hidden', 'true');
+
+          var NS = 'http://www.w3.org/2000/svg';
+          var linesSvg = DOC.createElementNS(NS, 'svg');
+          linesSvg.setAttribute('class', 'cl-lines');
+          linesSvg.setAttribute('width', W);
+          linesSvg.setAttribute('height', H);
+          linesSvg.style.left = '0';
+          linesSvg.style.top = '0';
+          LINES.forEach(function (L) {
+            L.path = DOC.createElementNS(NS, 'path');
+            L.path.setAttribute('fill', 'none');
+            L.path.setAttribute('stroke', L.color);
+            L.path.setAttribute('stroke-width', L.width.toFixed(2));
+            L.path.setAttribute('stroke-linecap', 'round');
+            L.path.setAttribute('stroke-linejoin', 'round');
+            linesSvg.appendChild(L.path);
+          });
+
+          // The logo itself — assets/source/cifri-icon-adaptive-foreground.svg, element for element,
+          // with each ray wrapped so it can burst from the dot without disturbing its own rotation.
+          var RAYS = [
+            '<rect x="678.85" y="278.2" width="134.3" height="83" rx="41.5" transform="rotate(270 746 319.7)"/>',
+            '<rect x="834.65" y="437" width="134.3" height="83" rx="41.5"/>',
+            '<rect x="523.05" y="437" width="134.3" height="83" rx="41.5"/>',
+            '<rect x="810.6" y="348.15" width="84.4" height="55.7" rx="27.85" transform="rotate(319.23 852.8 376)"/>',
+            '<rect x="594.4" y="548.35" width="84.4" height="55.7" rx="27.85" transform="rotate(319.23 636.6 576.2)"/>',
+            '<rect x="597.6" y="347.35" width="84.4" height="55.7" rx="27.85" transform="rotate(44.85 639.8 375.2)"/>',
+            '<rect x="810.1" y="549.25" width="84.4" height="55.7" rx="27.85" transform="rotate(44.85 852.3 577.1)"/>',
+          ];
+          var RAY_C = [[746, 319.7], [901.8, 478.5], [590.2, 478.5], [852.8, 376], [636.6, 576.2], [639.8, 375.2], [852.3, 577.1]];
+          var logo = DOC.createElement('div');
+          logo.className = 'cl-logo';
+          logo.style.cssText = 'left:' + boxLeft + 'px;top:' + boxTop + 'px;width:' + B + 'px;height:' + B + 'px';
+          logo.innerHTML =
+            '<svg viewBox="0 0 1024 1024" width="' + B + '" height="' + B + '" style="left:0;top:0">' +
+            '<g transform="translate(122.8,156.9) scale(0.742)">' +
+            '<path class="cl-c" d="M580.1,747 A299.5,299.5 0 1 1 599.9,220.7" fill="none" stroke="' + GREEN + '" stroke-width="135" stroke-linecap="round" opacity="0"/>' +
+            '<g fill="' + TERRA + '">' + RAYS.map(function (r) { return '<g class="cl-ray" style="opacity:0">' + r + '</g>'; }).join('') + '</g>' +
+            '<rect class="cl-stem" x="610" y="639.2" width="272" height="134.6" rx="67.3" fill="' + YELLOW + '" transform="rotate(270 746 706.5)" opacity="0"/>' +
+            '<g class="cl-sparks"></g>' +
+            '<circle class="cl-dot" cx="746" cy="478.5" r="67.3" fill="' + YELLOW + '" style="transform:scale(0)"/>' +
+            '</g></svg>';
+
+          var word = DOC.createElement('div');
+          word.className = 'cl-word';
+          word.style.cssText = 'top:' + (artTop + artH + 20) + 'px;font-size:' + fontPx + 'px;color:' + INK;
+          var wordIn = DOC.createElement('span');
+          wordIn.className = 'cl-word-in';
+          'Cifri'.split('').forEach(function (ch) {
+            var sp = DOC.createElement('span');
+            sp.textContent = ch;
+            wordIn.appendChild(sp);
+          });
+          word.appendChild(wordIn);
+
+          var msg = DOC.createElement('div');
+          msg.className = 'cl-msg';
+          msg.style.color = MUTED;
+          msg.style.top = reduced ? (artTop + artH + 20 + lineH + 24) + 'px' : (CY + maxDy + 36) + 'px';
+          msg.textContent = (STRINGS && (STRINGS[lang] || STRINGS.en)) || '';
+
+          overlay.appendChild(linesSvg);
+          overlay.appendChild(logo);
+          overlay.appendChild(word);
+          overlay.appendChild(msg);
+          DOC.body.appendChild(overlay);
+
+          var cPath = logo.querySelector('.cl-c');
+          var stem = logo.querySelector('.cl-stem');
+          var dot = logo.querySelector('.cl-dot');
+          var rays = [].slice.call(logo.querySelectorAll('.cl-ray'));
+          var sparksG = logo.querySelector('.cl-sparks');
+          var letters = [].slice.call(wordIn.children);
+
+          // ── Drawing a line: the window [s − length, s] of its track, as one path ──
+          function draw(L, head, len) {
+            var n = 48, d = '';
+            for (var j = 0; j <= n; j++) {
+              var p = trackAt(L, head - len + (len * j) / n);
+              d += (j ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+            }
+            L.path.setAttribute('d', d);
+          }
+
+          var t0 = performance.now();
+          var readyAt = null, firstTime = false;
+          var phase = reduced ? 'still' : 'loop';     // loop → form → formed → ending
+          var formAt = 0, msgOn = false;
+
+          function fx() {
+            try { if (WIN.__cifriLaunchFx) WIN.__cifriLaunchFx(); } catch (e) { /* cosmetic */ }
+          }
+
+          // The finished logo, with nothing left in flight: what a skip, and reduced motion, show.
+          function finalLogo() {
+            linesSvg.style.display = 'none';
+            cPath.setAttribute('opacity', '1');
+            stem.setAttribute('opacity', '1');
+            [dot].concat(rays, letters).forEach(function (e) {
+              if (e.getAnimations) e.getAnimations().forEach(function (a) { a.cancel(); });
+            });
+            dot.style.transform = 'none';
+            rays.forEach(function (r) { r.style.opacity = '1'; r.style.transform = 'none'; });
+            letters.forEach(function (l) { l.style.opacity = '1'; l.style.transform = 'none'; });
+            while (sparksG.firstChild) sparksG.removeChild(sparksG.firstChild);
+          }
+
+          function frame(now) {
+            try {
+              var t = now - t0;
+              if (phase === 'loop') {
+                LINES.forEach(function (L) { draw(L, headBeforeForm(t), WINDOW); });
+                if (readyAt !== null && t >= ENTRY_MS) startForm(t);
+                else if (readyAt === null && !msgOn && t >= ENTRY_MS + 2500) showMsg();
+              }
+              if (phase === 'form') {
+                var dt = t - formAt;
+                LINES.forEach(function (L) {
+                  var f = L.form, u = Math.min(1, dt / L.formMs);
+                  var h = f.m0 * (u * u * u - 2 * u * u + u) + (3 * u * u - 2 * u * u * u);
+                  draw(L, f.head + f.total * h, WINDOW + (f.final.len - WINDOW) * smooth(u));
+                });
+              }
+              if (phase === 'loop' || phase === 'form') raf = requestAnimationFrame(frame);
+            } catch (e) { abort(); }
+          }
+
+          function showMsg() {
+            msgOn = true;
+            msg.classList.add('on');
+          }
+          function hideMsg() {
+            msg.classList.remove('on');
+          }
+
+          function startForm(t) {
+            phase = 'form';
+            formAt = t;
+            LINES.forEach(function (L) { plan(L, headBeforeForm(t)); });
+            // The lines have landed: the real artwork takes over from them, pixel for pixel.
+            at(820, function () {
+              phase = 'formed';
+              cancelAnimationFrame(raf);
+              linesSvg.style.display = 'none';
+              cPath.setAttribute('opacity', '1');
+              stem.setAttribute('opacity', '1');
+              // The dot: scale 0 → 1.35 → 0.92 → 1. Its sound and buzz come from the app (App.jsx
+              // registers them before saying it is ready), which by now has certainly loaded.
+              anim(dot, [
+                { transform: 'scale(0)' }, { transform: 'scale(1.35)', offset: 0.5 },
+                { transform: 'scale(0.92)', offset: 0.78 }, { transform: 'scale(1)' },
+              ], { duration: 320, easing: 'ease-out', fill: 'forwards' });
+              fx();
+            });
+            // The rays burst out from the dot's centre with a slight overshoot, 22 ms apart.
+            rays.forEach(function (r, j) {
+              at(920 + j * 22, function () {
+                var dx = 746 - RAY_C[j][0], dy = 478.5 - RAY_C[j][1];
+                anim(r, [
+                  { opacity: 0, transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0)' },
+                  { opacity: 1, transform: 'translate(0,0) scale(1.12)', offset: 0.7 },
+                  { opacity: 1, transform: 'translate(0,0) scale(1)' },
+                ], { duration: 340, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' });
+              });
+            });
+            // Twelve sparks, terracotta and yellow, flying out and fading.
+            at(920, function () {
+              for (var j = 0; j < 12; j++) {
+                var c = DOC.createElementNS(NS, 'circle');
+                c.setAttribute('class', 'cl-spark');
+                c.setAttribute('cx', '746');
+                c.setAttribute('cy', '478.5');
+                c.setAttribute('r', '16');
+                c.setAttribute('fill', j % 2 ? YELLOW : TERRA);
+                sparksG.appendChild(c);
+                var ang = (j / 12) * Math.PI * 2 + 0.26, dist = 280 + (j % 3) * 60;
+                anim(c, [
+                  { transform: 'translate(0,0) scale(1)', opacity: 1 },
+                  { transform: 'translate(' + (Math.cos(ang) * dist).toFixed(1) + 'px,' + (Math.sin(ang) * dist).toFixed(1) + 'px) scale(0.4)', opacity: 0 },
+                ], { duration: 560, easing: 'cubic-bezier(.1,.7,.3,1)', fill: 'forwards' });
+              }
+            });
+            // "Cifri", a letter at a time, each rising 14 px as it fades in.
+            letters.forEach(function (l, j) {
+              at(1100 + j * 45, function () {
+                anim(l, [
+                  { opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'translateY(0)' },
+                ], { duration: 280, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' });
+              });
+            });
+            at(1600, ending);
+          }
+
+          // ── The hand-over ──
+          function ending() {
+            if (phase === 'ending') return;
+            phase = 'ending';
+            timers.forEach(clearTimeout);
+            timers = [];
+            hideMsg();
+            if (reduced) {
+              // A 250 ms crossfade into whatever the app is showing underneath.
+              anim(overlay, [{ opacity: 1 }, { opacity: 0 }], { duration: 250, easing: 'linear', fill: 'forwards' });
+              at(260, finish);
+              return;
+            }
+            finalLogo();
+            var obMark = firstTime ? DOC.querySelector('.ob-screen .ob-mark') : null;
+            var obWord = firstTime ? DOC.querySelector('.ob-screen .ob-wordmark') : null;
+            var TRAVEL = 'cubic-bezier(.5,0,.15,1)';
+            if (obMark && obWord) {
+              // First time: the logo and wordmark fly to the exact place and size of the onboarding
+              // screen's own (measured, not assumed), and that screen's other pieces fade in after.
+              HTML.classList.add('cl-ob-go');
+              HTML.classList.remove('cl-ob');
+              overlay.style.background = 'transparent';
+              var mr = obMark.getBoundingClientRect();
+              var lr = logo.getBoundingClientRect();
+              var k1 = mr.width / lr.width;
+              anim(logo, [
+                { transform: 'translate(0,0) scale(1)' },
+                { transform: 'translate(' + (mr.left + mr.width / 2 - (lr.left + lr.width / 2)) + 'px,' + (mr.top + mr.height / 2 - (lr.top + lr.height / 2)) + 'px) scale(' + k1 + ')' },
+              ], { duration: 480, easing: TRAVEL, fill: 'forwards' });
+              var wr = obWord.getBoundingClientRect();
+              var ir = wordIn.getBoundingClientRect();
+              var k2 = wr.height / ir.height;
+              anim(wordIn, [
+                { transform: 'translate(0,0) scale(1)' },
+                { transform: 'translate(' + (wr.left + wr.width / 2 - (ir.left + ir.width / 2)) + 'px,' + (wr.top + wr.height / 2 - (ir.top + ir.height / 2)) + 'px) scale(' + k2 + ')' },
+              ], { duration: 480, easing: TRAVEL, fill: 'forwards' });
+              at(480, function () {
+                HTML.classList.add('cl-ob-shown');
+                finish();
+              });
+              // Long after the last piece (≈ 0.97 s + 0.4 s) has finished fading in.
+              setTimeout(function () { HTML.classList.remove('cl-ob-go', 'cl-ob-shown'); }, 1800);
+              return;
+            }
+            // Returning: the logo grows away, the wordmark after it, and the Challenge screen settles
+            // in from just larger than life.
+            HTML.classList.remove('cl-ob');
+            overlay.style.background = 'transparent';
+            var ACCEL = 'cubic-bezier(.55,0,1,.45)';
+            logo.style.transformOrigin = '50% ' + ((240 + 785) / 2 / 1024) * 100 + '%';
+            anim(logo, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(5)', opacity: 0 }],
+              { duration: 480, easing: ACCEL, fill: 'forwards' });
+            anim(wordIn, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.8)', opacity: 0 }],
+              { duration: 380, easing: ACCEL, fill: 'forwards' });
+            anim(DOC.querySelector('.wrap'), [
+              { opacity: 0, transform: 'scale(1.06)' }, { opacity: 1, transform: 'scale(1)' },
+            ], { duration: 420, delay: 120, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'backwards' });
+            at(560, finish);
+          }
+
+          // ── The app says it knows which screen it is opening on ──
+          WIN.addEventListener('cifri:ready', function (e) {
+            if (readyAt !== null || !launch.active) return;
+            readyAt = performance.now() - t0;
+            firstTime = !!(e && e.detail && e.detail.firstTime);
+            // The onboarding screen's own entrance has already played, unseen, underneath. Held back
+            // so it can play again at the end, in step with the flight.
+            if (firstTime && !reduced) HTML.classList.add('cl-ob');
+            hideMsg();
+            if (phase === 'still') {
+              // Reduced motion: the logo has been showing since the start (300 ms fade).
+              at(Math.max(0, 300 - readyAt), function () { fx(); ending(); });
+            }
+          });
+
+          // ── Taps ── Nothing while loading. Once ready, a tap jumps to the finished logo and
+          // starts the ending at once. The dot's sound is not played late if it was skipped.
+          overlay.addEventListener('pointerdown', function () {
+            if (readyAt === null || phase === 'ending' || phase === 'still') return;
+            ending();
+          });
+
+          if (reduced) {
+            // No lines and no spirals: the finished logo and wordmark fade in, and wait.
+            finalLogo();
+            anim(logo, [{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease-out' });
+            anim(word, [{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease-out' });
+            at(2500, function () { if (readyAt === null) showMsg(); });
+          } else {
+            raf = requestAnimationFrame(frame);
+          }
+        } catch (e) {
+          abort();
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

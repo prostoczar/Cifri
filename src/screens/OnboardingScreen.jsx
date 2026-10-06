@@ -22,9 +22,20 @@ export default function OnboardingScreen({ initialUsername, onFinish, onOpenLogi
   const [value, setValue] = useState(initialUsername || '');
   const inputRef = useRef(null);
 
+  // Focus the name box 400 ms after the screen is actually seen. On a cold start that is not when
+  // it mounts but when the launch animation (index.html) has handed over: focusing underneath the
+  // animation would raise an Android keyboard mid-flight and shift the very layout the logo is
+  // flying onto.
   useEffect(() => {
-    const id = setTimeout(() => inputRef.current && inputRef.current.focus(), 400);
-    return () => clearTimeout(id);
+    let id = 0;
+    const focusSoon = () => { id = setTimeout(() => inputRef.current && inputRef.current.focus(), 400); };
+    const launching = window.__cifriLaunch && window.__cifriLaunch.active;
+    if (!launching) focusSoon();
+    else window.addEventListener('cifri:launched', focusSoon, { once: true });
+    return () => {
+      clearTimeout(id);
+      window.removeEventListener('cifri:launched', focusSoon);
+    };
   }, []);
 
   const { avail, ok: canSubmit } = useUsernameCheck(value, null);

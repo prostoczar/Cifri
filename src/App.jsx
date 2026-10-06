@@ -16,7 +16,8 @@ import { initNotifications, syncTags, notificationDiagnostics } from './lib/noti
 import { BR_SCALE, brAge, brFmtTimer, brMakeSession, getLastBrainingTime, getTodayBrainingTime } from './store/braining.js';
 import { TRICKS_FLAT, trickOfDayIndex } from './store/tricks.js';
 import { PRACTICE_LENGTH, TEST_LENGTH } from './store/trickTest.js';
-import { attachAudioUnlock, attachGlobalClickSound } from './store/sound.js';
+import { attachAudioUnlock, attachGlobalClickSound, launchSpark } from './store/sound.js';
+import { impact } from './lib/haptics.js';
 import { dayKey, dateStrToDate, daysBetweenKeys } from './store/dates.js';
 import {
   changePassword, deleteAccount, errorKey, fetchAccount, onAuthChange, requestEmailChange,
@@ -276,6 +277,45 @@ function AppShell() {
   useEffect(() => {
     attachAudioUnlock();
     attachGlobalClickSound(() => soundOnRef.current);
+  }, []);
+
+  // ── The launch animation's hand-off (index.html) ────────────────────────────
+  //
+  // The animation was drawing before any of this code had loaded. It is told, once, that the app
+  // is up and which way to end — onto the onboarding screen for a first-time (or signed-out)
+  // player, into the Challenge screen otherwise. There is nothing to wait for first: progress is
+  // read from this device synchronously, before the first render, and the account copy is only
+  // ever a mirror of it. One frame's delay so the first screen is painted underneath.
+  //
+  // The dot's sound and buzz are lent to it here, because they live in the app's code, and they
+  // read the same sound setting as every other sound.
+  //
+  // `launchDone` is what the ceremonies and scenes that can open by themselves wait for, so none
+  // of them starts underneath the animation.
+  const [launchDone, setLaunchDone] = useState(() => !(window.__cifriLaunch && window.__cifriLaunch.active));
+  const launchFiredRef = useRef(false);
+  useEffect(() => {
+    if (launchDone) return undefined;
+    const onLaunched = () => setLaunchDone(true);
+    window.addEventListener('cifri:launched', onLaunched);
+    if (!window.__cifriLaunch || !window.__cifriLaunch.active) setLaunchDone(true);
+    return () => window.removeEventListener('cifri:launched', onLaunched);
+  }, [launchDone]);
+  useEffect(() => {
+    if (launchFiredRef.current) return;
+    launchFiredRef.current = true;
+    window.__cifriLaunchFx = () => {
+      launchSpark(soundOnRef.current);
+      impact('medium');
+    };
+    const firstTime = !state.username || !!state._loggedOut;
+    // A frame, or 100 ms, whichever comes first: a page opened in a background tab gets no frames
+    // at all until it is looked at, and must not be left waiting on one. The animation ignores a
+    // second signal.
+    const fire = () => window.dispatchEvent(new CustomEvent('cifri:ready', { detail: { firstTime } }));
+    requestAnimationFrame(fire);
+    setTimeout(fire, 100);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The other half of the reference's tickMidnightTimers(): if the app is left open across

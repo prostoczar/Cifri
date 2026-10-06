@@ -364,3 +364,26 @@ export function toResults(soundOn) {
     /* ignore */
   }
 }
+
+// ── Launch and celebration sounds ─────────────────────────────────────────────────────────────
+//
+// docs/launch-celebrations-spec.md. The same engine, the same `soundOn` gate and the same ceiling
+// as the Finish screen's sounds above: nothing peaks above the tick's 0.1, and chords split that
+// between their notes. WHEN each plays belongs to the screen that schedules it.
+
+/**
+ * The logo's dot lighting at the end of the launch animation: a short bright chime over a soft
+ * whoosh. Usually silent on the web — a browser keeps sound locked until the first tap.
+ */
+export function launchSpark(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    sweep(ac, { dur: 0.32, filter: 'bandpass', from: 700, to: 3200, gain: 0.04, swell: true });
+    note(ac, { type: 'triangle', freq: 1319, at: 0.02, dur: 0.22, gain: 0.05 });
+    note(ac, { type: 'sine', freq: 1976, at: 0.07, dur: 0.26, gain: 0.04 });
+  } catch {
+    /* ignore */
+  }
+}
