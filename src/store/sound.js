@@ -497,3 +497,29 @@ export function freshTone(soundOn) {
     /* ignore */
   }
 }
+
+/** An account created: a rising success chime over a low warm note. */
+export function accountSuccess(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    [523, 659, 784].forEach((freq, i) => note(ac, { type: 'triangle', freq, at: i * 0.08, dur: 0.3, gain: 0.04 }));
+    note(ac, { freq: 196, dur: 0.6, gain: 0.04 });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Signed back in: the same family as accountSuccess, in a different order. */
+export function welcomeChime(soundOn) {
+  if (!soundOn) return;
+  const ac = getAudioCtx();
+  if (!ac) return;
+  try {
+    [784, 523, 659].forEach((freq, i) => note(ac, { type: 'triangle', freq, at: i * 0.08, dur: 0.3, gain: 0.04 }));
+    note(ac, { freq: 196, dur: 0.6, gain: 0.04 });
+  } catch {
+    /* ignore */
+  }
+}

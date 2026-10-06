@@ -38,6 +38,7 @@ import ProfileSheet from './components/ProfileSheet.jsx';
 import TutorialOverlay from './components/TutorialOverlay.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
 import StreakLostScene from './components/StreakLostScene.jsx';
+import AccountScene from './components/AccountScene.jsx';
 import { SavePromptModal, GuestBanner } from './components/GuestConversion.jsx';
 import OnboardingScreen from './screens/OnboardingScreen.jsx';
 import LoginScreen from './screens/LoginScreen.jsx';
@@ -205,6 +206,9 @@ function AppShell() {
   // The streak-lost scene's snapshot of the restore offer, while the scene is up. See "The
   // streak-lost scene" below.
   const [lostScene, setLostScene] = useState(null);
+  // "Account created" / "Welcome back" (spec Feature 8): { mode, key } while it is up. Set only by
+  // a sign-up or a sign-in that has just succeeded — never by the silent session refresh on open.
+  const [acctScene, setAcctScene] = useState(null);
   // The header streak pill as it stood just BEFORE a game was recorded. The variant (first game,
   // second game, nothing changed) is the difference between this and the pill after the reducer
   // has run — read off the same two facts the header draws from, never a rule decided again here.
@@ -329,6 +333,8 @@ function AppShell() {
       // The streak-lost scene for a streak of `n`, with or without a restore on offer. Its buttons
       // play the scene but change nothing: e.g. __cifriPreview.lost(12) or .lost(12, false).
       lost: (n = 12, available = true) => setPreviewLost({ key: Date.now(), brokenValue: n, available }),
+      // "Account created" ('created') or "Welcome back" ('back'), with this device's own figures.
+      account: (mode = 'created') => setAcctScene({ mode, key: Date.now() }),
     };
     return () => { delete window.__cifriPreview; };
   }, []);
@@ -890,7 +896,7 @@ function AppShell() {
     if (notifStatus.capability === 'unsupported' || notifStatus.blocked) return;
     // Never stack on top of something else that is already talking.
     if (trickAchievementQueue.length || ambientAchievementQueue.length) return;
-    if (state.pendingRestore || lostScene) return;
+    if (state.pendingRestore || lostScene || acctScene) return;
     if (NOTIF_ASK_SCREENS.indexOf(screen) === -1) return;
     // Not while the result screen is still entering from the Finish screen — the same wait the
     // achievement cards observe, for the same reason.
@@ -909,6 +915,7 @@ function AppShell() {
     screen,
     resultHold,
     lostScene,
+    acctScene,
   ]);
 
   // Both answers record that the asking happened, so neither one leaves the card able to return.
@@ -1043,14 +1050,14 @@ function AppShell() {
   // itself is declared near the top, beside the others, because the reminder card's guard reads it.)
   useEffect(() => {
     if (lostScene || !state.pendingRestore) return;
-    if (!launchDone || finish || needsOnboarding) return;
+    if (!launchDone || finish || needsOnboarding || acctScene) return;
     if (FLAME_PAUSED_SCREENS.indexOf(screen) !== -1 || screen === 'finish') return;
     setLostScene({
       key: state.pendingRestore.brokenAtMs,
       brokenValue: state.pendingRestore.brokenValue,
       available: !!state.pendingRestore.availableAtBreak,
     });
-  }, [state.pendingRestore, launchDone, finish, needsOnboarding, screen, lostScene]);
+  }, [state.pendingRestore, launchDone, finish, needsOnboarding, acctScene, screen, lostScene]);
 
   // `source` is which of the six conversion surfaces sent us here. It is threaded from the button
   // that was tapped rather than guessed at, because all six used to arrive here as one
@@ -1115,6 +1122,7 @@ function AppShell() {
     // Device and server now hold the same thing, so sync starts from that as its baseline.
     beginSync(payload, res.updatedAt);
     setAcctOpen(false);
+    setAcctScene({ mode: 'created', key: Date.now() });
   }
 
   // Login. Authenticating is only half of it — the account's saved progress is downloaded and
@@ -1146,6 +1154,7 @@ function AppShell() {
     // change uploads the whole thing rather than being skipped as unchanged.
     beginSync(acct.hasRemoteState ? acct.syncedState : null, acct.updatedAt);
     setLoginOpen(false);
+    setAcctScene({ mode: 'back', key: Date.now() });
     return { ok: true };
   }
 
@@ -1757,7 +1766,7 @@ function AppShell() {
       )}
       {/* Rebirth, earned by tapping Restore, waits for the streak-lost scene to finish handing over. */}
       <Ceremonies
-        cards={launchDone && !lostScene ? ambientAchievementQueue : NO_CARDS}
+        cards={launchDone && !lostScene && !acctScene ? ambientAchievementQueue : NO_CARDS}
         onDone={() => setAmbientAchievementQueue([])}
         guestConvoStarted={state.guestConvoStarted}
         acctCreated={state.acctCreated}
@@ -1766,6 +1775,9 @@ function AppShell() {
       {import.meta.env.DEV && previewLost && (
         <StreakLostScene key={previewLost.key} data={previewLost}
           onRestore={() => {}} onStartOver={() => {}} onExited={() => setPreviewLost(null)} />
+      )}
+      {acctScene && (
+        <AccountScene key={acctScene.key} mode={acctScene.mode} onDone={() => setAcctScene(null)} />
       )}
       {lostScene && (
         <StreakLostScene

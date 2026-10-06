@@ -1452,3 +1452,47 @@ body.dark .sl{--sl-bg:var(--bg);--sl-ink:var(--txt);--sl-muted:var(--txt3);--sl-
 .sl.reduced .sl-num{color:#b9b0a4}
 .sl.reduced.chose-restore .sl-flame{transform:none}
 .sl.reduced.chose-restore .sl-num{color:#0f9d6c}
+
+/* ── ACCOUNT CREATED / WELCOME BACK — docs/launch-celebrations-spec.md, Feature 8 (AccountScene.jsx) ─
+   On beige (the page colour in dark mode). The avatar sits at the centre point, .ac-center; the
+   three stat chips are placed around it by --cx/--cy, and flow into it (created) or out of it
+   (back). The skip and reduced-motion rules are the ceremonies' (.cer-a). */
+.ac{position:fixed;inset:0;z-index:720;overflow:hidden;cursor:pointer;background:var(--ac-bg);font-family:'Nunito',system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;--ac-bg:#fdf8f3;--ac-ink:#2b2b2b;--ac-muted:#6b6259;--ac-chip:#fff;animation:slIn .25s ease-out both}
+body.dark .ac{--ac-bg:var(--bg);--ac-ink:var(--txt);--ac-muted:var(--txt2);--ac-chip:var(--card)}
+.ac *{font-weight:900}
+.ac-center{position:absolute;left:50%;top:38%;width:0;height:0}
+.ac-ring{position:absolute;left:-70px;top:-70px;width:140px;height:140px;overflow:visible}
+.ac-ring-arc{stroke-dashoffset:var(--ac-c)}
+.ac.s-ring .ac-ring-arc{stroke-dashoffset:0;transition:stroke-dashoffset .52s cubic-bezier(.2,.7,.2,1)}
+.ac-avatar{position:absolute;left:-48px;top:-48px;border-radius:50%;opacity:0;transform:scale(0)}
+.ac.s-av .ac-avatar{opacity:1;transform:none;animation:finPop .42s ease-out both}
+.ac-check{position:absolute;left:25px;top:25px;width:34px;height:34px;border-radius:50%;background:#0f9d6c;box-shadow:0 2px 0 #0a7a54;display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(0)}
+.ac.s-check .ac-check{opacity:1;transform:none;animation:acCheckPop .38s ease-out both}
+@keyframes acCheckPop{0%{transform:scale(0)}60%{transform:scale(1.4)}100%{transform:scale(1)}}
+.ac-sparks{position:absolute;left:0;top:0}
+/* The page's own card colour IS this beige, so the chips are white here to stand off it. */
+.ac .streak-pill:not(.one):not(.both){background:var(--ac-chip);box-shadow:0 2px 0 var(--border2)}
+.ac-chip{position:absolute;left:0;top:0;white-space:nowrap;opacity:0}
+.ac-stat{display:inline-block;padding:7px 13px;border-radius:20px;background:var(--ac-chip);color:var(--txt);box-shadow:0 2px 0 var(--border2);font-size:14px}
+/* Created: the chips appear round the avatar, then fly into it one by one. */
+.ac.mode-created .ac-chip{transform:translate(calc(var(--cx) - 50%),calc(var(--cy) - 50%)) scale(.6)}
+.ac.mode-created.s-chips .ac-chip{opacity:1;transform:translate(calc(var(--cx) - 50%),calc(var(--cy) - 50%)) scale(1);transition:opacity .26s ease-out,transform .26s cubic-bezier(.2,.8,.3,1)}
+.ac.mode-created.s-f0 .ac-chip.c0,.ac.mode-created.s-f1 .ac-chip.c1,.ac.mode-created.s-f2 .ac-chip.c2{opacity:0;transform:translate(-50%,-50%) scale(.3);transition:transform .38s cubic-bezier(.5,0,.15,1),opacity .38s ease-in}
+/* Back: the chips fly out of the avatar to their places, overshooting a little. */
+.ac.mode-back .ac-chip{transform:translate(-50%,-50%) scale(.3)}
+.ac.mode-back.s-o0 .ac-chip.c0,.ac.mode-back.s-o1 .ac-chip.c1,.ac.mode-back.s-o2 .ac-chip.c2{opacity:1;transform:translate(calc(var(--cx) - 50%),calc(var(--cy) - 50%)) scale(1);transition:transform .44s cubic-bezier(.3,1.45,.5,1),opacity .2s ease-out}
+.ac-head{position:absolute;left:16px;right:16px;top:14%;text-align:center;font-size:34px;color:var(--ac-ink);opacity:0}
+.ac.s-head .ac-head{opacity:1;animation:finPop .42s ease-out both}
+.ac-text{position:absolute;left:24px;right:24px;top:calc(38% + 160px);text-align:center}
+.ac-title{font-size:22px;color:var(--ac-ink);opacity:0;transform:translateY(10px);overflow-wrap:anywhere}
+.ac-sub{font-size:14px;color:var(--ac-muted);margin-top:6px;opacity:0;transform:translateY(10px)}
+.ac.s-title .ac-title,.ac.s-sub .ac-sub{opacity:1;transform:none;transition:opacity .3s ease-out,transform .3s cubic-bezier(.2,.7,.2,1)}
+.ac .ac-tap{color:var(--ac-muted)}
+.ac.is-ready .ac-tap{animation:finTapIn 300ms ease-in-out forwards,finTapPulse 900ms ease-in-out 300ms infinite alternate}
+.ac.skip .cer-a{animation:none!important;transition:none!important}
+.ac.skip .cel-spark{display:none}
+/* Reduced motion: the final layout fades in — ring drawn, check shown, chips in place. */
+.ac.reduced .cer-a{animation:none!important;transition:opacity .25s ease-out!important}
+.ac.reduced.s-av .ac-chip{opacity:1;transform:translate(calc(var(--cx) - 50%),calc(var(--cy) - 50%))}
+.ac.reduced .ac-sparks{display:none}
+.ac.reduced.is-ready .ac-tap{animation:finTapIn 200ms ease-out forwards}
