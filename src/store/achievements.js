@@ -397,8 +397,12 @@ export function isRewardUnlocked(milestones, type, value) {
 //
 // Recurring: 7, 14, 30, then every 30 days after (60, 90, 120…). The game keeps celebrating
 // forever; the catalogue stops at 365, which is where the reward ladder ends.
+//
+// 365 is listed by name because it is not a multiple of 30. Until 6 Oct 2026 it was missing here,
+// so the 365-day achievement was in the catalogue but could never be earned — nothing ever asked
+// for it, and nothing failed. scripts/check-achievement-triggers.mjs now earns it.
 export function streakMilestoneThreshold(n) {
-  if (n === 7 || n === 14 || n === 30) return n;
+  if (n === 7 || n === 14 || n === 30 || n === 365) return n;
   if (n > 30 && n % 30 === 0) return n;
   return null;
 }

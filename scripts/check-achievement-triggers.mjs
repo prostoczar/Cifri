@@ -133,6 +133,22 @@ stopsShort('streak_record', 'a first streak passing its own record is not a reco
   return challenge(s, { diff: 'easy', score: 40 });
 });
 
+// 365 is the one streak rung that is not 7, 14, 30 or a multiple of 30, and it was once missing
+// from the thresholds — in the catalogue, impossible to earn, and nothing said so. It must be
+// earned on the day the streak reaches 365, and announced with its own card.
+const toStreak = (n) => (s) => {
+  s.streak = n - 1;
+  s.bestStreakEver = n - 1;
+  s.streakCreditedForDay = addDaysStr(TODAY, -1);
+  const out = challenge(s, { diff: 'easy', score: 40 });
+  if (n === 365 && !(out._lastSessionResult.unlocked || []).some((c) => c.key === 'streak_365')) {
+    throw new Error('earned with no card shown');
+  }
+  return out;
+};
+earns('streak_365', 'the day a streak reaches 365', toStreak(365));
+stopsShort('streak_365', 'a 364-day streak is not a year', toStreak(364));
+
 // The break itself has to record that it happened, or nothing above can ever be true in real play.
 {
   let s = { ...defaultState(), streak: 5, streakCreditedForDay: addDaysStr(TODAY, -3), streakRestoreAvailable: true };
@@ -468,7 +484,7 @@ console.log('\nOrder');
 // more. A test file that quietly stopped covering one of them would still pass every check above.
 console.log('');
 const EXPECTED = [
-  'streak_rebirth', 'streak_record',
+  'streak_rebirth', 'streak_record', 'streak_365',
   'ch_challenger', 'ch_four_for_four', 'ch_peak', 'ch_sky', 'ch_moon', 'ch_triple_crown', 'ch_nice',
   // The six added when the flat score ladder became three rungs per difficulty.
   'ch_sprout', 'ch_leaf', 'ch_evergreen', 'ch_small_change', 'ch_making_bank', 'ch_priceless',
