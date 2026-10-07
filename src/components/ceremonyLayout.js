@@ -24,6 +24,9 @@ function offsetWithin(el, root) {
  */
 export function useCeremonyLayout(rootRef, avatarRef) {
   const [vars, setVars] = useState({});
+  const [fly, setFly] = useState({});
+
+  // First the scene's frame: the medallion's centre, the flood, the chip and the pill's flight.
   useLayoutEffect(() => {
     const measure = () => {
       const root = rootRef.current;
@@ -33,24 +36,35 @@ export function useCeremonyLayout(rootRef, avatarRef) {
       const my = Math.round(Math.max(160, Math.min(H * 0.29, H - 450)));
       const chipY = Math.max(18, my - 172);
       const R = Math.ceil(Math.max(Math.hypot(mx, my), Math.hypot(mx, H - my))) + 8;
-      const v = {
+      setVars({
         '--mx': mx + 'px', '--my': my + 'px', '--R': R + 'px', '--chip-y': chipY + 'px',
-        '--pill-dy': (chipY + 14 - my) + 'px',
-      };
-      const av = avatarRef && avatarRef.current;
-      if (av) {
-        const o = offsetWithin(av, root);
-        v['--fx'] = (o.x + av.offsetWidth / 2 - mx) + 'px';
-        v['--fy'] = (o.y + av.offsetHeight / 2 - my) + 'px';
-      }
-      setVars(v);
+        '--pill-dy': (chipY + 14 - my) + 'px', mx, my,
+      });
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return vars;
+
+  // Then, once the page has been laid out AROUND that frame, where the reward lands. This has to be
+  // a second pass: the reward row hangs below the medallion (top: --my + 128px), and measured in the
+  // same pass as --my it was still sitting at the top of the screen, so the symbol flew UP into the
+  // wrong place instead of down into the avatar circle.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const av = avatarRef && avatarRef.current;
+    if (!root || !av || vars.my === undefined) return;
+    const o = offsetWithin(av, root);
+    setFly({
+      '--fx': (o.x + av.offsetWidth / 2 - vars.mx) + 'px',
+      '--fy': (o.y + av.offsetHeight / 2 - vars.my) + 'px',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vars]);
+
+  const { mx, my, ...css } = vars; // eslint-disable-line no-unused-vars
+  return { ...css, ...fly };
 }
 
 /** The haptic at a ceremony's big moment, by tier (spec Feature 5, "Haptics"). */
