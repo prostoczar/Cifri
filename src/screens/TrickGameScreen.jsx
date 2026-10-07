@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import ScribblePad from '../components/ScribblePad.jsx';
 import TrickInfoModal from '../components/TrickInfoModal.jsx';
@@ -8,7 +8,7 @@ import { fn } from '../store/questionEngine.js';
 import { PRACTICE_LENGTH, TEST_LENGTH, TEST_PASS_MARK, testQuestions } from '../store/trickTest.js';
 import { tick, buzz } from '../store/sound.js';
 import { doubleTap, impact } from '../lib/haptics.js';
-import { answerCorrect, answerWrong, questionIn } from '../lib/answerFx.js';
+import { answerWrong } from '../lib/answerFx.js';
 
 // A drill on a single trick, in one of two modes.
 //
@@ -45,9 +45,7 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
   // Answer feedback (src/lib/answerFx.js): one entry per answer — a counter, so two wrong answers
   // in a row on the same question are two shakes.
   const [fx, setFx] = useState({ kind: null, n: 0 });
-  const cardRef = useRef(null);
   const boxRef = useRef(null);
-  const lastFxRef = useRef(null);
 
   const answerRef = useRef(null);
   // Questions already asked in THIS practice run, so none is asked twice. Cleared with the run.
@@ -185,18 +183,11 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
     }
   }, [loadQuestion, soundOn, t, total, isTest, onComplete]);
 
-  // The next question comes 250 ms after a right answer, as in Challenge: same slide timings.
+  // A wrong answer shakes the answer box; a right answer keeps its green tint and nothing more (see
+  // ChallengeGameScreen).
   useEffect(() => {
-    if (!fx.n) return;
-    lastFxRef.current = fx.kind;
-    const els = { box: boxRef.current, card: cardRef.current };
-    if (fx.kind === 'ok') answerCorrect(els, { outAt: 150, outMs: 90 });
-    else answerWrong(els);
+    if (fx.n && fx.kind === 'bad') answerWrong({ box: boxRef.current });
   }, [fx]);
-  useLayoutEffect(() => {
-    questionIn({ box: boxRef.current, card: cardRef.current }, lastFxRef.current === 'ok');
-    lastFxRef.current = null;
-  }, [question]);
 
   const trickName = trTrick(lang, trick, group.group).name;
 
@@ -248,7 +239,7 @@ export default function TrickGameScreen({ gi, ti, mode, soundOn, onComplete, onA
         <div className="tg-solved-n">{index}<span className="tg-solved-of">/{total}</span></div>
         <div className="tg-solved-l">{isTest ? t('trick_test_right', { n: firstTry }) : t('solved')}</div>
       </div>
-      <div className={'qc' + (qcOk ? ' fok' : '')} ref={cardRef}>
+      <div className={'qc' + (qcOk ? ' fok' : '')}>
         <div className="ob">{trGroupName(lang, group.group)}</div>
         <div className="qt">{question.text}</div>
       </div>

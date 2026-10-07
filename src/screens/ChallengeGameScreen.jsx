@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../store/useI18n.js';
 import ScribblePad from '../components/ScribblePad.jsx';
 import { fn } from '../store/questionEngine.js';
-import { answerCorrect, answerWrong, questionIn } from '../lib/answerFx.js';
+import { answerWrong } from '../lib/answerFx.js';
 
 // Ported from the reference prototype's #scr-game markup + updateTUI().
 export default function ChallengeGameScreen({ game, onShowQuit }) {
@@ -13,23 +13,13 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
   const { session, question, input, inputClass, feedback, qcFlash, fx, padInput, backspace, submitAnswer } = game;
 
   // ── Answer feedback (src/lib/answerFx.js) ──
-  // The game loads the next question 250 ms after a right answer, so the slide-out runs 150–240 ms
-  // and the new question slides in as it appears. A wrong answer only shakes: the right answer is
-  // on screen for the player to read, and the next question simply replaces it.
-  const cardRef = useRef(null);
+  // A wrong answer shakes the answer box. A right answer keeps the green tint it always had and
+  // nothing more: the bump and slide that briefly went with it were taken out on 7 Oct 2026 as
+  // distracting mid-game.
   const boxRef = useRef(null);
-  const lastFxRef = useRef(null);
   useEffect(() => {
-    if (!fx || !fx.n) return;
-    lastFxRef.current = fx.kind;
-    const els = { box: boxRef.current, card: cardRef.current };
-    if (fx.kind === 'ok') answerCorrect(els, { outAt: 150, outMs: 90 });
-    else answerWrong(els);
+    if (fx && fx.n && fx.kind === 'bad') answerWrong({ box: boxRef.current });
   }, [fx]);
-  useLayoutEffect(() => {
-    questionIn({ box: boxRef.current, card: cardRef.current }, lastFxRef.current === 'ok');
-    lastFxRef.current = null;
-  }, [question]);
 
   // ── The last five seconds (spec Feature 3) ──
   // On each whole second from 5 down to 1 the number pops and the bar pulses, in step with the urgent
@@ -95,7 +85,7 @@ export default function ChallengeGameScreen({ game, onShowQuit }) {
         </button>
       </div>
       <div className="pw"><div className="pb" ref={barRef} style={{ width: pbWidth, background: pbBg }}></div></div>
-      <div className={'qc' + (qcFlash ? ' fok' : '')} ref={cardRef}>
+      <div className={'qc' + (qcFlash ? ' fok' : '')}>
         <div className="ob">{question.opLabel}</div>
         <div className="qt">{question.text}</div>
         {/* Inside the card, the way Braining's .br-hint already sits inside .br-qc. As a sibling
