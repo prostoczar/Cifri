@@ -158,7 +158,7 @@ export default function StreakLostScene({ data, onRestore, onStartOver, onExited
     : choice === 'fresh' ? t('lost_fresh_title')
     : t('lost_title');
 
-  const cls = ['sl']
+  const cls = ['slost']
     .concat(Object.keys(reached).map((k) => 's-' + k))
     .concat(choice ? ['chose', 'chose-' + choice] : [])
     .concat(reduced ? ['reduced'] : [])
@@ -166,17 +166,17 @@ export default function StreakLostScene({ data, onRestore, onStartOver, onExited
 
   return (
     <div className={cls} ref={rootRef} role="dialog" aria-modal="true" aria-label={t('lost_title')}>
-      <div className="sl-missed">{t('lost_missed')}</div>
+      <div className="slost-missed">{t('lost_missed')}</div>
 
-      <div className="sl-stage">
-        <div className="sl-disc" />
+      <div className="slost-stage">
+        <div className="slost-disc" />
         {!reduced && reached.cool && !reached.cold && (
-          <div className="sl-smoke" aria-hidden="true">
+          <div className="slost-smoke" aria-hidden="true">
             {Array.from({ length: 10 }, (_, i) => <span key={i} style={{ animationDelay: i * 110 + 'ms', left: ((i * 7) % 15) - 7 + 'px' }} />)}
           </div>
         )}
         {!reduced && reached.cold && !choice && (
-          <div className="sl-embers" aria-hidden="true">
+          <div className="slost-embers" aria-hidden="true">
             {Array.from({ length: 8 }, (_, i) => (
               <span key={i} style={{
                 animationDelay: i * 220 + 'ms', left: ((i * 11) % 23) - 11 + 'px',
@@ -185,8 +185,8 @@ export default function StreakLostScene({ data, onRestore, onStartOver, onExited
             ))}
           </div>
         )}
-        <div className="sl-sparks"><Sparks n={20} colors={['#ffd166', '#0f9d6c', '#d65a3a']} go={!!lit && !reduced} distance={120} /></div>
-        <div className="sl-flame" ref={flameRef}>
+        <div className="slost-sparks"><Sparks n={20} colors={['#ffd166', '#0f9d6c', '#d65a3a']} go={!!lit && !reduced} distance={120} /></div>
+        <div className="slost-flame" ref={flameRef}>
           <Flame
             base="cold"
             catching={relit}
@@ -197,17 +197,17 @@ export default function StreakLostScene({ data, onRestore, onStartOver, onExited
         </div>
       </div>
 
-      <div className="sl-num" ref={numRef}>{n}</div>
-      <div className="sl-label">{tPlural(lang, 'lost_label', n)}</div>
-      <div className={'sl-title' + (title !== t('lost_title') ? ' changed' : '')} key={title}>{title}</div>
-      <div className="sl-text">{data.available ? tPlural(lang, 'lost_body', n) : t('lost_none')}</div>
-      <div className="sl-btns">
+      <div className="slost-num" ref={numRef}>{n}</div>
+      <div className="slost-label">{tPlural(lang, 'lost_label', n)}</div>
+      <div className={'slost-title' + (title !== t('lost_title') ? ' changed' : '')} key={title}>{title}</div>
+      <div className="slost-text">{data.available ? tPlural(lang, 'lost_body', n) : t('lost_none')}</div>
+      <div className="slost-btns">
         {data.available ? (
-          <button className="sl-btn grn" onClick={restore}>{t('lost_restore_btn')}</button>
+          <button className="slost-btn grn" onClick={restore}>{t('lost_restore_btn')}</button>
         ) : (
-          <button className="sl-btn off" disabled>{t('lost_none_btn')}</button>
+          <button className="slost-btn off" disabled>{t('lost_none_btn')}</button>
         )}
-        <button className="sl-plain" onClick={startFresh}>{t('lost_fresh_btn')}</button>
+        <button className="slost-plain" onClick={startFresh}>{t('lost_fresh_btn')}</button>
       </div>
     </div>
   );
