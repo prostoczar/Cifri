@@ -471,3 +471,9 @@ Agreed on 6 Oct 2026, before any code was written, after the code had been read 
 - **Ordering guard.** `npm run check:ceremonies` (in `npm run check`) drives the real ceremony queue with every awkward batch: rarity order, the three-plus-"+{n} more" rule, the sign-up card never folded away, and which ceremony each streak day gets (7, 120, 180, 183, 360, 365, 390).
 
 **Testing without real data.** On the dev server only (`npm run dev`; never in a real build), the browser console has `__cifriPreview`: `.ceremony('ch_first', 'ch_moon', …)` (any achievement keys, or `'lit'`), `.streak(n)`, `.lost(n, available)` and `.account('created' | 'back')`. Each plays the scene without dispatching anything, so nothing is saved or synced.
+
+**Changed after first testing (7 Oct 2026, decided by Bogdan).**
+
+- **Right answers have no animation.** The bump and slide on a correct answer (Feature 2) were distracting mid-game and are removed. A right answer keeps exactly what it had before — the green tint and the tick — plus the light tap on phones. The wrong-answer shake stays.
+- **Every achievement plays its own ceremony.** The three-ceremony limit and the "+{n} more" card (Feature 5) are removed: however many unlock at once, each plays in full, lowest rarity first, after any streak ceremony and the "You've lit a streak!" card.
+- **Share button label.** "Share" appears wherever the browser can share images, which needs a secure (`https://`) page: on cifri.app and in the phone app. On the plain `http://` dev server the same button falls back to "Save image". Not a change, recorded because it looks like one.

@@ -33,5 +33,5 @@ export default function Ceremonies({ cards, onDone, guestConvoStarted, acctCreat
   if (item.kind === 'streak') {
     return <StreakCeremony key={idx + ':streak:' + item.days} item={item} onDone={next} {...cta} />;
   }
-  return <CeremonyScene key={idx + ':' + item.kind + ':' + (item.card ? item.card.key || item.card.nameKey : 'more')} item={item} onDone={next} {...cta} />;
+  return <CeremonyScene key={idx + ':' + item.kind + ':' + (item.card.key || item.card.nameKey)} item={item} onDone={next} {...cta} />;
 }

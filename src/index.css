@@ -1349,12 +1349,6 @@ body.dark .fin.s-yellow,body.dark .fin.s-flood{--fin-muted:#7a7167}
 .cer-chip{background:var(--t-chip-bg);color:var(--t-chip-tx);padding:6px 14px;border-radius:999px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;opacity:0}
 .cer.s-chip .cer-chip{opacity:1;animation:celChipPop .38s ease-out both}
 @keyframes celChipPop{0%{transform:scale(0)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
-/* "+{n} more": the remaining medallions in a row. */
-.cer-more-title{position:absolute;left:0;right:0;top:calc(var(--my) - 80px);text-align:center;font-size:40px;color:var(--t-title);opacity:0}
-.cer.s-title .cer-more-title{opacity:1;animation:finPop .48s ease-out both}
-.cer-more-row{position:absolute;left:24px;right:24px;top:var(--my);display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
-.cer-mini{width:56px;height:56px;border-radius:50%;background:#fff;box-shadow:0 4px 0 var(--t-shadow);display:flex;align-items:center;justify-content:center;color:var(--t-sym);opacity:0;transform:scale(0)}
-.cer.s-row .cer-mini{opacity:1;transform:scale(1);transition:transform .32s cubic-bezier(.2,.8,.3,1),opacity .2s ease-out}
 .cer-tap{position:absolute;left:0;right:0;bottom:calc(24px + env(safe-area-inset-bottom));text-align:center;font-size:15px;color:var(--t-body);opacity:0;pointer-events:none}
 .cer.is-ready .cer-tap{animation:finTapIn 300ms ease-in-out forwards,finTapPulse 900ms ease-in-out 300ms infinite alternate}
 /* Skip: the final state, with the travel removed. */

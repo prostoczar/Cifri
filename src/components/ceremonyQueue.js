@@ -13,12 +13,14 @@
 //                                              that day's achievement was unlocked just now
 //   { kind: 'lit',    card }                   "You've lit a streak!" — grey, flame, sign-up ask
 //   { kind: 'ach',    card, ach, tier }        one achievement's ceremony, in its catalogue rarity
-//   { kind: 'more',   entries: [ach…], tier }  the closing "+{n} more" card
 //   { kind: 'legacy', card, queue: [card] }    any other ad-hoc card, shown as the simple old card
 //
-// Order: a streak milestone first, then the sign-up prompt (lowest, and never folded away — it is
-// the one card that asks for something), then achievements from lowest rarity to highest so the
-// run builds to its biggest moment, then "+{n} more", then anything left on the simple card.
+// Order: a streak milestone first, then the sign-up prompt, then achievements from lowest rarity to
+// highest so the run builds to its biggest moment, then anything left on the simple card.
+//
+// EVERY achievement gets its own full ceremony, however many arrive at once. The spec capped a batch
+// at three, with the rest folded onto one "+{n} more" card; that card was built and then removed on
+// 7 Oct 2026 — each achievement is a moment the player earned, and a list of medallions is not one.
 //
 // ── Streak days (spec Feature 6, and the decisions recorded at the end of the spec) ──
 //
@@ -61,8 +63,6 @@ function streakCardDay(card) {
   return null;
 }
 
-export const MAX_CEREMONIES = 3;
-
 export function buildCeremonies(cards) {
   const achs = [];
   const legacy = [];
@@ -102,25 +102,13 @@ export function buildCeremonies(cards) {
     .sort((a, b) => RARITIES.indexOf(a.it.tier) - RARITIES.indexOf(b.it.tier) || a.i - b.i)
     .map((x) => x.it);
 
-  // More than three at once: the three highest get ceremonies, the rest share one closing card in
-  // the colour of the highest of them.
-  let shown = ranked;
-  let rest = [];
-  if (ranked.length > MAX_CEREMONIES) {
-    shown = ranked.slice(-MAX_CEREMONIES);
-    rest = ranked.slice(0, -MAX_CEREMONIES);
-  }
-
   const items = [];
   if (streakDay !== null) {
     const sc = streakCeremonyFor(streakDay);
     items.push({ kind: 'streak', days: streakDay, tier: sc.tier, textKey: sc.textKey, ach: streakAch });
   }
   if (lit) items.push(lit);
-  items.push(...shown);
-  if (rest.length) {
-    items.push({ kind: 'more', entries: rest.map((r) => r.ach), tier: rest[rest.length - 1].tier });
-  }
+  items.push(...ranked);
   items.push(...legacy);
   return items;
 }

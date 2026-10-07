@@ -443,7 +443,6 @@ en:{
   // rarity_*, and "Tap to continue" reuses finish_tap.
   cer_new_achievement:"New achievement!",
   cer_new_avatar:"New avatar unlocked",
-  cer_more:"+{{n}} more",
   // Streak milestone ceremonies (spec Feature 6). The chip and the label under the big number agree
   // with the number, so each has three forms picked by tPlural() — see that function.
   streak_chip_one:"{{n}}-day streak",
@@ -896,7 +895,6 @@ ru:{
   launch_slow:"Минутку, считаем цифры…",
   cer_new_achievement:"Новое достижение!",
   cer_new_avatar:"Новый аватар открыт",
-  cer_more:"Ещё +{{n}}",
   streak_chip_one:"Серия: {{n}} день",
   streak_chip_few:"Серия: {{n}} дня",
   streak_chip_many:"Серия: {{n}} дней",
